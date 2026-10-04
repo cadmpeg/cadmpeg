@@ -1,10 +1,14 @@
 use crate::features::ParameterId;
-use crate::sketches::{NativeOperandField, SketchConstraintDefinitionInput, SketchEntityId, SketchNativeOperand};
-use cadmpeg_core::text::NonBlankString;
-use std::collections::BTreeMap;
+use crate::sketches::{
+    NativeOperandField, SketchConstraintDefinitionInput, SketchEntityId, SketchNativeOperand,
+};
 use cadmpeg_core::decode::cost::DecodeCost;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ResourceFailure};
+use cadmpeg_core::decode::{
+    DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ResourceFailure,
+};
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
+use std::collections::BTreeMap;
 
 fn native_constraint() -> SketchConstraintDefinitionInput {
     SketchConstraintDefinitionInput::Native {
@@ -33,7 +37,12 @@ fn sketch_constraint_cost_counts_native_children() {
     // One entity, one native operand, and one property entry are measured.
     policy.limits.max_work_units = 3;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert_eq!(native_constraint().decode_cost(&ctx, "measure constraint").unwrap(), 102);
+    assert_eq!(
+        native_constraint()
+            .decode_cost(&ctx, "measure constraint")
+            .unwrap(),
+        102
+    );
     let error = ctx.charge_work(1, "after measurement").unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
@@ -48,7 +57,9 @@ fn sketch_constraint_cost_refuses_child_traversal() {
     policy.limits.max_work_units = 0;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = native_constraint().decode_cost(&ctx, "measure constraint").unwrap_err();
+    let error = native_constraint()
+        .decode_cost(&ctx, "measure constraint")
+        .unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.reason == ResourceFailure::BudgetExceeded

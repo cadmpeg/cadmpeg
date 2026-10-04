@@ -5,8 +5,8 @@ use super::super::super::{
     CLASS_MARKER, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
 };
 use super::{
-    compact_legacy_profile_vertex, marker_coordinates, marker_local_id,
-    marker_spatial_coordinates, raw2, raw_link,
+    compact_legacy_profile_vertex, marker_coordinates, marker_local_id, marker_spatial_coordinates,
+    raw2, raw_link,
 };
 use crate::layout::{
     compact_current_spatial_marker_point as compact_spatial,

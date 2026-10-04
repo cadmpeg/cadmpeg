@@ -2,8 +2,8 @@
 
 use super::super::super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use super::{
-    extended_geometry_locus_single_link_point, geometry_locus_profile_vertex,
-    marker_coordinates, raw2, raw_pairs,
+    extended_geometry_locus_single_link_point, geometry_locus_profile_vertex, marker_coordinates,
+    raw2, raw_pairs,
 };
 use crate::layout::legacy_140_single_incidence_profile_point as point_140;
 use crate::layout::legacy_144_single_incidence_profile_point as point_144;

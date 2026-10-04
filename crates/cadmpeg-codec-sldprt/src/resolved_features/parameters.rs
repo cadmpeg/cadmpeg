@@ -37,22 +37,24 @@ pub(crate) fn enrich_history_parameters<'a>(
     lanes: impl IntoIterator<Item = &'a FeatureInputLane>,
     replace_existing: bool,
 ) -> Result<(), CodecError> {
-let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT parameters temporary storage")?;
+    let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT parameters temporary storage")?;
 
     let mut candidates = BTreeMap::<(usize, usize, String), Vec<(f64, ScalarUnit)>>::new();
     for lane in lanes {
         let feature_count = ctx
             .admit_iter(&histories[..], "count SLDPRT parameter features")?
             .try_fold(0usize, |count, history| {
-            count.checked_add(history.features.len()).ok_or_else(|| {
-                ctx.refuse_codec_limit("scan SLDPRT parameter candidates", u64::MAX - 1, u64::MAX)
-            })
-        })?;
-        let work = feature_count
-            .checked_mul(lane.names.len())
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("scan SLDPRT parameter candidates", u64::MAX - 1, u64::MAX)
+                count.checked_add(history.features.len()).ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "scan SLDPRT parameter candidates",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
+                })
             })?;
+        let work = feature_count.checked_mul(lane.names.len()).ok_or_else(|| {
+            ctx.refuse_codec_limit("scan SLDPRT parameter candidates", u64::MAX - 1, u64::MAX)
+        })?;
         ctx.charge_work(
             u64::try_from(work).map_err(|_| {
                 ctx.refuse_codec_limit("scan SLDPRT parameter candidates", u64::MAX - 1, u64::MAX)
@@ -61,12 +63,14 @@ let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT parameters temporary s
         )?;
         let mut names_by_id = HashMap::new();
         for name in ctx.admit_iter(&lane.names, "index SLDPRT parameter names")? {
-            temporary_storage.with_storage(|| ctx.insert_hash_map(
-                &mut names_by_id,
-                name.id.as_str(),
-                name,
-                "index SLDPRT parameter names",
-            ))?;
+            temporary_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut names_by_id,
+                    name.id.as_str(),
+                    name,
+                    "index SLDPRT parameter names",
+                )
+            })?;
         }
         let relation_unit = |family| match family {
             FeatureInputRelationFamily::Angle => ScalarUnit::Angle,
@@ -83,7 +87,8 @@ let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT parameters temporary s
                 &names_by_id,
                 scalar.name.as_str(),
                 "lookup SLDPRT scalar name",
-            )? else {
+            )?
+            else {
                 continue;
             };
             let parameter_class = ctx
@@ -95,25 +100,21 @@ let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT parameters temporary s
                         &right.0,
                         "compare SLDPRT parameter class eligibility",
                     )? {
-                        std::cmp::Ordering::Equal => ctx.compare(
-                            &left.1,
-                            &right.1,
-                            "compare SLDPRT parameter class offsets",
-                        ),
+                        std::cmp::Ordering::Equal => {
+                            ctx.compare(&left.1, &right.1, "compare SLDPRT parameter class offsets")
+                        }
                         order => Ok(order),
                     },
                     "find SLDPRT scalar parameter class",
                 )?
                 .filter(|class| class.offset < name.offset);
-            let Some(parameter_class) = parameter_class
-            else {
+            let Some(parameter_class) = parameter_class else {
                 continue;
             };
             let has_intervening_name = ctx
                 .admit_iter(&lane.names, "find intervening SLDPRT parameter name")?
                 .any(|intervening| {
-                    intervening.offset > parameter_class.offset
-                        && intervening.offset < name.offset
+                    intervening.offset > parameter_class.offset && intervening.offset < name.offset
                 });
             if has_intervening_name {
                 continue;
@@ -123,23 +124,27 @@ let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT parameters temporary s
                 "moAngleParameter_c" => ScalarUnit::Angle,
                 _ => continue,
             };
-            temporary_storage.with_storage(|| ctx.insert_hash_map(
-                &mut scalar_units,
-                scalar.id.as_str(),
-                unit,
-                "index SLDPRT scalar units",
-            ))?;
+            temporary_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut scalar_units,
+                    scalar.id.as_str(),
+                    unit,
+                    "index SLDPRT scalar units",
+                )
+            })?;
         }
         for binding in ctx.admit_iter(
             &lane.relation_bindings,
             "index SLDPRT relation scalar units",
         )? {
-            temporary_storage.with_storage(|| ctx.insert_hash_map(
-                &mut scalar_units,
-                binding.scalar_ref.as_str(),
-                relation_unit(binding.family),
-                "index SLDPRT scalar units",
-            ))?;
+            temporary_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut scalar_units,
+                    binding.scalar_ref.as_str(),
+                    relation_unit(binding.family),
+                    "index SLDPRT scalar units",
+                )
+            })?;
         }
         for relation in ctx.admit_iter(
             &lane.relation_instances,
@@ -150,18 +155,20 @@ let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT parameters temporary s
                 relation.scalar_refs(),
                 "index SLDPRT relation scalar references",
             )? {
-                temporary_storage.with_storage(|| ctx.insert_hash_map(
-                    &mut scalar_units,
-                    scalar.as_str(),
-                    unit,
-                    "index SLDPRT scalar units",
-                ))?;
+                temporary_storage.with_storage(|| {
+                    ctx.insert_hash_map(
+                        &mut scalar_units,
+                        scalar.as_str(),
+                        unit,
+                        "index SLDPRT scalar units",
+                    )
+                })?;
             }
         }
         let mut starts = Vec::<(u64, usize, usize)>::new();
-        for (history_index, history) in
-            ctx.admit_iter(&histories[..], "collect SLDPRT parameter feature starts")?
-                .enumerate()
+        for (history_index, history) in ctx
+            .admit_iter(&histories[..], "collect SLDPRT parameter feature starts")?
+            .enumerate()
         {
             for (feature_index, feature) in ctx
                 .admit_iter(&history.features, "collect SLDPRT parameter feature starts")?
@@ -195,7 +202,8 @@ let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT parameters temporary s
                     &names_by_id,
                     scalar.name.as_str(),
                     "lookup SLDPRT scalar name",
-                )? else {
+                )?
+                else {
                     continue;
                 };
                 ctx.push_btree_group(
@@ -320,12 +328,7 @@ let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT parameters temporary s
                         "lookup existing SLDPRT parameter",
                     )?
                     .map(String::as_str);
-                crate::history::parameters::format_native_scalar(
-                    feature,
-                    name,
-                    first,
-                    previous,
-                )
+                crate::history::parameters::format_native_scalar(feature, name, first, previous)
             }
             ScalarUnit::Length => {
                 let previous = ctx
@@ -338,9 +341,7 @@ let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT parameters temporary s
                 if previous.is_some_and(|expression| {
                     crate::history::literals::strip_diameter_modifier(expression).is_some()
                 }) {
-                    crate::history::parameters::format_native_scalar(
-                        feature, name, first, previous,
-                    )
+                    crate::history::parameters::format_native_scalar(feature, name, first, previous)
                 } else {
                     cadmpeg_ir::scalar::Length::new(first * 1000.0)
                         .map(crate::history::literals::format_length_mm)
@@ -396,11 +397,9 @@ fn scalar_unit_from_feature_parameter(
         && crate::classification::classify(feature)
             == Some(crate::classification::FeatureClass::MoveFace)
     {
-        if let Some(mode) = ctx.get_btree_map(
-            &feature.properties,
-            "Mode",
-            "lookup SLDPRT move-face mode",
-        )? {
+        if let Some(mode) =
+            ctx.get_btree_map(&feature.properties, "Mode", "lookup SLDPRT move-face mode")?
+        {
             if ctx.eq_ignore_ascii_case(mode, "Offset", "compare SLDPRT move-face mode")?
                 || ctx.eq_ignore_ascii_case(mode, "Translate", "compare SLDPRT move-face mode")?
             {
@@ -408,16 +407,13 @@ fn scalar_unit_from_feature_parameter(
             }
         }
     }
-    let Some(expression) = ctx.get_btree_map(
-        &feature.parameters,
-        name,
-        "lookup SLDPRT feature parameter",
-    )? else {
+    let Some(expression) =
+        ctx.get_btree_map(&feature.parameters, name, "lookup SLDPRT feature parameter")?
+    else {
         return Ok(None);
     };
     let mut source_sketch_dimension = false;
-    if crate::classification::classify(feature)
-        == Some(crate::classification::FeatureClass::Sketch)
+    if crate::classification::classify(feature) == Some(crate::classification::FeatureClass::Sketch)
     {
         for content in ctx.admit_iter(&feature.content, "find SLDPRT sketch dimension")? {
             if let crate::records::FeatureContent::Dimension(dimension) = content {
@@ -432,8 +428,10 @@ fn scalar_unit_from_feature_parameter(
         return if crate::history::literals::parse_angle_rad(expression).is_some() {
             Ok(Some(ScalarUnit::Angle))
         } else {
-            Ok(crate::history::literals::parse_dimension_display_length(expression)
-                .map(|_| ScalarUnit::Length))
+            Ok(
+                crate::history::literals::parse_dimension_display_length(expression)
+                    .map(|_| ScalarUnit::Length),
+            )
         };
     }
     if crate::history::project::modify::fillet_radius_parameter_has_native_display(
@@ -470,8 +468,10 @@ pub(super) fn value_only_scalar_offset(
         .ok_or_else(|| {
             ctx.refuse_codec_limit("locate SLDPRT value-only scalar", u64::MAX - 1, u64::MAX)
         })?;
-    Ok((payload.get(header_offset..value_offset) == Some(VALUE_ONLY_SCALAR_HEADER))
-        .then_some(value_offset))
+    Ok(
+        (payload.get(header_offset..value_offset) == Some(VALUE_ONLY_SCALAR_HEADER))
+            .then_some(value_offset),
+    )
 }
 
 fn native_scalar_matches_discrete_parameter(

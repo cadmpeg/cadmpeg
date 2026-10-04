@@ -58,7 +58,7 @@ pub(crate) fn spatial_sketches(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(Vec<SpatialSketch>, Vec<SpatialSketchEntity>), CodecError> {
-let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT markers temporary storage")?;
+    let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT markers temporary storage")?;
 
     ctx.charge_work(
         u64::try_from(model_features.len()).map_err(|_| {
@@ -69,12 +69,14 @@ let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT markers temporary stor
     let mut records = HashMap::new();
     for history in ctx.admit_iter(histories, "index SLDPRT spatial feature records")? {
         for record in ctx.admit_iter(&history.features, "index SLDPRT spatial feature records")? {
-            temporary_storage.with_storage(|| ctx.insert_hash_map(
-                &mut records,
-                record.id.as_str(),
-                record,
-                "index SLDPRT spatial feature records",
-            ))?;
+            temporary_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut records,
+                    record.id.as_str(),
+                    record,
+                    "index SLDPRT spatial feature records",
+                )
+            })?;
         }
     }
     let mut sketches = Vec::new();
@@ -166,15 +168,15 @@ let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT markers temporary stor
                 }
                 let point = marker_spatial_coordinates(&lane.native_payload, offset);
                 let point = point.or_else(|| {
-                        declared_spatial
-                            .then(|| {
-                                current_indexed_spatial_relation_coordinates(
-                                    &lane.native_payload,
-                                    offset,
-                                )
-                            })
-                            .flatten()
-                    });
+                    declared_spatial
+                        .then(|| {
+                            current_indexed_spatial_relation_coordinates(
+                                &lane.native_payload,
+                                offset,
+                            )
+                        })
+                        .flatten()
+                });
                 if let Some(point) = point {
                     ctx.reserve_vec(&mut points, 1, "collect SLDPRT spatial points")?;
                     points.push((marker.id(), point, offset));
@@ -224,9 +226,8 @@ let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT markers temporary stor
                 spatial_line_vertices_charged(ctx, histories, record, lane)?.unwrap_or_default();
             let mut projected_lines = Vec::new();
             let mut valid_lines = true;
-            let pair_width = std::num::NonZeroUsize::new(2).ok_or_else(|| {
-                ctx.refuse_codec_limit("admit SLDPRT spatial line pairs", 1, 0)
-            })?;
+            let pair_width = std::num::NonZeroUsize::new(2)
+                .ok_or_else(|| ctx.refuse_codec_limit("admit SLDPRT spatial line pairs", 1, 0))?;
             for (offsets, vertices) in ctx
                 .admit_iter(&lines.1, "project SLDPRT spatial line offsets")?
                 .chunks(pair_width)
@@ -288,7 +289,10 @@ let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT markers temporary stor
                     format_args!("{}:entity:{index}", sketch_id.as_str()),
                     "retain SLDPRT spatial entity identity",
                 )?;
-                ctx.charge_work(cadmpeg_core::decode::u64_from_index(entity_id.len()), "validate SLDPRT spatial entity identity")?;
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(entity_id.len()),
+                    "validate SLDPRT spatial entity identity",
+                )?;
                 let Ok(entity_id) = SpatialSketchEntityId::mint(entity_id) else {
                     continue;
                 };
@@ -334,9 +338,8 @@ let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT markers temporary stor
         let [(lane, vertices)] = candidates.as_slice() else {
             continue;
         };
-        let pair_width = std::num::NonZeroUsize::new(2).ok_or_else(|| {
-            ctx.refuse_codec_limit("admit SLDPRT spatial line pairs", 1, 0)
-        })?;
+        let pair_width = std::num::NonZeroUsize::new(2)
+            .ok_or_else(|| ctx.refuse_codec_limit("admit SLDPRT spatial line pairs", 1, 0))?;
         if ctx
             .admit_iter(vertices, "validate SLDPRT spatial line vertices")?
             .chunks(pair_width)
@@ -360,7 +363,10 @@ let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT markers temporary stor
                 format_args!("{}:entity:{index}", sketch_id.as_str()),
                 "retain SLDPRT spatial entity identity",
             )?;
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(entity_id.len()), "validate SLDPRT spatial entity identity")?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(entity_id.len()),
+                "validate SLDPRT spatial entity identity",
+            )?;
             let (Ok(entity_id), Ok(geometry)) = (
                 SpatialSketchEntityId::mint(entity_id),
                 SpatialSketchGeometry::try_line_from_parts(vertices[0], vertices[1]),
@@ -449,8 +455,6 @@ fn copy_spatial_text(ctx: &DecodeContext<'_>, value: &str) -> Result<String, Cod
     Ok(copy)
 }
 
-
-
 fn spatial_sketch_id_charged(
     ctx: &DecodeContext<'_>,
     feature_id: &str,
@@ -471,7 +475,10 @@ fn spatial_sketch_id_charged(
     } else {
         copy_spatial_text(ctx, feature_id)?
     };
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(value.len()), "validate SLDPRT spatial sketch identity")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(value.len()),
+        "validate SLDPRT spatial sketch identity",
+    )?;
     Ok(SpatialSketchId::mint(value).ok())
 }
 
@@ -480,7 +487,10 @@ fn clone_spatial_sketch_id(
     id: &SpatialSketchId,
 ) -> Result<SpatialSketchId, CodecError> {
     let copy = copy_spatial_text(ctx, id.as_str())?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(copy.len()), "validate SLDPRT spatial sketch identity")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(copy.len()),
+        "validate SLDPRT spatial sketch identity",
+    )?;
     SpatialSketchId::mint(copy)
         .map_err(|_| CodecError::malformed("cannot copy SLDPRT spatial sketch identity"))
 }
@@ -508,9 +518,8 @@ fn spatial_line_vertices_charged(
     };
     let offsets = spatial_vertex_offsets_charged(ctx, object)?;
     let vertices = spatial_vertex_coordinates_charged(ctx, object)?;
-    let pair_width = std::num::NonZeroUsize::new(2).ok_or_else(|| {
-        ctx.refuse_codec_limit("admit SLDPRT spatial line pairs", 1, 0)
-    })?;
+    let pair_width = std::num::NonZeroUsize::new(2)
+        .ok_or_else(|| ctx.refuse_codec_limit("admit SLDPRT spatial line pairs", 1, 0))?;
     Ok((offsets.len().is_multiple_of(2)
         && offsets.len() == vertices.len()
         && ctx
@@ -926,9 +935,8 @@ pub(super) fn spatial_vertex_offsets_charged(
     payload: &[u8],
 ) -> Result<Vec<usize>, CodecError> {
     let mut offsets = Vec::new();
-    let window_size = std::num::NonZeroUsize::new(SPATIAL_VERTEX_PREFIX.len()).ok_or_else(|| {
-        ctx.refuse_codec_limit("admit SLDPRT spatial vertex windows", 1, 0)
-    })?;
+    let window_size = std::num::NonZeroUsize::new(SPATIAL_VERTEX_PREFIX.len())
+        .ok_or_else(|| ctx.refuse_codec_limit("admit SLDPRT spatial vertex windows", 1, 0))?;
     for (offset, bytes) in ctx
         .admit_iter(payload, "scan SLDPRT spatial vertices")?
         .windows(window_size)
@@ -3359,10 +3367,12 @@ fn extended_geometry_locus_single_link_point(
     )? {
         return Ok(false);
     }
-    Ok(payload.get(offset + 132..offset + 138) == Some(&[0x00, 0x00, 0x01, 0x00, 0x00, 0x00])
-        && offset
-            .checked_add(138)
-            .is_some_and(|at| sketch_marker_prefix_at(payload, at)))
+    Ok(
+        payload.get(offset + 132..offset + 138) == Some(&[0x00, 0x00, 0x01, 0x00, 0x00, 0x00])
+            && offset
+                .checked_add(138)
+                .is_some_and(|at| sketch_marker_prefix_at(payload, at)),
+    )
 }
 
 type LinkedProfilePoint = (FiniteVector<2>, [(u16, u16); 2]);

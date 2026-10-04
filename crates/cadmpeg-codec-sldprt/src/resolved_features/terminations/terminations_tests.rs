@@ -37,17 +37,23 @@ fn compact_extrusion_through_all_requires_the_complete_end_spec() {
     payload[18] = 1;
     payload[30..34].copy_from_slice(&[1, 0, 0, 1]);
     payload[92] = 1;
-    assert!(with_service_context(|ctx| compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")));
+    assert!(with_service_context(|ctx| {
+        compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")
+    }));
     payload[8] = 1;
-    assert!(with_service_context(|ctx| compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")));
+    assert!(with_service_context(|ctx| {
+        compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")
+    }));
     payload[8] = 0;
-
     payload[18] = 0;
-    assert!(!with_service_context(|ctx| compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")));
+    assert!(!with_service_context(|ctx| {
+        compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")
+    }));
     payload[18] = 1;
     payload[103] = 1;
-    assert!(!with_service_context(|ctx| compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")));
-
+    assert!(!with_service_context(|ctx| {
+        compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")
+    }));
     let declaration = b"\xff\xff\x01\x00\x0b\x00moEndSpec_c";
     let mut direct = vec![0; declaration.len() + 102];
     direct[..declaration.len()].copy_from_slice(declaration);
@@ -57,10 +63,13 @@ fn compact_extrusion_through_all_requires_the_complete_end_spec() {
     direct[body + 28..body + 32].copy_from_slice(&[1, 0, 0, 1]);
     direct[body + 88..body + 92].copy_from_slice(&[0, 0, 1, 0]);
     direct[body + 98..body + 102].copy_from_slice(&[0xff, 0xff, 1, 0]);
-    assert!(with_service_context(|ctx| compact_extrusion_through_all_at(ctx, &direct, body - 2).expect("decode admission")));
-
+    assert!(with_service_context(|ctx| {
+        compact_extrusion_through_all_at(ctx, &direct, body - 2).expect("decode admission")
+    }));
     direct[body + 6..body + 10].copy_from_slice(&1u32.to_le_bytes());
-    assert!(with_service_context(|ctx| compact_extrusion_through_all_at(ctx, &direct, body - 2).expect("decode admission")));
+    assert!(with_service_context(|ctx| {
+        compact_extrusion_through_all_at(ctx, &direct, body - 2).expect("decode admission")
+    }));
 }
 
 #[test]
@@ -72,7 +81,6 @@ fn compact_extrusion_to_face_requires_a_single_face_reference_child() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("component path test context");
-
     let mut payload = vec![0; 200];
     payload[..2].copy_from_slice(&[0x0c, 0x8e]);
     payload[4] = 1;
@@ -98,7 +106,6 @@ fn compact_extrusion_to_face_requires_a_single_face_reference_child() {
     assert_eq!(path[0].instance, Some(0x8032));
     assert_eq!(path[0].type_signature, [1; 12]);
     assert_eq!(path[0].local_id, Some(7));
-
     for selector in [[4, 2, 0, 0], [6, 2, 0, 0]] {
         payload[92..96].copy_from_slice(&selector);
         assert_eq!(
@@ -113,7 +120,6 @@ fn compact_extrusion_to_face_requires_a_single_face_reference_child() {
         assert_eq!(path[0].local_id, Some(7));
     }
     payload[92..96].copy_from_slice(&[0, 2, 0, 0]);
-
     payload[35..39].copy_from_slice(&[0xe4, 0x82, 0x07, 0x81]);
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &payload, 0, payload.len())
@@ -127,7 +133,6 @@ fn compact_extrusion_to_face_requires_a_single_face_reference_child() {
         None
     );
     payload[37..39].copy_from_slice(&[0x07, 0x81]);
-
     payload[88..92].copy_from_slice(&2u32.to_le_bytes());
     payload[138..158].fill(0);
     payload[158..162].copy_from_slice(&101u32.to_le_bytes());
@@ -137,7 +142,6 @@ fn compact_extrusion_to_face_requires_a_single_face_reference_child() {
             .expect("required invariant");
     assert_eq!(path.len(), 1);
     assert_eq!(terminal_source, Some(101));
-
     payload[88..92].copy_from_slice(&3u32.to_le_bytes());
     payload[138..142].fill(0);
     payload[142..146].copy_from_slice(&[0xf5, 0x81, 0, 0]);
@@ -154,7 +158,6 @@ fn compact_extrusion_to_face_requires_a_single_face_reference_child() {
     assert_eq!(path[1].local_id, Some(9));
     assert_eq!(terminal_source, Some(101));
     payload[88..92].copy_from_slice(&1u32.to_le_bytes());
-
     payload[12] = 1;
     payload[22] = 1;
     assert_eq!(
@@ -162,7 +165,6 @@ fn compact_extrusion_to_face_requires_a_single_face_reference_child() {
             .expect("component path resource admission"),
         Some(100)
     );
-
     payload[88..92].fill(0);
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &payload, 0, payload.len())
@@ -191,7 +193,6 @@ fn compact_extrusion_to_face_accepts_root_adjusted_component_paths() {
         payload[offset + 4..offset + 16].fill(signature);
         payload[offset + 16..offset + 20].copy_from_slice(&local_id.to_le_bytes());
     }
-
     let path_arena = cadmpeg_core::decode::DecodeArena::new();
     let (path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],
@@ -199,7 +200,6 @@ fn compact_extrusion_to_face_accepts_root_adjusted_component_paths() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("component path test context");
-
     let mut slotted = payload(3, 3);
     entry(&mut slotted, 118, 0x8049, 1, 0);
     slotted[138..142].copy_from_slice(&34u32.to_le_bytes());
@@ -216,7 +216,6 @@ fn compact_extrusion_to_face_accepts_root_adjusted_component_paths() {
             .expect("component path resource admission"),
         Some(100)
     );
-
     let mut aligned = payload(2, 5);
     entry(&mut aligned, 118, 0x8633, 1, 1);
     entry(&mut aligned, 146, 0x830d, 2, 1);
@@ -244,7 +243,6 @@ fn compact_extrusion_to_face_accepts_the_legacy_end_spec_token() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("component path test context");
-
     let mut payload = vec![0; 200];
     payload[..2].copy_from_slice(&[3, 0]);
     payload[4] = 1;
@@ -258,7 +256,6 @@ fn compact_extrusion_to_face_accepts_the_legacy_end_spec_token() {
     payload[118..122].copy_from_slice(&[0x32, 0x80, 0, 0]);
     payload[122..134].fill(1);
     payload[134..138].copy_from_slice(&7u32.to_le_bytes());
-
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &payload, 0, payload.len())
             .expect("component path resource admission"),
@@ -281,7 +278,6 @@ fn compact_extrusion_to_face_accepts_a_declared_width_two_child() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("component path test context");
-
     let mut payload = vec![0; 240];
     payload[..2].copy_from_slice(&[0x09, 0x81]);
     payload[4] = 1;
@@ -299,7 +295,6 @@ fn compact_extrusion_to_face_accepts_a_declared_width_two_child() {
     payload[marker + 18..marker + 22].copy_from_slice(&[0x32, 0x80, 0, 0]);
     payload[marker + 22..marker + 34].fill(1);
     payload[marker + 34..marker + 38].copy_from_slice(&7u32.to_le_bytes());
-
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &payload, 0, payload.len())
             .expect("component path resource admission"),
@@ -322,7 +317,6 @@ fn compact_extrusion_to_face_preserves_an_unparsed_declared_face_child() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("component path test context");
-
     let end_spec = b"\xff\xff\x01\x00\x0b\x00moEndSpec_c";
     let face_ref = b"\xff\xff\x01\x00\x11\x00moSingleFaceRef_w";
     let mut payload = vec![0; 180];
@@ -337,13 +331,11 @@ fn compact_extrusion_to_face_preserves_an_unparsed_declared_face_child() {
     payload[body..body + 18].copy_from_slice(&[
         0x18, 0x81, 0xca, 0x80, 2, 0, 0xcc, 0x80, 0, 0, 0xce, 0x80, 1, 0, 0, 0, 0xd0, 0x80,
     ]);
-
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &payload, anchor, payload.len())
             .expect("component path resource admission"),
         Some(body)
     );
-
     let mut lane_token = payload[anchor..].to_vec();
     lane_token[..2].copy_from_slice(&[0x0c, 0x8e]);
     assert_eq!(
@@ -351,7 +343,6 @@ fn compact_extrusion_to_face_preserves_an_unparsed_declared_face_child() {
             .expect("component path resource admission"),
         Some(body - anchor)
     );
-
     let comp_face = b"\xff\xff\x01\x00\x0c\x00moCompFace_c";
     payload[body..body + comp_face.len()].copy_from_slice(comp_face);
     let nested = body + comp_face.len();
@@ -363,7 +354,6 @@ fn compact_extrusion_to_face_preserves_an_unparsed_declared_face_child() {
             .expect("component path resource admission"),
         Some(body)
     );
-
     payload[nested + 2] = 3;
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &payload, anchor, payload.len())
@@ -371,7 +361,6 @@ fn compact_extrusion_to_face_preserves_an_unparsed_declared_face_child() {
         None
     );
     payload[nested + 2] = 2;
-
     payload[body + 4] = 3;
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &payload, anchor, payload.len())
@@ -389,7 +378,6 @@ fn compact_extrusion_to_face_prefers_a_modern_marker_over_a_legacy_body_alias() 
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("component path test context");
-
     let end_spec = b"\xff\xff\x01\x00\x0b\x00moEndSpec_c";
     let face_ref = b"\xff\xff\x01\x00\x11\x00moSingleFaceRef_w";
     let mut payload = vec![0; 360];
@@ -401,7 +389,6 @@ fn compact_extrusion_to_face_prefers_a_modern_marker_over_a_legacy_body_alias() 
     let child = anchor + 33;
     payload[child..child + face_ref.len()].copy_from_slice(face_ref);
     let body = child + face_ref.len();
-
     // This is a valid legacy body path. A modern marker follows it in the
     // same declared child, so accepting both anchors would make the
     // termination ambiguous.
@@ -420,7 +407,6 @@ fn compact_extrusion_to_face_prefers_a_modern_marker_over_a_legacy_body_alias() 
     payload[legacy_entry + 16..legacy_entry + 20].copy_from_slice(&7u32.to_le_bytes());
     payload[legacy_entry + 20..legacy_entry + 40].fill(0);
     payload[legacy_entry + 40..legacy_entry + 44].copy_from_slice(&101u32.to_le_bytes());
-
     let marker = body + 140;
     payload[marker - 12..marker - 8].copy_from_slice(&1u32.to_le_bytes());
     payload[marker - 8..marker - 4].copy_from_slice(&[0, 2, 0, 0]);
@@ -428,7 +414,6 @@ fn compact_extrusion_to_face_prefers_a_modern_marker_over_a_legacy_body_alias() 
     payload[marker + 18..marker + 22].copy_from_slice(&[0x33, 0x80, 0, 0]);
     payload[marker + 22..marker + 34].fill(3);
     payload[marker + 34..marker + 38].copy_from_slice(&9u32.to_le_bytes());
-
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &payload, anchor, payload.len())
             .expect("component path resource admission"),
@@ -531,7 +516,6 @@ fn extrusion_termination_stops_before_the_following_profile_object() {
         references: Vec::new(),
         sketch_entities: Vec::new(),
     };
-
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &lane.native_payload,
@@ -541,7 +525,6 @@ fn extrusion_termination_stops_before_the_following_profile_object() {
     .unwrap();
     enrich_history_extrusion_terminations(&ctx, &mut histories, std::slice::from_ref(&lane))
         .unwrap();
-
     assert_eq!(
         histories[0].features[0].properties.get("EndCondition"),
         Some(&"ToFace".to_string())
@@ -564,7 +547,6 @@ fn extrusion_termination_includes_cosmetic_children_before_the_end_spec() {
     payload[anchor + 18..anchor + 22].copy_from_slice(&1u32.to_le_bytes());
     payload[anchor + 30..anchor + 34].copy_from_slice(&[1, 0, 0, 1]);
     payload[anchor + 92] = 1;
-
     let feature = |id: &str, source_id: &str, input_class: &str| Feature {
         id: id.into(),
         parent: "history".into(),
@@ -635,7 +617,6 @@ fn extrusion_termination_includes_cosmetic_children_before_the_end_spec() {
         references: Vec::new(),
         sketch_entities: Vec::new(),
     };
-
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &lane.native_payload,
@@ -645,7 +626,6 @@ fn extrusion_termination_includes_cosmetic_children_before_the_end_spec() {
     .unwrap();
     enrich_history_extrusion_terminations(&ctx, &mut histories, std::slice::from_ref(&lane))
         .unwrap();
-
     assert_eq!(
         histories[0].features[0].properties.get("EndCondition"),
         Some(&"ThroughAll".to_string())
@@ -721,7 +701,6 @@ fn extrusion_termination_admits_retained_dimension_with_an_existing_depth() {
             references: Vec::new(),
             sketch_entities: Vec::new(),
         };
-
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
             &lane.native_payload,
@@ -739,12 +718,10 @@ fn extrusion_termination_admits_retained_dimension_with_an_existing_depth() {
             histories[0].features[0].parameters.get("D1").cloned(),
         )
     };
-
     assert_eq!(
         resolve(payload(true)),
         (Some(String::from("ThroughAll")), Some(String::from("5mm")))
     );
-
     let mut through_next = vec![0; anchor + 108];
     through_next[anchor..anchor + 2].copy_from_slice(&[0x0c, 0x8e]);
     through_next[anchor + 4] = 1;
@@ -765,7 +742,6 @@ fn extrusion_termination_admits_retained_dimension_with_an_existing_depth() {
         resolve(through_next),
         (Some(String::from("ThroughNext")), Some(String::from("5mm")))
     );
-
     assert_eq!(resolve(payload(false)), (None, Some(String::from("5mm"))));
 }
 
@@ -778,7 +754,6 @@ fn compact_extrusion_to_face_preserves_an_unparsed_framed_face_path() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("component path test context");
-
     let mut payload = vec![0; 240];
     payload[..2].copy_from_slice(&[0x95, 0x81]);
     payload[4] = 1;
@@ -789,7 +764,6 @@ fn compact_extrusion_to_face_preserves_an_unparsed_framed_face_path() {
     payload[marker - 12..marker - 8].copy_from_slice(&6u32.to_le_bytes());
     payload[marker - 8..marker - 4].copy_from_slice(&[0, 2, 0, 0]);
     payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
-
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &payload, 0, payload.len())
             .expect("component path resource admission"),
@@ -826,7 +800,6 @@ fn termination_consensus_uses_stable_reference_identity_across_lanes() {
         .unwrap()
         .unwrap();
     assert_eq!(consensus.reference(), Some("components:1,2,3"));
-
     let exact = super::consensus_termination_vote(&ctx, &[Some(first.clone())])
         .unwrap()
         .unwrap();
@@ -837,7 +810,6 @@ fn termination_consensus_uses_stable_reference_identity_across_lanes() {
     )
     .unwrap()
     .is_none());
-
     let first_depth = super::TerminationVote::Blind {
         depth_m: Some(0.01),
     };
@@ -860,7 +832,6 @@ fn compact_extrusion_to_face_accepts_the_long_declared_face_path() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("component path test context");
-
     let end_spec = b"\xff\xff\x01\x00\x0b\x00moEndSpec_c";
     let face_ref = b"\xff\xff\x01\x00\x11\x00moSingleFaceRef_w";
     let mut payload = vec![0; 360];
@@ -875,14 +846,12 @@ fn compact_extrusion_to_face_accepts_the_long_declared_face_path() {
     let marker = body + 260;
     payload.truncate(marker - 12);
     assert_eq!(selection_vector_tail(&mut payload, &[8, 5, 4]), marker);
-
     let boundary = payload.len();
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &payload, anchor, boundary)
             .expect("component path resource admission"),
         Some(marker)
     );
-
     let second = selection_vector_tail(&mut payload, &[3]);
     assert!(second > marker);
     assert_eq!(
@@ -895,7 +864,6 @@ fn compact_extrusion_to_face_accepts_the_long_declared_face_path() {
             .expect("component path resource admission"),
         None
     );
-
     payload[marker - 8] = 1;
     payload[second - 8] = 1;
     assert_eq!(
@@ -914,7 +882,6 @@ fn compact_extrusion_to_face_accepts_extended_legacy_face_path_padding() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("component path test context");
-
     let mut payload = vec![0; 300];
     payload[..2].copy_from_slice(&[0x34, 0x80]);
     payload[4] = 1;
@@ -944,7 +911,6 @@ fn compact_extrusion_to_face_accepts_extended_legacy_face_path_padding() {
     let terminal = entries[2] + 24;
     payload[terminal..terminal + 24].fill(0);
     payload[terminal + 24..terminal + 28].copy_from_slice(&101u32.to_le_bytes());
-
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &payload, 0, payload.len())
             .expect("component path resource admission"),
@@ -973,21 +939,30 @@ fn compact_extrusion_through_next_shares_the_traversal_tail() {
     payload[18] = 2;
     payload[30..34].copy_from_slice(&[1, 0, 0, 1]);
     payload[92] = 1;
-    assert!(with_service_context(|ctx| compact_extrusion_through_next_at(ctx, &payload, 0).expect("decode admission")));
-    assert!(!with_service_context(|ctx| compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")));
-
+    assert!(with_service_context(|ctx| {
+        compact_extrusion_through_next_at(ctx, &payload, 0).expect("decode admission")
+    }));
+    assert!(!with_service_context(|ctx| {
+        compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")
+    }));
     payload[18] = 1;
-    assert!(with_service_context(|ctx| compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")));
-    assert!(!with_service_context(|ctx| compact_extrusion_through_next_at(ctx, &payload, 0).expect("decode admission")));
+    assert!(with_service_context(|ctx| {
+        compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")
+    }));
+    assert!(!with_service_context(|ctx| {
+        compact_extrusion_through_next_at(ctx, &payload, 0).expect("decode admission")
+    }));
     payload[18] = 2;
     payload[103] = 1;
-    assert!(!with_service_context(|ctx| compact_extrusion_through_next_at(ctx, &payload, 0).expect("decode admission")));
-
+    assert!(!with_service_context(|ctx| {
+        compact_extrusion_through_next_at(ctx, &payload, 0).expect("decode admission")
+    }));
     payload[103] = 0;
     payload[92] = 0;
     payload[90] = 1;
-    assert!(with_service_context(|ctx| compact_extrusion_through_next_at(ctx, &payload, 0).expect("decode admission")));
-
+    assert!(with_service_context(|ctx| {
+        compact_extrusion_through_next_at(ctx, &payload, 0).expect("decode admission")
+    }));
     payload.resize(108, 0);
     payload[100..102].copy_from_slice(&[0x83, 0x81]);
     payload[102..106].copy_from_slice(&5u32.to_le_bytes());
@@ -996,7 +971,9 @@ fn compact_extrusion_through_next_shares_the_traversal_tail() {
     payload.extend_from_slice(&[0xff, 0xff, 0, 0, 1]);
     payload.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
     payload.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0x80, 0xbf]);
-    assert!(with_service_context(|ctx| compact_extrusion_through_next_at(ctx, &payload, 0).expect("decode admission")));
+    assert!(with_service_context(|ctx| {
+        compact_extrusion_through_next_at(ctx, &payload, 0).expect("decode admission")
+    }));
 }
 
 #[test]
@@ -1012,10 +989,13 @@ fn compact_extrusion_through_all_accepts_a_retained_dimension_child() {
     payload.extend_from_slice(&[0xff, 0xff, 0, 0, 3]);
     payload.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
     payload.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0x80, 0xbf]);
-
-    assert!(with_service_context(|ctx| compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")));
+    assert!(with_service_context(|ctx| {
+        compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")
+    }));
     payload[22] = 1;
-    assert!(!with_service_context(|ctx| compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")));
+    assert!(!with_service_context(|ctx| {
+        compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")
+    }));
 }
 
 #[test]
@@ -1034,10 +1014,13 @@ fn compact_extrusion_through_all_accepts_a_dimensioned_traversal_body() {
     payload.extend_from_slice(&[0xff, 0xff, 0, 0, 1]);
     payload.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
     payload.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0x80, 0xbf]);
-
-    assert!(with_service_context(|ctx| compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")));
+    assert!(with_service_context(|ctx| {
+        compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")
+    }));
     payload[44] = 0;
-    assert!(!with_service_context(|ctx| compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")));
+    assert!(!with_service_context(|ctx| {
+        compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")
+    }));
 }
 
 #[test]
@@ -1050,29 +1033,38 @@ fn compact_extrusion_mid_plane_requires_the_dimension_child() {
         payload.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
         payload.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0x80, 0xbf]);
     };
-
     let mut payload = vec![0; 26];
     payload[..2].copy_from_slice(&[0x0c, 0x8e]);
     payload[4] = 1;
     payload[18] = 6;
     payload.extend_from_slice(&[0x6a, 0x81]);
     dimension_tail(&mut payload);
-    assert!(with_service_context(|ctx| compact_extrusion_mid_plane_at(ctx, &payload, 0).expect("decode admission")));
-
+    assert!(with_service_context(|ctx| compact_extrusion_mid_plane_at(
+        ctx, &payload, 0
+    )
+    .expect("decode admission")));
     payload[18] = 5;
-    assert!(!with_service_context(|ctx| compact_extrusion_mid_plane_at(ctx, &payload, 0).expect("decode admission")));
+    assert!(!with_service_context(|ctx| compact_extrusion_mid_plane_at(
+        ctx, &payload, 0
+    )
+    .expect("decode admission")));
     payload[18] = 6;
     let last = payload.len() - 1;
     payload[last] = 0;
-    assert!(!with_service_context(|ctx| compact_extrusion_mid_plane_at(ctx, &payload, 0).expect("decode admission")));
-
+    assert!(!with_service_context(|ctx| compact_extrusion_mid_plane_at(
+        ctx, &payload, 0
+    )
+    .expect("decode admission")));
     let mut payload = vec![0; 26];
     payload[..2].copy_from_slice(&[0x0c, 0x8e]);
     payload[4] = 1;
     payload[18] = 6;
     payload.extend_from_slice(b"\xff\xff\x01\x00\x16\x00moDisplayDistanceDim_c");
     dimension_tail(&mut payload);
-    assert!(with_service_context(|ctx| compact_extrusion_mid_plane_at(ctx, &payload, 0).expect("decode admission")));
+    assert!(with_service_context(|ctx| compact_extrusion_mid_plane_at(
+        ctx, &payload, 0
+    )
+    .expect("decode admission")));
 }
 
 #[test]
@@ -1087,19 +1079,32 @@ fn compact_extrusion_blind_requires_code_zero_and_the_dimension_child() {
     payload.extend_from_slice(&[0xff, 0xff, 0, 0, 3]);
     payload.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
     payload.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0x80, 0xbf]);
-
-    assert!(with_service_context(|ctx| compact_extrusion_blind_at(ctx, &payload, 0).expect("decode admission")));
+    assert!(with_service_context(|ctx| compact_extrusion_blind_at(
+        ctx, &payload, 0
+    )
+    .expect("decode admission")));
     payload[block + 8] = 0x40;
-    assert!(with_service_context(|ctx| compact_extrusion_blind_at(ctx, &payload, 0).expect("decode admission")));
+    assert!(with_service_context(|ctx| compact_extrusion_blind_at(
+        ctx, &payload, 0
+    )
+    .expect("decode admission")));
     payload[18] = 1;
-    assert!(!with_service_context(|ctx| compact_extrusion_blind_at(ctx, &payload, 0).expect("decode admission")));
+    assert!(!with_service_context(|ctx| compact_extrusion_blind_at(
+        ctx, &payload, 0
+    )
+    .expect("decode admission")));
     payload[18] = 0;
     payload[22] = 1;
-    assert!(!with_service_context(|ctx| compact_extrusion_blind_at(ctx, &payload, 0).expect("decode admission")));
-
+    assert!(!with_service_context(|ctx| compact_extrusion_blind_at(
+        ctx, &payload, 0
+    )
+    .expect("decode admission")));
     let mut compact = payload[..22].to_vec();
     compact.extend_from_slice(&payload[26..]);
-    assert!(with_service_context(|ctx| compact_extrusion_blind_at(ctx, &compact, 0).expect("decode admission")));
+    assert!(with_service_context(|ctx| compact_extrusion_blind_at(
+        ctx, &compact, 0
+    )
+    .expect("decode admission")));
 }
 
 #[test]
@@ -1112,7 +1117,6 @@ fn compact_extrusion_through_all_both_accepts_both_carriers() {
         payload.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
         payload.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0x80, 0xbf]);
     };
-
     // Traversal carrier: first-direction code 1 with second-direction 1.
     let mut payload = vec![0; 104];
     payload[..2].copy_from_slice(&[0x0c, 0x8e]);
@@ -1120,19 +1124,30 @@ fn compact_extrusion_through_all_both_accepts_both_carriers() {
     payload[22] = 1;
     payload[30..34].copy_from_slice(&[1, 0, 0, 1]);
     payload[92] = 1;
-    assert!(with_service_context(|ctx| compact_extrusion_through_all_both_at(ctx, &payload, 0).expect("decode admission")));
-    assert!(!with_service_context(|ctx| compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")));
+    assert!(with_service_context(|ctx| {
+        compact_extrusion_through_all_both_at(ctx, &payload, 0).expect("decode admission")
+    }));
+    assert!(!with_service_context(|ctx| {
+        compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")
+    }));
     payload[8] = 1;
-    assert!(with_service_context(|ctx| compact_extrusion_through_all_both_at(ctx, &payload, 0).expect("decode admission")));
+    assert!(with_service_context(|ctx| {
+        compact_extrusion_through_all_both_at(ctx, &payload, 0).expect("decode admission")
+    }));
     payload[8] = 2;
-    assert!(!with_service_context(|ctx| compact_extrusion_through_all_both_at(ctx, &payload, 0).expect("decode admission")));
+    assert!(!with_service_context(|ctx| {
+        compact_extrusion_through_all_both_at(ctx, &payload, 0).expect("decode admission")
+    }));
     payload[8] = 0;
     payload[22] = 0;
-    assert!(!with_service_context(|ctx| compact_extrusion_through_all_both_at(ctx, &payload, 0).expect("decode admission")));
+    assert!(!with_service_context(|ctx| {
+        compact_extrusion_through_all_both_at(ctx, &payload, 0).expect("decode admission")
+    }));
     payload[22] = 1;
     payload[18] = 2;
-    assert!(!with_service_context(|ctx| compact_extrusion_through_all_both_at(ctx, &payload, 0).expect("decode admission")));
-
+    assert!(!with_service_context(|ctx| {
+        compact_extrusion_through_all_both_at(ctx, &payload, 0).expect("decode admission")
+    }));
     // Dedicated code 9 carrier with the retained dimension child.
     let mut payload = vec![0; 26];
     payload[..2].copy_from_slice(&[0x0c, 0x8e]);
@@ -1140,12 +1155,18 @@ fn compact_extrusion_through_all_both_accepts_both_carriers() {
     payload[22] = 1;
     payload.extend_from_slice(&[0x6a, 0x81]);
     dimension_tail(&mut payload);
-    assert!(with_service_context(|ctx| compact_extrusion_through_all_both_at(ctx, &payload, 0).expect("decode admission")));
+    assert!(with_service_context(|ctx| {
+        compact_extrusion_through_all_both_at(ctx, &payload, 0).expect("decode admission")
+    }));
     payload[22] = 0;
-    assert!(!with_service_context(|ctx| compact_extrusion_through_all_both_at(ctx, &payload, 0).expect("decode admission")));
+    assert!(!with_service_context(|ctx| {
+        compact_extrusion_through_all_both_at(ctx, &payload, 0).expect("decode admission")
+    }));
     payload[22] = 1;
     payload[4] = 2;
-    assert!(!with_service_context(|ctx| compact_extrusion_through_all_both_at(ctx, &payload, 0).expect("decode admission")));
+    assert!(!with_service_context(|ctx| {
+        compact_extrusion_through_all_both_at(ctx, &payload, 0).expect("decode admission")
+    }));
 }
 
 #[test]
@@ -1161,17 +1182,27 @@ fn compact_extrusion_blind_second_direction_requires_the_dimension_child() {
     payload.extend_from_slice(&[0xff, 0xff, 0, 0, 3]);
     payload.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
     payload.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0x80, 0xbf]);
-    assert!(with_service_context(|ctx| compact_extrusion_blind_through_all_second_at(ctx, &payload, 0).expect("decode admission")));
-    assert!(!with_service_context(|ctx| compact_extrusion_through_all_both_at(ctx, &payload, 0).expect("decode admission")));
+    assert!(with_service_context(|ctx| {
+        compact_extrusion_blind_through_all_second_at(ctx, &payload, 0).expect("decode admission")
+    }));
+    assert!(!with_service_context(|ctx| {
+        compact_extrusion_through_all_both_at(ctx, &payload, 0).expect("decode admission")
+    }));
     payload[22] = 0;
-    assert!(!with_service_context(|ctx| compact_extrusion_blind_through_all_second_at(ctx, &payload, 0).expect("decode admission")));
+    assert!(!with_service_context(|ctx| {
+        compact_extrusion_blind_through_all_second_at(ctx, &payload, 0).expect("decode admission")
+    }));
     payload[22] = 1;
     payload[4] = 0;
-    assert!(!with_service_context(|ctx| compact_extrusion_blind_through_all_second_at(ctx, &payload, 0).expect("decode admission")));
+    assert!(!with_service_context(|ctx| {
+        compact_extrusion_blind_through_all_second_at(ctx, &payload, 0).expect("decode admission")
+    }));
     payload[4] = 1;
     let last = payload.len() - 1;
     payload[last] = 0;
-    assert!(!with_service_context(|ctx| compact_extrusion_blind_through_all_second_at(ctx, &payload, 0).expect("decode admission")));
+    assert!(!with_service_context(|ctx| {
+        compact_extrusion_blind_through_all_second_at(ctx, &payload, 0).expect("decode admission")
+    }));
 }
 
 #[test]
@@ -1183,21 +1214,30 @@ fn end_spec_headers_require_the_anchor_class_identity() {
     payload[92] = 1;
     // Header-shaped run without a class token or declaration at the anchor
     // is a fillet edge-set impostor, not an end spec.
-    assert!(!with_service_context(|ctx| compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")));
+    assert!(!with_service_context(|ctx| {
+        compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")
+    }));
     payload[..2].copy_from_slice(&[0x0c, 0x8e]);
-    assert!(with_service_context(|ctx| compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")));
+    assert!(with_service_context(|ctx| {
+        compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")
+    }));
     payload[..2].copy_from_slice(&[0xff, 0xff]);
-    assert!(!with_service_context(|ctx| compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")));
-
+    assert!(!with_service_context(|ctx| {
+        compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")
+    }));
     let mut payload = vec![0; 15];
     payload.extend_from_slice(&[0; 104]);
     payload[15 + 4] = 1;
     payload[15 + 18] = 1;
     payload[15 + 30..15 + 34].copy_from_slice(&[1, 0, 0, 1]);
     payload[15 + 92] = 1;
-    assert!(!with_service_context(|ctx| compact_extrusion_through_all_at(ctx, &payload, 15).expect("decode admission")));
+    assert!(!with_service_context(|ctx| {
+        compact_extrusion_through_all_at(ctx, &payload, 15).expect("decode admission")
+    }));
     payload[..17].copy_from_slice(b"\xff\xff\x01\x00\x0b\x00moEndSpec_c");
-    assert!(with_service_context(|ctx| compact_extrusion_through_all_at(ctx, &payload, 15).expect("decode admission")));
+    assert!(with_service_context(|ctx| {
+        compact_extrusion_through_all_at(ctx, &payload, 15).expect("decode admission")
+    }));
 }
 
 #[test]
@@ -1209,13 +1249,11 @@ fn legacy_single_face_reference_requires_a_unique_counted_path() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("component path test context");
-
     let mut payload = vec![0; 128];
     payload[0..4].copy_from_slice(&[0x53, 0x81, 0x80, 0x80]);
     payload[4..8].copy_from_slice(&2u32.to_le_bytes());
     payload[11..15].copy_from_slice(&101u32.to_le_bytes());
     payload[15..19].copy_from_slice(&101u32.to_le_bytes());
-
     let control = 44;
     payload[control..control + 2].copy_from_slice(&[0x1e, 0x81]);
     payload[control + 2..control + 6].copy_from_slice(&1u32.to_le_bytes());
@@ -1223,13 +1261,11 @@ fn legacy_single_face_reference_requires_a_unique_counted_path() {
     payload[control + 14..control + 18].copy_from_slice(&[0, 2, 0, 0]);
     payload[control + 22..control + 30].copy_from_slice(&[1; 8]);
     payload[control + 30..control + 38].copy_from_slice(&[1; 8]);
-
     let entry = control + 40;
     payload[entry..entry + 4].copy_from_slice(&[0x32, 0x80, 0, 0]);
     payload[entry + 4..entry + 16].copy_from_slice(&[1; 12]);
     payload[entry + 16..entry + 20].copy_from_slice(&7u32.to_le_bytes());
     payload[entry + 20..entry + 28].copy_from_slice(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]);
-
     let path = legacy_single_face_reference_path_at(&path_ctx, &payload, 0)
         .expect("component path resource admission")
         .expect("required invariant");
@@ -1237,7 +1273,6 @@ fn legacy_single_face_reference_requires_a_unique_counted_path() {
     assert_eq!(path[0].instance, Some(0x8032));
     assert_eq!(path[0].type_signature, [1; 12]);
     assert_eq!(path[0].local_id, Some(7));
-
     payload[entry + 1] = 0;
     assert_eq!(
         legacy_single_face_reference_path_at(&path_ctx, &payload, 0)
@@ -1262,7 +1297,6 @@ fn compact_extrusion_to_vertex_accepts_both_point_reference_forms() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("component path test context");
-
     // Variant A, repeated-token form.
     let mut payload = vec![0; 30];
     payload[..2].copy_from_slice(&[0x0c, 0x8e]);
@@ -1281,7 +1315,6 @@ fn compact_extrusion_to_vertex_accepts_both_point_reference_forms() {
         .expect("component path resource admission")
         .expect("required invariant");
     assert_eq!(path.last().expect("required invariant").local_id, Some(7));
-
     // A to-face selector byte is not a point reference.
     payload[38] = 0x40;
     assert_eq!(
@@ -1297,7 +1330,6 @@ fn compact_extrusion_to_vertex_accepts_both_point_reference_forms() {
         None
     );
     payload[18] = 3;
-
     // Variant B, edge endpoint reference.
     let mut payload = vec![0; 30];
     payload[..2].copy_from_slice(&[0x0c, 0x8e]);
@@ -1317,7 +1349,6 @@ fn compact_extrusion_to_vertex_accepts_both_point_reference_forms() {
         CompactPointReferenceKind::EdgeEndpoint { .. }
     ));
     assert_eq!(kind.endpoint_selector(), Some(0));
-
     let endpoint_selector_value: u32 = 0x0012_3456;
     payload[marker - 4..marker].copy_from_slice(&endpoint_selector_value.to_le_bytes());
     let (_, kind) = compact_extrusion_to_vertex_at(&path_ctx, &payload, 0, payload.len())
@@ -1335,7 +1366,6 @@ fn compact_extrusion_to_vertex_requires_one_reference_in_the_feature_interval() 
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("component path test context");
-
     let mut payload = vec![0; 30];
     payload[..2].copy_from_slice(&[0x0c, 0x8e]);
     payload[4] = 1;
@@ -1351,7 +1381,6 @@ fn compact_extrusion_to_vertex_requires_one_reference_in_the_feature_interval() 
             .map(|(found, _)| found),
         Some(marker)
     );
-
     let boundary = payload.len();
     let second = selection_vector_tail(&mut payload, &[5, 8]);
     assert!(second > marker);
@@ -1377,7 +1406,6 @@ fn compact_extrusion_offset_from_face_requires_the_late_face_reference() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("component path test context");
-
     let mut payload = vec![0; 26];
     payload[..2].copy_from_slice(&[0x0c, 0x8e]);
     payload[4] = 1;
@@ -1401,7 +1429,6 @@ fn compact_extrusion_offset_from_face_requires_the_late_face_reference() {
             .expect("component path resource admission"),
         Some(marker)
     );
-
     payload.extend_from_slice(&[1, 1, 0]);
     payload.extend_from_slice(&[0xf2, 0x82, 0xe6, 0x80, 2, 0, 0, 0, 0x40, 0, 0]);
     payload.extend_from_slice(&[0; 8]);
@@ -1419,7 +1446,6 @@ fn compact_extrusion_offset_from_face_requires_the_late_face_reference() {
             .expect("component path resource admission"),
         None
     );
-
     // Wrong code or a missing face-reference anchor yields no detection.
     payload[18] = 6;
     assert_eq!(
@@ -1449,7 +1475,6 @@ fn compact_body_path_requires_type_three_vector() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("component path test context");
-
     let marker = 12;
     let mut payload = vec![0; 100];
     payload[..4].copy_from_slice(&2u32.to_le_bytes());
@@ -1474,7 +1499,6 @@ fn compact_body_path_requires_type_three_vector() {
             .map(|components| components.len()),
         Some(2)
     );
-
     payload[..4].copy_from_slice(&3u32.to_le_bytes());
     payload[second + 20..second + 28].copy_from_slice(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]);
     assert_eq!(
@@ -1482,7 +1506,6 @@ fn compact_body_path_requires_type_three_vector() {
             .expect("component path resource admission"),
         Some(vec![6, 7])
     );
-
     payload[second + 20..second + 30].copy_from_slice(&[0; 10]);
     assert_eq!(
         compact_body_path_at(&path_ctx, &payload, marker)
@@ -1501,7 +1524,6 @@ fn compact_body_path_requires_type_three_vector() {
             .expect("component path resource admission"),
         None
     );
-
     payload[4] = 2;
     assert_eq!(
         compact_body_path_at(&path_ctx, &payload, marker)
@@ -1519,13 +1541,11 @@ fn compact_body_path_accepts_anonymous_mixed_entries() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("component path test context");
-
     let marker = 12;
     let mut payload = vec![0; marker + 18];
     payload[..4].copy_from_slice(&3u32.to_le_bytes());
     payload[4..8].copy_from_slice(&[0, 3, 0, 0]);
     payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
-
     payload.extend_from_slice(&0x803eu16.to_le_bytes());
     payload.extend_from_slice(&[0, 0]);
     payload.extend_from_slice(&[0x34, 0x80, 0x37, 0, 37, 0, 0, 0, 0x7a, 0x83, 0xd9, 0x4a]);
@@ -1538,13 +1558,11 @@ fn compact_body_path_accepts_anonymous_mixed_entries() {
     payload.extend_from_slice(&[0, 0]);
     payload.extend_from_slice(&[0x34, 0x80, 0x37, 0, 37, 0, 0, 0, 0x7a, 0x83, 0xd9, 0x4a]);
     payload.extend_from_slice(&3u32.to_le_bytes());
-
     assert_eq!(
         compact_body_path_at(&path_ctx, &payload, marker)
             .expect("component path resource admission"),
         Some(vec![2, 1, 3])
     );
-
     payload[..4].copy_from_slice(&4u32.to_le_bytes());
     payload.extend_from_slice(&[0; 10]);
     assert_eq!(
@@ -1570,13 +1588,11 @@ fn compact_body_component_path_accepts_counted_sentinel_separators() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("component path test context");
-
     let marker = 12;
     let mut payload = vec![0; marker + 18];
     payload[..4].copy_from_slice(&10u32.to_le_bytes());
     payload[4..8].copy_from_slice(&[0, 3, 0, 0]);
     payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
-
     let signature = |source: u32, timestamp: u32| {
         let mut signature = vec![0x38, 0x80, 0x3b, 0];
         signature.extend_from_slice(&source.to_le_bytes());
@@ -1593,7 +1609,6 @@ fn compact_body_component_path_accepts_counted_sentinel_separators() {
         payload.extend_from_slice(&[0xff; 4]);
         payload.extend_from_slice(&[0; 4]);
     };
-
     entry(&mut payload, 0x8521, 213, 1);
     local(&mut payload, 2);
     entry(&mut payload, 0x8521, 213, 1);
@@ -1611,7 +1626,6 @@ fn compact_body_component_path_accepts_counted_sentinel_separators() {
     local(&mut payload, 1);
     entry(&mut payload, 0x8521, 213, 1);
     local(&mut payload, 8);
-
     let components = compact_body_component_path_at(&path_ctx, &payload, marker)
         .expect("component path resource admission")
         .expect("counted lineage path with sentinel separators");
@@ -1682,7 +1696,6 @@ fn enrich_combine_uses_outermost_body_paths() {
         references: Vec::new(),
         sketch_entities: Vec::new(),
     }];
-
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &lanes[0].native_payload,
@@ -1691,7 +1704,6 @@ fn enrich_combine_uses_outermost_body_paths() {
     )
     .unwrap();
     enrich_history_combine_selections(&ctx, &mut histories, &lanes).unwrap();
-
     let properties = &histories[0].features[0].properties;
     assert_eq!(
         properties.get("Target"),
@@ -1725,7 +1737,6 @@ fn compact_combine_operation_is_name_length_relative() {
         }),
         None
     );
-
     let offset = 11;
     let mut tokenized = vec![0; 180];
     tokenized[offset..offset + 5].copy_from_slice(&[0xe3, 0x85, 0xff, 0xfe, 0xff]);
@@ -1921,7 +1932,6 @@ fn combine_selection_error(policy: cadmpeg_core::decode::DecodePolicy) -> cadmpe
         references: Vec::new(),
         sketch_entities: Vec::new(),
     }];
-
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (service, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &lanes[0].native_payload,
@@ -1987,5 +1997,4 @@ fn combine_selection_enrichment_refuses_work_limit() {
 mod combine_projection_limits;
 mod route_limits;
 mod surface_sweep_limits;
-
 mod component_text;

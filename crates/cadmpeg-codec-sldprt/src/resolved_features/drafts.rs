@@ -49,14 +49,19 @@ pub(super) fn same_draft_operands(
     {
         return Ok(false);
     }
-    for (left, right) in ctx.admit_iter(&left.faces, "compare SLDPRT draft faces")?.zip(&right.faces) {
+    for (left, right) in ctx
+        .admit_iter(&left.faces, "compare SLDPRT draft faces")?
+        .zip(&right.faces)
+    {
         if !same_component_path_semantics(ctx, left, right)? {
             return Ok(false);
         }
     }
-    Ok((left_direction.x - right_direction.x).abs() <= EPS_DRAFTS_SAME_DRAFT_OPERANDS_E12
-        && (left_direction.y - right_direction.y).abs() <= EPS_DRAFTS_SAME_DRAFT_OPERANDS_E12
-        && (left_direction.z - right_direction.z).abs() <= EPS_DRAFTS_SAME_DRAFT_OPERANDS_E12)
+    Ok(
+        (left_direction.x - right_direction.x).abs() <= EPS_DRAFTS_SAME_DRAFT_OPERANDS_E12
+            && (left_direction.y - right_direction.y).abs() <= EPS_DRAFTS_SAME_DRAFT_OPERANDS_E12
+            && (left_direction.z - right_direction.z).abs() <= EPS_DRAFTS_SAME_DRAFT_OPERANDS_E12,
+    )
 }
 
 fn draft_operands(
@@ -112,7 +117,8 @@ fn declared_draft_operands(
         &lane.native_payload,
         neutral_end,
         records.as_slice().first().map_or(end, |record| record.0),
-    )? else {
+    )?
+    else {
         return Ok(None);
     };
     let mut faces = Vec::<Vec<FeatureInputComponentPathEntry>>::new();
@@ -180,9 +186,12 @@ fn compact_parting_line_draft_operands(
     if parting_records.next().is_some() {
         return Ok(None);
     }
-    let Some(first_face) = ctx.admit_iter(&records, "find SLDPRT drafted face")?.find(|(marker, role, _, _)| {
-        *role == CompactDraftSelectionRole::DraftedFace && *marker > parting_record.0
-    }) else {
+    let Some(first_face) =
+        ctx.admit_iter(&records, "find SLDPRT drafted face")?
+            .find(|(marker, role, _, _)| {
+                *role == CompactDraftSelectionRole::DraftedFace && *marker > parting_record.0
+            })
+    else {
         return Ok(None);
     };
     let Some(pull_direction) =
@@ -327,9 +336,16 @@ fn same_draft_anchor(
             same_component_path_semantics(ctx, left, right)
         }
         (DraftAnchor::PartingTool(left), DraftAnchor::PartingTool(right)) => {
-            if left.len() != right.len() { return Ok(false); }
-            for (left, right) in ctx.admit_iter(left, "compare SLDPRT parting tools")?.zip(right) {
-                if !same_component_path_semantics(ctx, left, right)? { return Ok(false); }
+            if left.len() != right.len() {
+                return Ok(false);
+            }
+            for (left, right) in ctx
+                .admit_iter(left, "compare SLDPRT parting tools")?
+                .zip(right)
+            {
+                if !same_component_path_semantics(ctx, left, right)? {
+                    return Ok(false);
+                }
             }
             Ok(true)
         }
@@ -343,23 +359,34 @@ fn same_component_path_semantics(
     right: &[FeatureInputComponentPathEntry],
 ) -> Result<bool, CodecError> {
     Ok(left.len() == right.len()
-        && ctx.admit_iter(left, "compare SLDPRT draft component path")?.zip(right).all(|(left, right)| {
-            left.type_signature[4..8] == right.type_signature[4..8]
-                && left.local_id == right.local_id
-        }))
+        && ctx
+            .admit_iter(left, "compare SLDPRT draft component path")?
+            .zip(right)
+            .all(|(left, right)| {
+                left.type_signature[4..8] == right.type_signature[4..8]
+                    && left.local_id == right.local_id
+            }))
 }
 
 fn unique_declared_plane_reference_token(
     ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
 ) -> Result<Option<[u8; 2]>, CodecError> {
-    let mut tokens = ctx.admit_iter(&lane.classes, "scan SLDPRT declared plane tokens")?.filter_map(|class| {
-        if class.name != "moPlaneRef_w" { return None; }
-        let body = usize::try_from(class.offset).ok()?.checked_add(6 + class.name.len())?;
-        let value = View::u16_le_at(&lane.native_payload, body)?;
-        is_class_token(value).then_some(value.to_le_bytes())
-    });
-    let Some(first) = tokens.next() else { return Ok(None); };
+    let mut tokens = ctx
+        .admit_iter(&lane.classes, "scan SLDPRT declared plane tokens")?
+        .filter_map(|class| {
+            if class.name != "moPlaneRef_w" {
+                return None;
+            }
+            let body = usize::try_from(class.offset)
+                .ok()?
+                .checked_add(6 + class.name.len())?;
+            let value = View::u16_le_at(&lane.native_payload, body)?;
+            is_class_token(value).then_some(value.to_le_bytes())
+        });
+    let Some(first) = tokens.next() else {
+        return Ok(None);
+    };
     Ok(tokens.all(|token| token == first).then_some(first))
 }
 
@@ -423,12 +450,25 @@ fn draft_plane_reference_at(
 }
 
 fn unique_draft_direction(
-    ctx: &DecodeContext<'_>, payload: &[u8], start: usize, end: usize,
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    start: usize,
+    end: usize,
 ) -> Result<Option<FeatureDirection3>, CodecError> {
     const HANDLES: [u8; 8] = [0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
-    let Some(final_frame_start) = end.checked_sub(aligned_dir::LEN).filter(|end| *end >= start) else { return Ok(None); };
-    let Some(offset_bytes) = payload.get(start..=final_frame_start) else { return Ok(None); };
-    let mut candidates = ctx.admit_iter(offset_bytes, "scan SLDPRT draft directions")?.enumerate().map(|(offset, _)| start + offset)
+    let Some(final_frame_start) = end
+        .checked_sub(aligned_dir::LEN)
+        .filter(|end| *end >= start)
+    else {
+        return Ok(None);
+    };
+    let Some(offset_bytes) = payload.get(start..=final_frame_start) else {
+        return Ok(None);
+    };
+    let mut candidates = ctx
+        .admit_iter(offset_bytes, "scan SLDPRT draft directions")?
+        .enumerate()
+        .map(|(offset, _)| start + offset)
         .filter(|offset| payload.get(*offset..*offset + HANDLES.len()) == Some(HANDLES.as_slice()))
         .filter_map(|offset| {
             let frame = payload.get(offset..end)?;
@@ -464,7 +504,9 @@ fn unique_draft_direction(
                     .flatten()
             })
         });
-    let Some(direction) = candidates.next() else { return Ok(None); };
+    let Some(direction) = candidates.next() else {
+        return Ok(None);
+    };
     if candidates.any(|candidate| candidate != direction) {
         return Ok(None);
     }
@@ -484,13 +526,13 @@ pub(super) fn draft_operand_candidates(
         .ok_or_else(|| ctx.refuse_codec_limit(NAME_OPERATION, u64::MAX - 1, u64::MAX))?;
     let mut objects = Vec::new();
     for history in ctx.admit_iter(histories, OPERATION)? {
-      for feature in ctx.admit_iter(&history.features, OPERATION)? {
-        ctx.charge_work(name_scan_work, NAME_OPERATION)?;
-        if let Some(name) = feature_object_name(feature, lane) {
-            ctx.reserve_vec(&mut objects, 1, OPERATION)?;
-            objects.push((name.offset, feature));
+        for feature in ctx.admit_iter(&history.features, OPERATION)? {
+            ctx.charge_work(name_scan_work, NAME_OPERATION)?;
+            if let Some(name) = feature_object_name(feature, lane) {
+                ctx.reserve_vec(&mut objects, 1, OPERATION)?;
+                objects.push((name.offset, feature));
+            }
         }
-      }
     }
     ctx.sort_unstable_by(&mut objects, |value| &value.0, Ord::cmp, OPERATION)?;
     let mut candidates = Vec::new();
@@ -644,7 +686,8 @@ mod tests {
         let (history, lane) = named_draft_fixture();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 1;
+        // Admit one history and one feature before the name scan.
+        policy.limits.max_work_units = 2;
         let (ctx, _) = DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy)
             .expect("test context");
         let error = super::draft_operand_candidates(&ctx, &[history], &lane)
@@ -890,9 +933,14 @@ mod tests {
         );
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &payload, &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("test context");
+            &payload,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("test context");
         assert_eq!(
-            unique_draft_direction(&ctx, &payload, frame, end).expect("draft direction query")
+            unique_draft_direction(&ctx, &payload, frame, end)
+                .expect("draft direction query")
                 .map(cadmpeg_ir::features::FeatureDirection3::get),
             Some(Vector3::new(0.0, -1.0, 0.0))
         );
@@ -959,7 +1007,9 @@ mod tests {
         assert_eq!(parting_paths.len(), 2);
         assert_eq!(parsed_parting_end, parting_selection_end);
         assert_eq!(
-            unique_draft_direction(&ctx, &lane.native_payload, parsed_parting_end, face_marker).expect("draft direction query").map(cadmpeg_ir::features::FeatureDirection3::get),
+            unique_draft_direction(&ctx, &lane.native_payload, parsed_parting_end, face_marker)
+                .expect("draft direction query")
+                .map(cadmpeg_ir::features::FeatureDirection3::get),
             Some(Vector3::new(0.0, -1.0, 0.0))
         );
         assert_eq!(
@@ -1050,7 +1100,9 @@ mod tests {
                 .expect("neutral-plane parse")
                 .expect("neutral-plane record");
         assert_eq!(
-            unique_draft_direction(&ctx, &lane.native_payload, neutral.2, first_face).expect("draft direction query").map(cadmpeg_ir::features::FeatureDirection3::get),
+            unique_draft_direction(&ctx, &lane.native_payload, neutral.2, first_face)
+                .expect("draft direction query")
+                .map(cadmpeg_ir::features::FeatureDirection3::get),
             Some(Vector3::new(0.0, 0.0, 1.0))
         );
         let operands = draft_operands(&ctx, &feature, &lane, object_start, class_offset)

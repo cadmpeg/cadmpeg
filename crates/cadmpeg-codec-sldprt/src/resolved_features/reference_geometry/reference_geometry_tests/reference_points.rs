@@ -39,7 +39,8 @@ fn reference_point_enrichment_refuses_retained_limit() {
 #[test]
 fn reference_point_enrichment_refuses_work_limit() {
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
+    // Admit one lane before the history feature scan.
+    policy.limits.max_work_units = 1;
     let error = reference_point_error(policy);
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits

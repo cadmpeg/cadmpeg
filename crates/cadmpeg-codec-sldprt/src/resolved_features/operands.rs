@@ -17,7 +17,7 @@ pub(crate) fn resolve_scalar_operand_markers<'a>(
     entities: &[&'a SketchInputEntity],
     operands: &[FeatureInputOperand],
 ) -> Result<Vec<Option<&'a SketchInputEntity>>, CodecError> {
-let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT operands temporary storage")?;
+    let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT operands temporary storage")?;
 
     let mut resolved = Vec::new();
     for operand in ctx.admit_iter(operands, "resolve SLDPRT scalar operands")? {
@@ -46,13 +46,7 @@ let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT operands temporary sto
                     &entities,
                     first_operand.kind,
                     first_operand.entity_index,
-                    |id| {
-                        ctx.equal(
-                            id,
-                            second.id(),
-                            "compare SLDPRT scalar operand markers",
-                        )
-                    },
+                    |id| ctx.equal(id, second.id(), "compare SLDPRT scalar operand markers"),
                 )?
                 .map(|alternative| [alternative, *second]),
                 resolve_operand_marker_excluding(
@@ -60,13 +54,7 @@ let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT operands temporary sto
                     &entities,
                     second_operand.kind,
                     second_operand.entity_index,
-                    |id| {
-                        ctx.equal(
-                            id,
-                            first.id(),
-                            "compare SLDPRT scalar operand markers",
-                        )
-                    },
+                    |id| ctx.equal(id, first.id(), "compare SLDPRT scalar operand markers"),
                 )?
                 .map(|alternative| [*first, alternative]),
             ];
@@ -109,11 +97,13 @@ let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT operands temporary sto
         .admit_iter(&resolved, "index resolved SLDPRT scalar operand markers")?
         .flatten()
     {
-        temporary_storage.with_storage(|| ctx.insert_hash_set(
-            &mut resolved_siblings,
-            entity.id(),
-            "index SLDPRT scalar operand markers",
-        ))?;
+        temporary_storage.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut resolved_siblings,
+                entity.id(),
+                "index SLDPRT scalar operand markers",
+            )
+        })?;
     }
     for (operand, target) in ctx
         .admit_iter(operands, "resolve remaining SLDPRT scalar operands")?
@@ -197,7 +187,7 @@ fn resolve_operand_marker_excluding<'a>(
     address: u16,
     excluded: impl Fn(&str) -> Result<bool, CodecError>,
 ) -> Result<Option<&'a SketchInputEntity>, CodecError> {
-let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT operands temporary storage")?;
+    let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT operands temporary storage")?;
 
     let excluded = &excluded;
     if kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_81DD) {
@@ -217,7 +207,8 @@ let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT operands temporary sto
                     coordinates.as_raw(),
                     "check SLDPRT scalar operand point coordinates",
                 )?
-                .copied().all(f64::is_finite)
+                .copied()
+                .all(f64::is_finite)
             {
                 continue;
             }
@@ -294,13 +285,13 @@ let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT operands temporary sto
                 Ok(entity.object_index() == Some(u32::from(address))
                     && entity.coordinates_m.is_some()
                     && {
-                matches!(
-                    entity.kind(),
-                    SketchInputKind::Point
-                        | SketchInputKind::ConstrainedPoint
-                        | SketchInputKind::LineOrCircle
-                        | SketchInputKind::Arc
-                )
+                        matches!(
+                            entity.kind(),
+                            SketchInputKind::Point
+                                | SketchInputKind::ConstrainedPoint
+                                | SketchInputKind::LineOrCircle
+                                | SketchInputKind::Arc
+                        )
                     }
                     && !excluded(entity.id())?)
             },
@@ -378,10 +369,13 @@ let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT operands temporary sto
         // as point references, but may also name a relation handle whose
         // links resolve to a point locus. A line or arc sharing the address
         // is not a candidate for this operand family.
-        if ctx.admit_iter(entities, "check indexed SLDPRT point operand address")?.any(|entity| {
-            entity.object_index() == Some(u32::from(address))
-                && operand_accepts_marker(kind, entity.kind())
-        }) {
+        if ctx
+            .admit_iter(entities, "check indexed SLDPRT point operand address")?
+            .any(|entity| {
+                entity.object_index() == Some(u32::from(address))
+                    && operand_accepts_marker(kind, entity.kind())
+            })
+        {
             return unique_entity(
                 ctx,
                 entities,
@@ -423,7 +417,8 @@ let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT operands temporary sto
             return Ok(Some(entity));
         }
         if kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386) {
-            let entities_by_id = temporary_storage.with_storage(|| operand_marker_index(ctx, entities))?;
+            let entities_by_id =
+                temporary_storage.with_storage(|| operand_marker_index(ctx, entities))?;
             if let Some(entity) = unique_entity(
                 ctx,
                 entities,
@@ -442,7 +437,11 @@ let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT operands temporary sto
     let mut compatible = Vec::new();
     for entity in ctx.admit_iter(entities, "scan SLDPRT compatible operand markers")? {
         if operand_accepts_marker(kind, entity.kind()) {
-            ctx.reserve_vec(&mut compatible, 1, "collect SLDPRT compatible operand markers")?;
+            ctx.reserve_vec(
+                &mut compatible,
+                1,
+                "collect SLDPRT compatible operand markers",
+            )?;
             compatible.push(*entity);
         }
     }
@@ -484,7 +483,8 @@ let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT operands temporary sto
         (Some(entity), false) => Some(entity),
         (None, _) => {
             if kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386) {
-                let entities_by_id = temporary_storage.with_storage(|| operand_marker_index(ctx, entities))?;
+                let entities_by_id =
+                    temporary_storage.with_storage(|| operand_marker_index(ctx, entities))?;
                 if let Some(entity) = unique_entity(
                     ctx,
                     entities,
@@ -503,16 +503,14 @@ let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT operands temporary sto
                 linked_point_markers(ctx, entities, address, kind, excluded)?
             } else if operand_accepts_link_indirection(kind) {
                 let mut indirect = Vec::new();
-                for entity in ctx
-                    .admit_iter(entities, "scan SLDPRT linked operand handles")?
-                {
+                for entity in ctx.admit_iter(entities, "scan SLDPRT linked operand handles")? {
                     if entity.local_id() != Some(u32::from(address)) {
                         continue;
                     }
                     for link in ctx.admit_iter(entity.links(), "scan SLDPRT linked operands")? {
                         let mut target = None;
-                        for candidate in ctx
-                            .admit_iter(entities, "resolve SLDPRT linked operand target")?
+                        for candidate in
+                            ctx.admit_iter(entities, "resolve SLDPRT linked operand target")?
                         {
                             if ctx.equal(
                                 candidate.id(),
@@ -526,9 +524,7 @@ let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT operands temporary sto
                         let Some(target) = target else {
                             continue;
                         };
-                        if !operand_accepts_marker(kind, target.kind())
-                            || excluded(target.id())?
-                        {
+                        if !operand_accepts_marker(kind, target.kind()) || excluded(target.id())? {
                             continue;
                         }
                         ctx.reserve_vec(
@@ -559,8 +555,8 @@ let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT operands temporary sto
                 [] if point_operand_uses_link_graph(kind) && {
                     let linked = linked_point_markers(ctx, entities, address, kind, |_| Ok(false))?;
                     let mut all_excluded = !linked.is_empty();
-                    for entity in ctx
-                        .admit_iter(&linked, "check excluded SLDPRT linked point markers")?
+                    for entity in
+                        ctx.admit_iter(&linked, "check excluded SLDPRT linked point markers")?
                     {
                         if !excluded(entity.id())? {
                             all_excluded = false;
@@ -625,7 +621,7 @@ fn linked_point_markers<'a>(
     kind: FeatureInputOperandKind,
     excluded: impl Fn(&str) -> Result<bool, CodecError>,
 ) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
-let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT operands temporary storage")?;
+    let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT operands temporary storage")?;
 
     let by_id = temporary_storage.with_storage(|| operand_marker_index(ctx, entities))?;
     let mut pending = Vec::new();
@@ -633,11 +629,7 @@ let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT operands temporary sto
         if entity.local_id() == Some(u32::from(address))
             && !operand_accepts_marker(kind, entity.kind())
         {
-            ctx.reserve_vec(
-                &mut pending,
-                1,
-                "collect SLDPRT scalar operand link roots",
-            )?;
+            ctx.reserve_vec(&mut pending, 1, "collect SLDPRT scalar operand link roots")?;
             pending.push(entity.id());
         }
     }
@@ -645,22 +637,16 @@ let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT operands temporary sto
     let mut compatible = Vec::new();
     while let Some(id) = pending.pop() {
         ctx.charge_work(1, "walk SLDPRT scalar operand links")?;
-                if ctx.contains_hash_set(
-                    &visited,
-                    id,
-                    "check visited SLDPRT scalar operand links",
-                )? {
-                    continue;
-                }
-                temporary_storage.with_storage(|| ctx.insert_hash_set(
-                    &mut visited,
-                    id,
-                    "index SLDPRT scalar operand markers",
-                ))?;
-                let Some(entity) = ctx
-                    .get_hash_map(&by_id, id, "resolve SLDPRT scalar operand link")?
-                    .copied()
-                else {
+        if ctx.contains_hash_set(&visited, id, "check visited SLDPRT scalar operand links")? {
+            continue;
+        }
+        temporary_storage.with_storage(|| {
+            ctx.insert_hash_set(&mut visited, id, "index SLDPRT scalar operand markers")
+        })?;
+        let Some(entity) = ctx
+            .get_hash_map(&by_id, id, "resolve SLDPRT scalar operand link")?
+            .copied()
+        else {
             continue;
         };
         if operand_accepts_marker(kind, entity.kind()) && !excluded(entity.id())? {
@@ -804,8 +790,7 @@ pub(super) fn coordinate_line_endpoints_with_linked_point<'a>(
             &endpoint.feature_ref.as_deref(),
             &marker.feature_ref.as_deref(),
             "compare SLDPRT linked line features",
-        )?
-            || endpoint.coordinates_m.is_none()
+        )? || endpoint.coordinates_m.is_none()
             || !matches!(
                 endpoint.kind(),
                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint

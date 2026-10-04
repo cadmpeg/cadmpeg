@@ -5,10 +5,10 @@ use super::super::{
 };
 use crate::records::{Feature, FeatureSource};
 use crate::resolved_features::curves::{sketch_plane_frames, SketchPlaneUAxisSource};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation, PrincipalPlane};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::Length;
-use cadmpeg_core::decode::DecodeContext;
 use std::collections::{BTreeMap, HashSet};
 
 fn structured_offset_plane_sources(ctx: &DecodeContext<'_>, payload: &[u8]) -> Vec<u32> {
@@ -65,30 +65,21 @@ fn legacy_offset_plane_face_alias_requires_the_complete_nested_record() {
     body[107..115].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff]);
 
     assert_eq!(
-        legacy_offset_plane_face_alias(
-            &cadmpeg_test_support::service_decode_context(),
-            &body,
-        )
-        .expect("legacy face alias scan fits service policy"),
+        legacy_offset_plane_face_alias(&cadmpeg_test_support::service_decode_context(), &body,)
+            .expect("legacy face alias scan fits service policy"),
         Some((0, 175))
     );
     body[91..95].fill(0);
     assert_eq!(
-        legacy_offset_plane_face_alias(
-            &cadmpeg_test_support::service_decode_context(),
-            &body,
-        )
-        .expect("legacy face alias scan fits service policy"),
+        legacy_offset_plane_face_alias(&cadmpeg_test_support::service_decode_context(), &body,)
+            .expect("legacy face alias scan fits service policy"),
         None
     );
     body[91..95].copy_from_slice(&175u32.to_le_bytes());
     body[83] = 2;
     assert_eq!(
-        legacy_offset_plane_face_alias(
-            &cadmpeg_test_support::service_decode_context(),
-            &body,
-        )
-        .expect("legacy face alias scan fits service policy"),
+        legacy_offset_plane_face_alias(&cadmpeg_test_support::service_decode_context(), &body,)
+            .expect("legacy face alias scan fits service policy"),
         None
     );
 }
@@ -117,10 +108,7 @@ fn structured_offset_plane_source_requires_repeated_identities_and_terminator() 
     payload[116..120].copy_from_slice(&2600u32.to_le_bytes());
     payload[132..140].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff]);
 
-    assert_eq!(
-        structured_offset_plane_sources(&ctx, &payload),
-        vec![3]
-    );
+    assert_eq!(structured_offset_plane_sources(&ctx, &payload), vec![3]);
     payload[80] ^= 1;
     assert!(structured_offset_plane_sources(&ctx, &payload).is_empty());
 }
@@ -131,10 +119,7 @@ fn classed_offset_plane_source_requires_exact_length_delimited_type() {
     let mut payload = 4u32.to_le_bytes().to_vec();
     payload.extend(b"\xff\xff\x01\x00\x1b\x00moFromSktEnt3IntSurfIdRep_c\x00\x00");
 
-    assert_eq!(
-        classed_offset_plane_sources(&ctx, &payload),
-        vec![4]
-    );
+    assert_eq!(classed_offset_plane_sources(&ctx, &payload), vec![4]);
     payload[8] = 0;
     assert!(classed_offset_plane_sources(&ctx, &payload).is_empty());
 }

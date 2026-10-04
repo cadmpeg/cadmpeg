@@ -38,7 +38,8 @@ fn hole_position_axes_refuse_collection_limit() {
 fn hole_position_axes_refuse_work_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_work_units = 0;
+    // Admit the history and its single feature before refusing index-key work.
+    policy.limits.max_work_units = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = project_hole_axes(&ctx, &mut [], &[], &topology(&[]), &[native_history()], &[])
         .unwrap_err();
@@ -48,7 +49,7 @@ fn hole_position_axes_refuse_work_limit() {
 }
 
 #[test]
-fn hole_position_axes_refuse_retained_limit() {
+fn hole_position_axes_refuse_scoped_materialized_limit() {
     let mut feature = model_hole();
     feature
         .evaluation
@@ -59,12 +60,13 @@ fn hole_position_axes_refuse_retained_limit() {
         }));
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes =
+    // The copied sketch identity belongs to the temporary model-sketch index.
+    policy.limits.max_materialized_bytes =
         u64::try_from(feature.native_ref.as_ref().unwrap().len()).unwrap() - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = project_hole_axes(&ctx, &mut [feature], &[], &topology(&[]), &[], &[]).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
+        if limit.dimension == ResourceDimension::MaterializedBytes
             && limit.operation == "index SLDPRT hole position features"));
 }
 

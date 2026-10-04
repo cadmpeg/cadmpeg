@@ -171,12 +171,13 @@ impl cadmpeg_core::decode::cost::DecodeCost for SketchTextHorizontalAlignment {
         operation: &'static str,
     ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
-            Self::Native(value) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, value), ctx, operation),
+            Self::Native(value) => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, value), ctx, operation)
+            }
             Self::Left | Self::Center | Self::Right => Ok(1),
         }
     }
 }
-
 
 /// Vertical placement of sketch text about its text anchor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -201,12 +202,13 @@ impl cadmpeg_core::decode::cost::DecodeCost for SketchTextVerticalAlignment {
         operation: &'static str,
     ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
-            Self::Native(value) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, value), ctx, operation),
+            Self::Native(value) => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, value), ctx, operation)
+            }
             Self::Top | Self::Middle | Self::Bottom => Ok(1),
         }
     }
 }
-
 
 /// Canonical reference axis in neutral sketch coordinates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -234,7 +236,6 @@ impl cadmpeg_core::decode::cost::DecodeCost for SketchAxis {
         }
     }
 }
-
 
 /// A planar sketch and its ordered profile loops.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -284,11 +285,25 @@ impl cadmpeg_core::decode::cost::DecodeCost for Sketch {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&((self.id.as_str(), self.name.as_deref(), self.configuration.as_deref(), self.visible),
-            (&self.placement, self.profiles.as_slice(), self.native_ref.as_deref())), ctx, operation)
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                (
+                    self.id.as_str(),
+                    self.name.as_deref(),
+                    self.configuration.as_deref(),
+                    self.visible,
+                ),
+                (
+                    &self.placement,
+                    self.profiles.as_slice(),
+                    self.native_ref.as_deref(),
+                ),
+            ),
+            ctx,
+            operation,
+        )
     }
 }
-
 
 /// Placement of a planar sketch's local coordinates in model space.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -313,11 +328,19 @@ impl cadmpeg_core::decode::cost::DecodeCost for SketchPlacement {
     ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
             Self::Unresolved {} => Ok(1),
-            Self::Resolved { frame } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, frame.origin.get(), frame.normal.get(), frame.u_axis.get()), ctx, operation),
+            Self::Resolved { frame } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(
+                    0u8,
+                    frame.origin.get(),
+                    frame.normal.get(),
+                    frame.u_axis.get(),
+                ),
+                ctx,
+                operation,
+            ),
         }
     }
 }
-
 
 const EPS_SKETCH_PLANE_ORTHOGONALITY: f64 = 1.0e-9;
 
@@ -619,11 +642,25 @@ impl cadmpeg_core::decode::cost::DecodeCost for SketchEntity {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&((self.id.as_str(), self.sketch.as_str(), self.construction, self.native_ref.as_deref()),
-            (self.geometry_ref.as_deref(), &self.endpoint_refs, &self.geometry)), ctx, operation)
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                (
+                    self.id.as_str(),
+                    self.sketch.as_str(),
+                    self.construction,
+                    self.native_ref.as_deref(),
+                ),
+                (
+                    self.geometry_ref.as_deref(),
+                    &self.endpoint_refs,
+                    &self.geometry,
+                ),
+            ),
+            ctx,
+            operation,
+        )
     }
 }
-
 
 impl SketchEntity {
     /// Construct a sketch entity from its id, owning sketch, and geometry.
@@ -764,29 +801,152 @@ impl cadmpeg_core::decode::cost::DecodeCost for SketchGeometry {
         operation: &'static str,
     ) -> Result<u64, cadmpeg_core::CodecError> {
         match self.definition() {
-            SketchGeometryDefinition::Point { position } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, position.get()), ctx, operation),
-            SketchGeometryDefinition::Line { start, end } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, start.get(), end.get()), ctx, operation),
-            SketchGeometryDefinition::ReferenceLine { origin, direction } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, origin.get(), direction.get()), ctx, operation),
-            SketchGeometryDefinition::Circle { center, radius } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, center.get(), radius.get()), ctx, operation),
-            SketchGeometryDefinition::Arc { center, radius, start_angle, end_angle } =>
-                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, center.get(), radius.get(), start_angle.get(), end_angle.get()), ctx, operation),
-            SketchGeometryDefinition::Ellipse { center, major_angle, radii, bounds } =>
-                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, center.get(), major_angle.get(), radii.major().get(), radii.minor().get(), bounds.map(|bounds| bounds.map(|value| value.get()))), ctx, operation),
-            SketchGeometryDefinition::Hyperbola { center, major_angle, major_radius, minor_radius, bounds } =>
-                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, center.get(), major_angle.get(), major_radius.get(), minor_radius.get(), bounds.map(|bounds| bounds.map(|value| value.get()))), ctx, operation),
-            SketchGeometryDefinition::Parabola { vertex, axis_angle, focal_length, bounds } =>
-                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, vertex.get(), axis_angle.get(), focal_length.get(), bounds.map(|bounds| bounds.map(|value| value.get()))), ctx, operation),
-            SketchGeometryDefinition::Nurbs { curve } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, curve), ctx, operation),
-            SketchGeometryDefinition::Text { text, font_family, font_weight, height, width_factor, placement, horizontal_alignment, vertical_alignment } =>
-                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&((0u8, text.as_str(), font_family.as_str(), i32::from(*font_weight), height.get(), width_factor.map(|value| value.get())),
-                    (placement.map(|placement| (placement.anchor.get(), placement.rotation.get())), horizontal_alignment, vertical_alignment)), ctx, operation),
-            SketchGeometryDefinition::ExternalReference { document, object, subelements } =>
-                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, document.as_deref(), object.as_str(), subelements), ctx, operation),
-            SketchGeometryDefinition::Native { native_kind } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, native_kind.as_str()), ctx, operation),
+            SketchGeometryDefinition::Point { position } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                    &(0u8, position.get()),
+                    ctx,
+                    operation,
+                )
+            }
+            SketchGeometryDefinition::Line { start, end } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                    &(0u8, start.get(), end.get()),
+                    ctx,
+                    operation,
+                )
+            }
+            SketchGeometryDefinition::ReferenceLine { origin, direction } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                    &(0u8, origin.get(), direction.get()),
+                    ctx,
+                    operation,
+                )
+            }
+            SketchGeometryDefinition::Circle { center, radius } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                    &(0u8, center.get(), radius.get()),
+                    ctx,
+                    operation,
+                )
+            }
+            SketchGeometryDefinition::Arc {
+                center,
+                radius,
+                start_angle,
+                end_angle,
+            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(
+                    0u8,
+                    center.get(),
+                    radius.get(),
+                    start_angle.get(),
+                    end_angle.get(),
+                ),
+                ctx,
+                operation,
+            ),
+            SketchGeometryDefinition::Ellipse {
+                center,
+                major_angle,
+                radii,
+                bounds,
+            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(
+                    0u8,
+                    center.get(),
+                    major_angle.get(),
+                    radii.major().get(),
+                    radii.minor().get(),
+                    bounds.map(|bounds| bounds.map(|value| value.get())),
+                ),
+                ctx,
+                operation,
+            ),
+            SketchGeometryDefinition::Hyperbola {
+                center,
+                major_angle,
+                major_radius,
+                minor_radius,
+                bounds,
+            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(
+                    0u8,
+                    center.get(),
+                    major_angle.get(),
+                    major_radius.get(),
+                    minor_radius.get(),
+                    bounds.map(|bounds| bounds.map(|value| value.get())),
+                ),
+                ctx,
+                operation,
+            ),
+            SketchGeometryDefinition::Parabola {
+                vertex,
+                axis_angle,
+                focal_length,
+                bounds,
+            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(
+                    0u8,
+                    vertex.get(),
+                    axis_angle.get(),
+                    focal_length.get(),
+                    bounds.map(|bounds| bounds.map(|value| value.get())),
+                ),
+                ctx,
+                operation,
+            ),
+            SketchGeometryDefinition::Nurbs { curve } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, curve), ctx, operation)
+            }
+            SketchGeometryDefinition::Text {
+                text,
+                font_family,
+                font_weight,
+                height,
+                width_factor,
+                placement,
+                horizontal_alignment,
+                vertical_alignment,
+            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(
+                    (
+                        0u8,
+                        text.as_str(),
+                        font_family.as_str(),
+                        i32::from(*font_weight),
+                        height.get(),
+                        width_factor.map(|value| value.get()),
+                    ),
+                    (
+                        placement
+                            .map(|placement| (placement.anchor.get(), placement.rotation.get())),
+                        horizontal_alignment,
+                        vertical_alignment,
+                    ),
+                ),
+                ctx,
+                operation,
+            ),
+            SketchGeometryDefinition::ExternalReference {
+                document,
+                object,
+                subelements,
+            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, document.as_deref(), object.as_str(), subelements),
+                ctx,
+                operation,
+            ),
+            SketchGeometryDefinition::Native { native_kind } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                    &(0u8, native_kind.as_str()),
+                    ctx,
+                    operation,
+                )
+            }
         }
     }
 }
-
 
 impl SketchGeometry {
     /// Copy geometry after charging each retained nested allocation.
@@ -795,7 +955,7 @@ impl SketchGeometry {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-use SketchGeometryDefinition as Definition;
+        use SketchGeometryDefinition as Definition;
         ctx.charge_work(1, operation)?;
         let definition = match self.definition() {
             Definition::Nurbs { curve } => Definition::Nurbs {
@@ -899,7 +1059,7 @@ use SketchGeometryDefinition as Definition;
             PositiveReal,
         >,
     ) -> Result<Self, &'static str> {
-use SketchGeometryDefinition as Definition;
+        use SketchGeometryDefinition as Definition;
         Ok(Self(match definition {
             Definition::Point { position } => Definition::Point { position },
             Definition::Line { start, end } => Definition::Line { start, end },
@@ -1034,7 +1194,7 @@ impl
     /// The definition with raw points, lengths, bounds and width factor.
     #[must_use]
     pub fn to_raw(&self) -> SketchGeometryDefinition {
-use SketchGeometryDefinition as Definition;
+        use SketchGeometryDefinition as Definition;
         match self {
             Self::Point { position } => Definition::Point {
                 position: position.get(),
@@ -1168,7 +1328,7 @@ impl TryFrom<SketchGeometryDefinition> for SketchGeometry {
     type Error = &'static str;
 
     fn try_from(definition: SketchGeometryDefinition) -> Result<Self, Self::Error> {
-use SketchGeometryDefinition as Definition;
+        use SketchGeometryDefinition as Definition;
         const CIRCULAR: &str =
             "sketch circular geometry requires finite center and positive finite radius";
         Self::from_parts(match definition {
@@ -2617,10 +2777,33 @@ impl cadmpeg_core::decode::cost::DecodeCost for SketchConstraint {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&((&self.id, &self.sketch, &self.definition, &self.name, &self.driving, &self.active), ((&self.virtual_space, &self.visible, &self.orientation, &self.label_distance, &self.label_position, &self.metadata), (&self.native_ref,))), ctx, operation)
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                (
+                    &self.id,
+                    &self.sketch,
+                    &self.definition,
+                    &self.name,
+                    &self.driving,
+                    &self.active,
+                ),
+                (
+                    (
+                        &self.virtual_space,
+                        &self.visible,
+                        &self.orientation,
+                        &self.label_distance,
+                        &self.label_position,
+                        &self.metadata,
+                    ),
+                    (&self.native_ref,),
+                ),
+            ),
+            ctx,
+            operation,
+        )
     }
 }
-
 
 /// A geometric locus on a sketch entity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2678,7 +2861,6 @@ impl cadmpeg_core::decode::cost::DecodeCost for SketchCoordinateAxis {
     }
 }
 
-
 /// Source-native field and optional role carrying one sketch operand.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2701,10 +2883,13 @@ impl cadmpeg_core::decode::cost::DecodeCost for NativeOperandField {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(self.name.as_str(), &self.role), ctx, operation)
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(self.name.as_str(), &self.role),
+            ctx,
+            operation,
+        )
     }
 }
-
 
 /// One ordered operand retained from a native sketch relation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2743,10 +2928,18 @@ impl cadmpeg_core::decode::cost::DecodeCost for SketchNativeOperand {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(self.native_kind.as_str(), &self.field, &self.object_index, &self.native_ref), ctx, operation)
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                self.native_kind.as_str(),
+                &self.field,
+                &self.object_index,
+                &self.native_ref,
+            ),
+            ctx,
+            operation,
+        )
     }
 }
-
 
 /// One progenitor/result pair in a sketch offset relation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2768,10 +2961,13 @@ impl cadmpeg_core::decode::cost::DecodeCost for SketchOffsetPair {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.source, &self.result, &self.source_reversed), ctx, operation)
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.source, &self.result, &self.source_reversed),
+            ctx,
+            operation,
+        )
     }
 }
-
 
 /// Signed use of a driving offset-distance parameter.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2790,10 +2986,13 @@ impl cadmpeg_core::decode::cost::DecodeCost for OffsetParameter {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.id, &self.negated), ctx, operation)
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.id, &self.negated),
+            ctx,
+            operation,
+        )
     }
 }
-
 
 /// One axis of a rectangular sketch pattern.
 #[derive(Debug, Clone, PartialEq)]
@@ -2814,10 +3013,18 @@ impl cadmpeg_core::decode::cost::DecodeCost for SketchPatternDirection {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(self.direction.get(), self.spacing.get(), &self.distance, &self.count_parameter), ctx, operation)
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                self.direction.get(),
+                self.spacing.get(),
+                &self.distance,
+                &self.count_parameter,
+            ),
+            ctx,
+            operation,
+        )
     }
 }
-
 
 const EPS_PATTERN_DIRECTION_ORTHOGONALITY: f64 = 1.0e-9;
 
@@ -2876,12 +3083,19 @@ impl cadmpeg_core::decode::cost::DecodeCost for SketchPatternDistance {
         operation: &'static str,
     ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
-            Self::Spacing { parameter } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, parameter), ctx, operation),
-            Self::Span { parameter } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, parameter), ctx, operation),
+            Self::Spacing { parameter } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, parameter),
+                ctx,
+                operation,
+            ),
+            Self::Span { parameter } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, parameter),
+                ctx,
+                operation,
+            ),
         }
     }
 }
-
 
 impl SketchPatternDistance {
     /// Parameter that controls this distance form.
@@ -2912,7 +3126,6 @@ impl cadmpeg_core::decode::cost::DecodeCost for SketchPatternInstance {
     }
 }
 
-
 /// One resolved circular-pattern instance.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2930,10 +3143,13 @@ impl cadmpeg_core::decode::cost::DecodeCost for SketchCircularPatternInstance {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(self.angle.get(), &self.entities), ctx, operation)
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(self.angle.get(), &self.entities),
+            ctx,
+            operation,
+        )
     }
 }
-
 
 /// Checked two-axis rectangular sketch pattern.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2953,10 +3169,13 @@ impl cadmpeg_core::decode::cost::DecodeCost for SketchRectangularPattern {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.directions, &self.rows), ctx, operation)
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.directions, &self.rows),
+            ctx,
+            operation,
+        )
     }
 }
-
 
 impl SketchRectangularPattern {
     /// Construct a non-empty rectangular grid whose instances have one fixed
@@ -3039,10 +3258,20 @@ impl cadmpeg_core::decode::cost::DecodeCost for SketchCircularPattern {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.center, self.angle.get(), &self.angle_parameter, &self.count_parameter, &self.seed, self.instances.members.as_slice()), ctx, operation)
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                &self.center,
+                self.angle.get(),
+                &self.angle_parameter,
+                &self.count_parameter,
+                &self.seed,
+                self.instances.members.as_slice(),
+            ),
+            ctx,
+            operation,
+        )
     }
 }
-
 
 /// A nonempty population whose count, with the seed counted, fits the IR
 /// width.
@@ -3370,13 +3599,30 @@ impl cadmpeg_core::decode::cost::DecodeCost for SketchDistanceMeasurement {
         operation: &'static str,
     ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
-            Self::Distance { first, second } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, first, second), ctx, operation),
-            Self::Horizontal { first, second } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, first, second), ctx, operation),
-            Self::Vertical { first, second } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, first, second), ctx, operation),
+            Self::Distance { first, second } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                    &(0u8, first, second),
+                    ctx,
+                    operation,
+                )
+            }
+            Self::Horizontal { first, second } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                    &(0u8, first, second),
+                    ctx,
+                    operation,
+                )
+            }
+            Self::Vertical { first, second } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                    &(0u8, first, second),
+                    ctx,
+                    operation,
+                )
+            }
         }
     }
 }
-
 
 /// One ordered pair of loci whose Euclidean separation participates in an
 /// equality relation.
@@ -3396,10 +3642,13 @@ impl cadmpeg_core::decode::cost::DecodeCost for SketchDistancePair {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.first, &self.second), ctx, operation)
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.first, &self.second),
+            ctx,
+            operation,
+        )
     }
 }
-
 
 /// Meaning of an internal sketch alignment helper relation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -3448,13 +3697,16 @@ impl cadmpeg_core::decode::cost::DecodeCost for SketchInternalAlignment {
             Self::HyperbolaMinor => Ok(1),
             Self::HyperbolaFocus => Ok(1),
             Self::ParabolaFocus => Ok(1),
-            Self::BsplineControlPoint(value) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, value), ctx, operation),
-            Self::BsplineKnotPoint(value) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, value), ctx, operation),
+            Self::BsplineControlPoint(value) => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, value), ctx, operation)
+            }
+            Self::BsplineKnotPoint(value) => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, value), ctx, operation)
+            }
             Self::ParabolaFocalAxis => Ok(1),
         }
     }
 }
-
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -3550,7 +3802,6 @@ impl cadmpeg_core::decode::cost::DecodeCost for SketchPolygon {
     }
 }
 
-
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -3624,10 +3875,13 @@ impl cadmpeg_core::decode::cost::DecodeCost for SketchSameCoordinate {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.first, &self.second, &self.axis), ctx, operation)
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.first, &self.second, &self.axis),
+            ctx,
+            operation,
+        )
     }
 }
-
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -3698,7 +3952,6 @@ impl cadmpeg_core::decode::cost::DecodeCost for SketchLabelValue {
     }
 }
 
-
 impl TryFrom<f64> for SketchLabelValue {
     type Error = &'static str;
 
@@ -3727,7 +3980,6 @@ impl cadmpeg_core::decode::cost::DecodeCost for SketchConstraintDefinition {
         cadmpeg_core::decode::cost::DecodeCost::decode_cost(&self.0, ctx, operation)
     }
 }
-
 
 impl SketchConstraintDefinition {
     /// Construct a native relation with one source operand and its resolved entities.
@@ -4417,75 +4669,448 @@ impl cadmpeg_core::decode::cost::DecodeCost for SketchConstraintDefinitionInput 
         operation: &'static str,
     ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
-            Self::Disabled {  } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8,), ctx, operation),
-            Self::Coincident { entities } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, entities), ctx, operation),
-            Self::Polygon { polygon } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, polygon), ctx, operation),
-            Self::SplineGroup { entities } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, entities), ctx, operation),
-            Self::RectangularPattern { pattern } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, pattern), ctx, operation),
-            Self::CircularPattern { pattern } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, pattern), ctx, operation),
-            Self::TextFrame { text, frame } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, text, frame), ctx, operation),
-            Self::TextPath { text, path, glyph_transforms } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, text, path, glyph_transforms), ctx, operation),
-            Self::CoincidentLoci { loci } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, loci), ctx, operation),
-            Self::SameCoordinate { relation } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, relation), ctx, operation),
-            Self::PointOnObject { point, entity } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, point, entity), ctx, operation),
-            Self::Midpoint { point, entity } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, point, entity), ctx, operation),
-            Self::PointCoordinateValues { point, values } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, point, values.map(|value| value.get())), ctx, operation),
-            Self::MidpointCoordinate { first, second, axis, value } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, first, second, axis, value.get()), ctx, operation),
-            Self::Offset { pairs, distance, parameter } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, pairs, distance.get(), parameter), ctx, operation),
-            Self::ProjectedCopy { source, result } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, source, result), ctx, operation),
-            Self::AtIntersection { point, first, second } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, point, first, second), ctx, operation),
-            Self::Concentric { first, second } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, first, second), ctx, operation),
-            Self::Coradial { first, second } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, first, second), ctx, operation),
-            Self::Collinear { first, second } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, first, second), ctx, operation),
-            Self::Symmetric { first, second, axis } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, first, second, axis), ctx, operation),
-            Self::PointSymmetric { first, second, center } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, first, second, center), ctx, operation),
-            Self::Horizontal { entity } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, entity), ctx, operation),
-            Self::Vertical { entity } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, entity), ctx, operation),
-            Self::Parallel { first, second } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, first, second), ctx, operation),
-            Self::Perpendicular { first, second } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, first, second), ctx, operation),
-            Self::Tangent { first, second } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, first, second), ctx, operation),
-            Self::TangentLoci { first, second } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, first, second), ctx, operation),
-            Self::Curvature { first, second } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, first, second), ctx, operation),
-            Self::Equal { first, second } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, first, second), ctx, operation),
-            Self::Fixed { entity } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, entity), ctx, operation),
-            Self::ArcAngle { entity, angle } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, entity, angle.get()), ctx, operation),
-            Self::EllipseAngle { entity, angle } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, entity, angle.get()), ctx, operation),
-            Self::Distance { entities, parameter } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, entities, parameter), ctx, operation),
-            Self::DistanceLoci { first, second, parameter } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, first, second, parameter), ctx, operation),
-            Self::DistanceLociValue { first, second, distance, parameter } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, first, second, distance.get(), parameter), ctx, operation),
-            Self::PolarDistance { first, second, distance, angle, distance_parameter } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, first, second, distance.get(), angle.map(|value| value.get()), distance_parameter), ctx, operation),
-            Self::AngleDifference { first, second, difference, value } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, first, second, difference, value.get()), ctx, operation),
-            Self::ScalarEquality { first, second } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, first, second), ctx, operation),
-            Self::EqualDistance { first, second } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, first, second), ctx, operation),
-            Self::HorizontalDistance { first, second, parameter } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, first, second, parameter), ctx, operation),
-            Self::VerticalDistance { first, second, parameter } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, first, second, parameter), ctx, operation),
-            Self::RepeatedDistance { measurements, parameter } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, measurements, parameter), ctx, operation),
-            Self::RepeatedLength { entities, parameter } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, entities, parameter), ctx, operation),
-            Self::ParallelLineSetDistance { first, second, parameter } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, first, second, parameter), ctx, operation),
-            Self::Angle { first, second, parameter } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, first, second, parameter), ctx, operation),
-            Self::AngleToAxis { entity, axis, parameter } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, entity, axis, parameter), ctx, operation),
-            Self::Radius { entity, parameter } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, entity, parameter), ctx, operation),
-            Self::RepeatedRadius { entities, parameter } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, entities, parameter), ctx, operation),
-            Self::Diameter { entity, parameter } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, entity, parameter), ctx, operation),
-            Self::RepeatedDiameter { entities, parameter } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, entities, parameter), ctx, operation),
-            Self::SnellsLaw { incident, refracted, interface, parameter } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, incident, refracted, interface, parameter), ctx, operation),
-            Self::Weight { entity, parameter } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, entity, parameter), ctx, operation),
-            Self::InternalAlignment { helper, parent, alignment } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, helper, parent, alignment), ctx, operation),
-            Self::Group { elements } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, elements), ctx, operation),
-            Self::Text { elements, text, font, is_text_height } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, elements, text, font, is_text_height), ctx, operation),
-            Self::Native { native_kind, native_state, native_flags, native_properties, entities, parameter, operands } => {
-                    let mut bytes = cadmpeg_core::decode::cost::DecodeCost::decode_cost(&((0u8, native_kind.as_str(), native_state, native_flags, entities, parameter), (operands,)), ctx, operation)?;
-                    for (key, value) in ctx.admit_iter(native_properties, operation)? {
-                        let entry = cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(key.as_str(), value.as_str()), ctx, operation)?;
-                        bytes = bytes.checked_add(entry)
-                            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-                    }
-                    Ok(bytes)
-                },
+            Self::Disabled {} => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8,), ctx, operation)
+            }
+            Self::Coincident { entities } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, entities),
+                ctx,
+                operation,
+            ),
+            Self::Polygon { polygon } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, polygon), ctx, operation)
+            }
+            Self::SplineGroup { entities } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, entities),
+                ctx,
+                operation,
+            ),
+            Self::RectangularPattern { pattern } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, pattern), ctx, operation)
+            }
+            Self::CircularPattern { pattern } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, pattern), ctx, operation)
+            }
+            Self::TextFrame { text, frame } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, text, frame),
+                ctx,
+                operation,
+            ),
+            Self::TextPath {
+                text,
+                path,
+                glyph_transforms,
+            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, text, path, glyph_transforms),
+                ctx,
+                operation,
+            ),
+            Self::CoincidentLoci { loci } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, loci), ctx, operation)
+            }
+            Self::SameCoordinate { relation } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                    &(0u8, relation),
+                    ctx,
+                    operation,
+                )
+            }
+            Self::PointOnObject { point, entity } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                    &(0u8, point, entity),
+                    ctx,
+                    operation,
+                )
+            }
+            Self::Midpoint { point, entity } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                    &(0u8, point, entity),
+                    ctx,
+                    operation,
+                )
+            }
+            Self::PointCoordinateValues { point, values } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                    &(0u8, point, values.map(|value| value.get())),
+                    ctx,
+                    operation,
+                )
+            }
+            Self::MidpointCoordinate {
+                first,
+                second,
+                axis,
+                value,
+            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, first, second, axis, value.get()),
+                ctx,
+                operation,
+            ),
+            Self::Offset {
+                pairs,
+                distance,
+                parameter,
+            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, pairs, distance.get(), parameter),
+                ctx,
+                operation,
+            ),
+            Self::ProjectedCopy { source, result } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                    &(0u8, source, result),
+                    ctx,
+                    operation,
+                )
+            }
+            Self::AtIntersection {
+                point,
+                first,
+                second,
+            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, point, first, second),
+                ctx,
+                operation,
+            ),
+            Self::Concentric { first, second } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                    &(0u8, first, second),
+                    ctx,
+                    operation,
+                )
+            }
+            Self::Coradial { first, second } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                    &(0u8, first, second),
+                    ctx,
+                    operation,
+                )
+            }
+            Self::Collinear { first, second } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                    &(0u8, first, second),
+                    ctx,
+                    operation,
+                )
+            }
+            Self::Symmetric {
+                first,
+                second,
+                axis,
+            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, first, second, axis),
+                ctx,
+                operation,
+            ),
+            Self::PointSymmetric {
+                first,
+                second,
+                center,
+            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, first, second, center),
+                ctx,
+                operation,
+            ),
+            Self::Horizontal { entity } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, entity), ctx, operation)
+            }
+            Self::Vertical { entity } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, entity), ctx, operation)
+            }
+            Self::Parallel { first, second } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                    &(0u8, first, second),
+                    ctx,
+                    operation,
+                )
+            }
+            Self::Perpendicular { first, second } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                    &(0u8, first, second),
+                    ctx,
+                    operation,
+                )
+            }
+            Self::Tangent { first, second } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, first, second),
+                ctx,
+                operation,
+            ),
+            Self::TangentLoci { first, second } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                    &(0u8, first, second),
+                    ctx,
+                    operation,
+                )
+            }
+            Self::Curvature { first, second } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                    &(0u8, first, second),
+                    ctx,
+                    operation,
+                )
+            }
+            Self::Equal { first, second } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, first, second),
+                ctx,
+                operation,
+            ),
+            Self::Fixed { entity } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, entity), ctx, operation)
+            }
+            Self::ArcAngle { entity, angle } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                    &(0u8, entity, angle.get()),
+                    ctx,
+                    operation,
+                )
+            }
+            Self::EllipseAngle { entity, angle } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                    &(0u8, entity, angle.get()),
+                    ctx,
+                    operation,
+                )
+            }
+            Self::Distance {
+                entities,
+                parameter,
+            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, entities, parameter),
+                ctx,
+                operation,
+            ),
+            Self::DistanceLoci {
+                first,
+                second,
+                parameter,
+            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, first, second, parameter),
+                ctx,
+                operation,
+            ),
+            Self::DistanceLociValue {
+                first,
+                second,
+                distance,
+                parameter,
+            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, first, second, distance.get(), parameter),
+                ctx,
+                operation,
+            ),
+            Self::PolarDistance {
+                first,
+                second,
+                distance,
+                angle,
+                distance_parameter,
+            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(
+                    0u8,
+                    first,
+                    second,
+                    distance.get(),
+                    angle.map(|value| value.get()),
+                    distance_parameter,
+                ),
+                ctx,
+                operation,
+            ),
+            Self::AngleDifference {
+                first,
+                second,
+                difference,
+                value,
+            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, first, second, difference, value.get()),
+                ctx,
+                operation,
+            ),
+            Self::ScalarEquality { first, second } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                    &(0u8, first, second),
+                    ctx,
+                    operation,
+                )
+            }
+            Self::EqualDistance { first, second } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                    &(0u8, first, second),
+                    ctx,
+                    operation,
+                )
+            }
+            Self::HorizontalDistance {
+                first,
+                second,
+                parameter,
+            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, first, second, parameter),
+                ctx,
+                operation,
+            ),
+            Self::VerticalDistance {
+                first,
+                second,
+                parameter,
+            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, first, second, parameter),
+                ctx,
+                operation,
+            ),
+            Self::RepeatedDistance {
+                measurements,
+                parameter,
+            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, measurements, parameter),
+                ctx,
+                operation,
+            ),
+            Self::RepeatedLength {
+                entities,
+                parameter,
+            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, entities, parameter),
+                ctx,
+                operation,
+            ),
+            Self::ParallelLineSetDistance {
+                first,
+                second,
+                parameter,
+            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, first, second, parameter),
+                ctx,
+                operation,
+            ),
+            Self::Angle {
+                first,
+                second,
+                parameter,
+            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, first, second, parameter),
+                ctx,
+                operation,
+            ),
+            Self::AngleToAxis {
+                entity,
+                axis,
+                parameter,
+            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, entity, axis, parameter),
+                ctx,
+                operation,
+            ),
+            Self::Radius { entity, parameter } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                    &(0u8, entity, parameter),
+                    ctx,
+                    operation,
+                )
+            }
+            Self::RepeatedRadius {
+                entities,
+                parameter,
+            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, entities, parameter),
+                ctx,
+                operation,
+            ),
+            Self::Diameter { entity, parameter } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                    &(0u8, entity, parameter),
+                    ctx,
+                    operation,
+                )
+            }
+            Self::RepeatedDiameter {
+                entities,
+                parameter,
+            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, entities, parameter),
+                ctx,
+                operation,
+            ),
+            Self::SnellsLaw {
+                incident,
+                refracted,
+                interface,
+                parameter,
+            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, incident, refracted, interface, parameter),
+                ctx,
+                operation,
+            ),
+            Self::Weight { entity, parameter } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                    &(0u8, entity, parameter),
+                    ctx,
+                    operation,
+                )
+            }
+            Self::InternalAlignment {
+                helper,
+                parent,
+                alignment,
+            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, helper, parent, alignment),
+                ctx,
+                operation,
+            ),
+            Self::Group { elements } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, elements),
+                ctx,
+                operation,
+            ),
+            Self::Text {
+                elements,
+                text,
+                font,
+                is_text_height,
+            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, elements, text, font, is_text_height),
+                ctx,
+                operation,
+            ),
+            Self::Native {
+                native_kind,
+                native_state,
+                native_flags,
+                native_properties,
+                entities,
+                parameter,
+                operands,
+            } => {
+                let mut bytes = cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                    &(
+                        (
+                            0u8,
+                            native_kind.as_str(),
+                            native_state,
+                            native_flags,
+                            entities,
+                            parameter,
+                        ),
+                        (operands,),
+                    ),
+                    ctx,
+                    operation,
+                )?;
+                for (key, value) in ctx.admit_iter(native_properties, operation)? {
+                    let entry = cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                        &(key.as_str(), value.as_str()),
+                        ctx,
+                        operation,
+                    )?;
+                    bytes = bytes
+                        .checked_add(entry)
+                        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+                }
+                Ok(bytes)
+            }
         }
     }
 }
-
 
 impl SketchConstraintDefinitionInput {
     /// The entity whose neutral geometry kind this relation restricts, with

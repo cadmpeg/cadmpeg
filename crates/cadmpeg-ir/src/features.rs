@@ -306,7 +306,8 @@ checked_feature_geometry!(
 );
 
 impl cadmpeg_core::decode::cost::DecodeCost for FeatureDirection3 {
-    const FIXED_BYTES: Option<u64> = <Vector3 as cadmpeg_core::decode::cost::DecodeCost>::FIXED_BYTES;
+    const FIXED_BYTES: Option<u64> =
+        <Vector3 as cadmpeg_core::decode::cost::DecodeCost>::FIXED_BYTES;
 
     fn decode_cost(
         &self,
@@ -1466,17 +1467,39 @@ impl cadmpeg_core::decode::cost::DecodeCost for DesignParameter {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<u64, cadmpeg_core::CodecError> {
-        let mut bytes = cadmpeg_core::decode::cost::DecodeCost::decode_cost(&((self.id.as_str(), &self.owner, self.ordinal, self.name.as_str(), self.expression.as_str(), &self.display),
-            (&self.value, self.dependencies.as_slice(), &self.pmi, self.native_ref.as_deref())), ctx, operation)?;
+        let mut bytes = cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                (
+                    self.id.as_str(),
+                    &self.owner,
+                    self.ordinal,
+                    self.name.as_str(),
+                    self.expression.as_str(),
+                    &self.display,
+                ),
+                (
+                    &self.value,
+                    self.dependencies.as_slice(),
+                    &self.pmi,
+                    self.native_ref.as_deref(),
+                ),
+            ),
+            ctx,
+            operation,
+        )?;
         for (key, value) in ctx.admit_iter(&self.properties, operation)? {
-            let entry = cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(key.as_str(), value.as_str()), ctx, operation)?;
-            bytes = bytes.checked_add(entry)
+            let entry = cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(key.as_str(), value.as_str()),
+                ctx,
+                operation,
+            )?;
+            bytes = bytes
+                .checked_add(entry)
                 .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
         }
         Ok(bytes)
     }
 }
-
 
 /// Product-manufacturing semantics attached to a design parameter.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1510,10 +1533,23 @@ impl cadmpeg_core::decode::cost::DecodeCost for ParameterPmi {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&((&self.subtype, self.precision, self.display_text.as_deref(), self.basic, self.inspection, self.reference_only), self.native_ref.as_str()), ctx, operation)
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                (
+                    &self.subtype,
+                    self.precision,
+                    self.display_text.as_deref(),
+                    self.basic,
+                    self.inspection,
+                    self.reference_only,
+                ),
+                self.native_ref.as_str(),
+            ),
+            ctx,
+            operation,
+        )
     }
 }
-
 
 /// Semantic PMI dimension family.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1544,12 +1580,20 @@ impl cadmpeg_core::decode::cost::DecodeCost for PmiDimensionSubtype {
         operation: &'static str,
     ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
-            Self::Native(value) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, value.as_str()), ctx, operation),
-            Self::Linear | Self::Angle | Self::Diameter | Self::Radial | Self::Ordinate | Self::Count => Ok(1),
+            Self::Native(value) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, value.as_str()),
+                ctx,
+                operation,
+            ),
+            Self::Linear
+            | Self::Angle
+            | Self::Diameter
+            | Self::Radial
+            | Self::Ordinate
+            | Self::Count => Ok(1),
         }
     }
 }
-
 
 /// Geometric interpretation requested by a dimension display modifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1576,7 +1620,6 @@ impl cadmpeg_core::decode::cost::DecodeCost for DimensionDisplay {
         }
     }
 }
-
 
 /// Canonical scalar value of a literal design parameter.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1609,16 +1652,35 @@ impl cadmpeg_core::decode::cost::DecodeCost for ParameterValue {
         operation: &'static str,
     ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
-            Self::Length(value) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, value.get()), ctx, operation),
-            Self::Angle(value) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, value.get()), ctx, operation),
-            Self::Real(value) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, value.get()), ctx, operation),
-            Self::Integer(value) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, value), ctx, operation),
-            Self::Boolean(value) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, value), ctx, operation),
-            Self::String(value) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, value.as_str()), ctx, operation),
+            Self::Length(value) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, value.get()),
+                ctx,
+                operation,
+            ),
+            Self::Angle(value) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, value.get()),
+                ctx,
+                operation,
+            ),
+            Self::Real(value) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, value.get()),
+                ctx,
+                operation,
+            ),
+            Self::Integer(value) => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, value), ctx, operation)
+            }
+            Self::Boolean(value) => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, value), ctx, operation)
+            }
+            Self::String(value) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, value.as_str()),
+                ctx,
+                operation,
+            ),
         }
     }
 }
-
 
 crate::units::named_field!(deserialize_parameter_real, FiniteReal, "value");
 
@@ -6255,10 +6317,13 @@ impl cadmpeg_core::decode::cost::DecodeCost for GeneratedFaceRef {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(self.feature.as_str(), self.local_id.as_str()), ctx, operation)
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(self.feature.as_str(), self.local_id.as_str()),
+            ctx,
+            operation,
+        )
     }
 }
-
 
 /// Persistent identity of a vertex in one regenerated feature result.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -6278,10 +6343,13 @@ impl cadmpeg_core::decode::cost::DecodeCost for GeneratedVertexRef {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(self.feature.as_str(), self.local_id.as_str()), ctx, operation)
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(self.feature.as_str(), self.local_id.as_str()),
+            ctx,
+            operation,
+        )
     }
 }
-
 
 /// Vertex operand resolved by the decoder or retained in native form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -6322,13 +6390,30 @@ impl cadmpeg_core::decode::cost::DecodeCost for VertexSelection {
     ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
             Self::Unresolved => Ok(1),
-            Self::Generated { vertex, native } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, vertex, native.as_str()), ctx, operation),
-            Self::Historical { state, vertex, native } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, state, vertex, native.as_str()), ctx, operation),
-            Self::Native(native) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, native.as_str()), ctx, operation),
+            Self::Generated { vertex, native } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                    &(0u8, vertex, native.as_str()),
+                    ctx,
+                    operation,
+                )
+            }
+            Self::Historical {
+                state,
+                vertex,
+                native,
+            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, state, vertex, native.as_str()),
+                ctx,
+                operation,
+            ),
+            Self::Native(native) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, native.as_str()),
+                ctx,
+                operation,
+            ),
         }
     }
 }
-
 
 /// Face operands resolved by the decoder or retained in native form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -6398,16 +6483,56 @@ impl cadmpeg_core::decode::cost::DecodeCost for FaceSelection {
     ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
             Self::Unresolved => Ok(1),
-            Self::Faces(faces) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, faces), ctx, operation),
-            Self::Resolved { faces, native } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, faces, native.as_str()), ctx, operation),
-            Self::Historical { state, faces, native } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, state, faces.as_slice(), native.as_str()), ctx, operation),
-            Self::HistoricalPartial { state, faces, unresolved, native } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, state, faces.as_slice(), unresolved.as_slice(), native.as_str()), ctx, operation),
-            Self::Generated { faces, native } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, faces.as_slice(), native.as_str()), ctx, operation),
-            Self::Native(native) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, native.as_str()), ctx, operation),
+            Self::Faces(faces) => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, faces), ctx, operation)
+            }
+            Self::Resolved { faces, native } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                    &(0u8, faces, native.as_str()),
+                    ctx,
+                    operation,
+                )
+            }
+            Self::Historical {
+                state,
+                faces,
+                native,
+            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, state, faces.as_slice(), native.as_str()),
+                ctx,
+                operation,
+            ),
+            Self::HistoricalPartial {
+                state,
+                faces,
+                unresolved,
+                native,
+            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(
+                    0u8,
+                    state,
+                    faces.as_slice(),
+                    unresolved.as_slice(),
+                    native.as_str(),
+                ),
+                ctx,
+                operation,
+            ),
+            Self::Generated { faces, native } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                    &(0u8, faces.as_slice(), native.as_str()),
+                    ctx,
+                    operation,
+                )
+            }
+            Self::Native(native) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, native.as_str()),
+                ctx,
+                operation,
+            ),
         }
     }
 }
-
 
 /// A nonempty sequence of members in source order.
 ///
@@ -7516,16 +7641,37 @@ impl cadmpeg_core::decode::cost::DecodeCost for LinearTermination {
         operation: &'static str,
     ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
-            Self::Unresolved {} | Self::ThroughAll {} | Self::ThroughNext {} | Self::ToFirst {} | Self::ToLast {} => Ok(1),
-            Self::Blind { length } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, length.get()), ctx, operation),
-            Self::ToFace { face, offset } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, face, offset.map(|value| value.get())), ctx, operation),
-            Self::ToVertex { vertex } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, vertex), ctx, operation),
-            Self::OffsetFromFace { face, offset } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, face, offset.get()), ctx, operation),
-            Self::ToShape { target } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, target), ctx, operation),
+            Self::Unresolved {}
+            | Self::ThroughAll {}
+            | Self::ThroughNext {}
+            | Self::ToFirst {}
+            | Self::ToLast {} => Ok(1),
+            Self::Blind { length } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, length.get()),
+                ctx,
+                operation,
+            ),
+            Self::ToFace { face, offset } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, face, offset.map(|value| value.get())),
+                ctx,
+                operation,
+            ),
+            Self::ToVertex { vertex } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, vertex), ctx, operation)
+            }
+            Self::OffsetFromFace { face, offset } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                    &(0u8, face, offset.get()),
+                    ctx,
+                    operation,
+                )
+            }
+            Self::ToShape { target } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, target), ctx, operation)
+            }
         }
     }
 }
-
 
 /// One-sided termination law of an angular sweep. Sidedness around the profile
 /// plane is stated by the owning revolution extent.

@@ -117,6 +117,7 @@ fn relation_ownership_uses_last_parameter_for_duplicate_scalar_reference() {
     let first = parameter("first");
     let last = parameter("last");
     let expected = last.id.clone();
-    let ownership = owned_relation_parameters(&ctx, &[], &[first, last], &[relation_lane()]).unwrap();
+    let ownership =
+        owned_relation_parameters(&ctx, &[], &[first, last], &[relation_lane()]).unwrap();
     assert_eq!(ownership.get("relation"), Some(&Some(expected)));
 }

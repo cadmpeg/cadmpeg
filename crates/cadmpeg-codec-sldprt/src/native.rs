@@ -1602,16 +1602,24 @@ fn resolved_scalar_operand_markers<'a>(
     lane: &'a FeatureInputLane,
     scalar: &crate::records::FeatureInputScalar,
 ) -> Result<Vec<Option<&'a crate::records::SketchInputEntity>>, cadmpeg_ir::NativeConvertError> {
-    let (entities, _entity_storage) = ctx.with_scoped_storage("SLDPRT scalar operand candidates", || ctx.collect_vec(
-        ctx.admit_iter(&lane.sketch_entities, "scan SLDPRT scalar operand candidates")?
-            .filter(|candidate| candidate.feature_ref == scalar.feature_ref),
-        "collect SLDPRT scalar operand markers",
-    ))?;
-    Ok(crate::resolved_features::operands::resolve_scalar_operand_markers(
-        ctx,
-        &entities,
-        &scalar.operands,
-    )?)
+    let (entities, _entity_storage) =
+        ctx.with_scoped_storage("SLDPRT scalar operand candidates", || {
+            ctx.collect_vec(
+                ctx.admit_iter(
+                    &lane.sketch_entities,
+                    "scan SLDPRT scalar operand candidates",
+                )?
+                .filter(|candidate| candidate.feature_ref == scalar.feature_ref),
+                "collect SLDPRT scalar operand markers",
+            )
+        })?;
+    Ok(
+        crate::resolved_features::operands::resolve_scalar_operand_markers(
+            ctx,
+            &entities,
+            &scalar.operands,
+        )?,
+    )
 }
 
 fn generated_surface_identities_disagree_with_payload(

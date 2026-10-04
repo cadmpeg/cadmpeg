@@ -90,26 +90,48 @@ fn copy_scalar_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, Codec
 ///
 /// The name length comes from the payload's own length byte, so the offset is a
 /// function of the retained bytes alone and never of a stored name value.
-fn scalar_value_offset(ctx: &DecodeContext<'_>, payload: &[u8], name_offset: usize) -> Result<Option<usize>, CodecError> {
+fn scalar_value_offset(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    name_offset: usize,
+) -> Result<Option<usize>, CodecError> {
     let Some((header_offset, value_offset)) = (|| {
         let units = usize::from(*payload.get(name_offset.checked_add(NAME_MARKER.len())?)?);
-        let header_offset = name_offset.checked_add(NAME_MARKER.len() + 1)?
+        let header_offset = name_offset
+            .checked_add(NAME_MARKER.len() + 1)?
             .checked_add(units.checked_mul(2)?)?;
-        Some((header_offset, header_offset.checked_add(SCALAR_HEADER.len())?))
-    })() else { return Ok(None); };
+        Some((
+            header_offset,
+            header_offset.checked_add(SCALAR_HEADER.len())?,
+        ))
+    })() else {
+        return Ok(None);
+    };
     if payload.get(header_offset..value_offset) == Some(SCALAR_HEADER) {
         return Ok(Some(value_offset));
     }
-    let Some(compact_value_offset) = header_offset.checked_add(COMPACT_SCALAR_HEADER.len()) else { return Ok(None); };
+    let Some(compact_value_offset) = header_offset.checked_add(COMPACT_SCALAR_HEADER.len()) else {
+        return Ok(None);
+    };
     if payload.get(header_offset..compact_value_offset) == Some(COMPACT_SCALAR_HEADER) {
-        let Some(trailer_offset) = compact_value_offset.checked_add(8) else { return Ok(None); };
-        if compact_scalar_layout(ctx, payload, trailer_offset)? { return Ok(Some(compact_value_offset)); }
+        let Some(trailer_offset) = compact_value_offset.checked_add(8) else {
+            return Ok(None);
+        };
+        if compact_scalar_layout(ctx, payload, trailer_offset)? {
+            return Ok(Some(compact_value_offset));
+        }
     }
     let Some((value_only_offset, shifted_value_offset, shifted_trailer_offset)) = (|| {
         let value_only_offset = header_offset.checked_add(VALUE_ONLY_SCALAR_HEADER.len())?;
         let shifted_value_offset = value_only_offset.checked_add(4)?;
-        Some((value_only_offset, shifted_value_offset, shifted_value_offset.checked_add(8)?))
-    })() else { return Ok(None); };
+        Some((
+            value_only_offset,
+            shifted_value_offset,
+            shifted_value_offset.checked_add(8)?,
+        ))
+    })() else {
+        return Ok(None);
+    };
     if payload.get(header_offset..value_only_offset) == Some(VALUE_ONLY_SCALAR_HEADER)
         && payload.get(value_only_offset..shifted_value_offset) == Some(&[0; 4])
         && View::f64_le_at(payload, shifted_value_offset).is_some_and(f64::is_finite)
@@ -117,8 +139,10 @@ fn scalar_value_offset(ctx: &DecodeContext<'_>, payload: &[u8], name_offset: usi
     {
         return Ok(Some(shifted_value_offset));
     }
-    Ok((payload.get(header_offset..value_only_offset) == Some(VALUE_ONLY_SCALAR_HEADER))
-        .then_some(value_only_offset))
+    Ok(
+        (payload.get(header_offset..value_only_offset) == Some(VALUE_ONLY_SCALAR_HEADER))
+            .then_some(value_only_offset),
+    )
 }
 
 pub(crate) fn scalar_indices_match(
@@ -160,7 +184,9 @@ fn scalar_operands_charged(
 ) -> Result<Vec<FeatureInputOperand>, CodecError> {
     let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
     let mut operands = Vec::new();
-    for (offset, kind, entity_index) in operand_cells(ctx, payload, trailer_offset)?.into_iter().flatten()
+    for (offset, kind, entity_index) in operand_cells(ctx, payload, trailer_offset)?
+        .into_iter()
+        .flatten()
     {
         let offset_u64 = u64::try_from(offset).map_err(|_| {
             ctx.refuse_codec_limit("address SLDPRT scalar operand", u64::MAX - 1, u64::MAX)
