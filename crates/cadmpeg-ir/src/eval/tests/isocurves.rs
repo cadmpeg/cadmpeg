@@ -76,11 +76,13 @@ fn isocurve_admits_actual_copies_and_constructor_visits_once() {
         let surface = surface(rational);
         // Each of two poles visits once and copies its point. Rational
         // output also copies its homogeneous sums and derives weights.
-        // Four knots copy eight bytes each, two output poles are converted,
-        // and four knot-finiteness visits and three adjacent comparisons.
+        // Both constructors charge two raw-pole rows and the collector's
+        // terminal `None`; rational output also charges two pole/weight pairings.
+        // Four knots copy eight bytes each, then receive four finiteness
+        // visits and three adjacent-order comparisons.
         let work = 2 * (1 + std::mem::size_of::<Point3>())
             + 32
-            + 2
+            + 3
             + 7
             + if rational {
                 2 * std::mem::size_of::<super::super::rational::Homogeneous>() + 22 + 2
