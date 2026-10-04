@@ -77,7 +77,7 @@ const DECLARED_FILE_VERSION: &str = "file_version";
 /// the codec.
 const DECLARED_PROGRAM_VERSION: &str = "program_version";
 
-/// One row of `docs/dialects.toml` under the `fcstd` namespace.
+/// One row of `crates/cadmpeg-registry/docs/dialects.toml` under the `fcstd` namespace.
 ///
 /// `FreeCAD` publishes no schema-version specification, so `[format.fcstd]`
 /// declares `complete = false` and the rows are the schemas the codec's own
