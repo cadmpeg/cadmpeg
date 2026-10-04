@@ -450,7 +450,7 @@ fn project_parameter_dependencies(
     };
     for token in tokens.iter().filter(|token| !token.is_syntax()) {
         ctx.charge_work(1, OPERATION)?;
-        let Some(dependency) = aliases.get(token.value()).and_then(Option::as_ref) else {
+        let Some(dependency) = aliases.get(ctx, token.value())?.and_then(Option::as_ref) else {
             continue;
         };
         ctx.charge_work(
@@ -525,12 +525,11 @@ fn order_parameters_by_dependencies(
                     ),
                     OPERATION,
                 )?;
-                if ctx.admit_iter(parameters[*index].dependencies.as_slice(), "scan SLDPRT order_parameters_by_dependencies values")?.all(|dependency| {
-                    parameter_owners
-                        .get(dependency)
+                if ctx.admit_iter(parameters[*index].dependencies.as_slice(), "scan SLDPRT order_parameters_by_dependencies values")?.try_fold(true, |found, dependency| { Ok::<_, cadmpeg_core::CodecError>(found && ( {
+                    ctx.get_hash_map(&(parameter_owners), dependency, "look up SLDPRT hash key")?
                         .is_none_or(|dependency_owner| dependency_owner != &owner)
                         || ordered_ids.contains(dependency)
-                }) {
+                } )) })? {
                     next = Some(position);
                     break;
                 }
@@ -646,8 +645,7 @@ impl ParameterAliases {
             ];
             if let Some(owner_name) = parameter
                 .owner
-                .as_ref()
-                .and_then(|owner| feature_names.get(owner))
+                .as_ref().map(|owner| {Ok::<_, cadmpeg_core::CodecError>(ctx.get_hash_map(&(feature_names), owner, "look up SLDPRT hash key")?)}).transpose()?.flatten()
             {
                 let qualified = ctx
                     .format_retained(format_args!("{}@{owner_name}", parameter.name), OPERATION)?;
@@ -724,18 +722,19 @@ pub(in crate::history) struct ParameterAliasView<'a> {
 }
 
 impl ParameterAliasView<'_> {
-    pub(super) fn get(&self, alias: &str) -> Option<&Option<ParameterId>> {
-        self.aliases
-            .exact
-            .get(alias)
-            .or_else(|| {
-                self.owner
-                    .and_then(|owner| self.aliases.feature_local.get(owner))
-                    .unwrap_or(&self.aliases.document_local)
-                    .get(alias)
-            })
-            .or_else(|| self.aliases.global.get(alias))
+    pub(super) fn get(&self, ctx: &DecodeContext<'_>, alias: &str) -> Result<Option<&Option<ParameterId>>, CodecError> {
+    if let Some(value) = ctx.get_hash_map(&self.aliases.exact, alias, "look up SLDPRT hash key")? {
+        return Ok(Some(value));
     }
+    let local = match self.owner {
+        Some(owner) => ctx.get_hash_map(&self.aliases.feature_local, owner, "look up SLDPRT hash key")?,
+        None => None,
+    }.unwrap_or(&self.aliases.document_local);
+    if let Some(value) = ctx.get_hash_map(local, alias, "look up SLDPRT hash key")? {
+        return Ok(Some(value));
+    }
+    ctx.get_hash_map(&self.aliases.global, alias, "look up SLDPRT hash key")
+}
 }
 
 fn evaluate_parameter_expressions(
@@ -806,7 +805,7 @@ pub(crate) fn parameters_with_unresolved_references(
                 let mut unresolved = false;
                 for identifier in ctx.admit_iter(&parsed[..], "scan SLDPRT parameters_with_unresolved_references values")? {
                     if !identifier.is_syntax() && definite_parameter_reference(ctx, identifier)?
-                        && aliases.get(identifier.value()).and_then(Option::as_ref)
+                        && aliases.get(ctx, identifier.value())?.and_then(Option::as_ref)
                             .is_none_or(|dependency| dependency == &parameter.id)
                     {
                         unresolved = true;

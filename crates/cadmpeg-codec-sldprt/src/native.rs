@@ -442,7 +442,7 @@ impl SldprtNative {
             )?;
         }
         for wire in entity_wires {
-            let Some(payload) = lane_payloads.get(wire.parent.as_str()).copied() else {
+            let Some(payload) = ctx.get_hash_map(&(lane_payloads), wire.parent.as_str(), "look up SLDPRT hash key")?.copied() else {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                     ctx.format_retained(
                         format_args!(
@@ -650,17 +650,15 @@ impl SldprtNative {
                     .terminal_feature_ref
                     .as_deref()
                     .is_some_and(|feature| !feature_ids.contains(feature))
-                || record.endpoint_selector().is_some_and(|selector| {
+                || match record.endpoint_selector() { Some(selector) => {
                     usize::try_from(record.offset)
                         .ok()
-                        .and_then(|offset| offset.checked_sub(4))
-                        .and_then(|offset| {
-                            lane_payloads
-                                .get(record.parent.as_str())
-                                .and_then(|payload| View::u32_le_at(payload, offset))
-                        })
+                        .and_then(|offset| offset.checked_sub(4)).map(|offset| {
+                            Ok::<_, cadmpeg_core::CodecError>(ctx.get_hash_map(&(lane_payloads), record.parent.as_str(), "look up SLDPRT hash key")?
+                                .and_then(|payload| View::u32_le_at(payload, offset)))
+                        }).transpose()?.flatten()
                         != Some(selector)
-                })
+                }, None => false }
         } ).then_some(candidate)) })? {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 ctx.format_retained(
@@ -765,7 +763,7 @@ impl SldprtNative {
         }
         for scalar in ctx.admit_iter(&scalars, "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)? {
             for operand in ctx.admit_iter(&scalar.operands, "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)? {
-                let Some(reference) = references_by_id.get(operand.reference_ref.as_str()) else {
+                let Some(reference) = ctx.get_hash_map(&(references_by_id), operand.reference_ref.as_str(), "look up SLDPRT hash key")? else {
                     return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                         ctx.format_retained(
                             format_args!(
@@ -1414,7 +1412,7 @@ impl SldprtNative {
             for scalar in ctx.admit_iter(&lane.scalars, "scan SLDPRT store values").map_err(cadmpeg_core::CodecError::from)? {
                 let resolved_operands = resolved_scalar_operand_markers(ctx, lane, scalar)?;
                 for (operand, resolved) in ctx.admit_iter(&scalar.operands, "scan SLDPRT scalar operands").map_err(cadmpeg_core::CodecError::from)?.zip(ctx.admit_iter(&resolved_operands[..], "scan SLDPRT resolved operands").map_err(cadmpeg_core::CodecError::from)?) {
-                    let Some(reference) = references_by_id.get(operand.reference_ref.as_str())
+                    let Some(reference) = ctx.get_hash_map(&(references_by_id), operand.reference_ref.as_str(), "look up SLDPRT hash key")?
                     else {
                         return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                             ctx.format_retained(
@@ -1441,7 +1439,7 @@ impl SldprtNative {
                         ));
                     }
                     if let Some(entity_ref) = operand.entity_ref.as_deref() {
-                        let Some(target) = sketch_entities.get(entity_ref) else {
+                        let Some(target) = ctx.get_hash_map(&(sketch_entities), entity_ref, "look up SLDPRT hash key")? else {
                             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                                 ctx.format_retained(
                                     format_args!(
@@ -1485,7 +1483,7 @@ impl SldprtNative {
             }
             for record in ctx.admit_iter(&lane.sketch_entities, "scan SLDPRT store values").map_err(cadmpeg_core::CodecError::from)? {
                 for link in ctx.admit_iter(record.links(), "scan SLDPRT sketch input links").map_err(cadmpeg_core::CodecError::from)? {
-                    let Some(target) = sketch_entities.get(link.entity_ref.as_str()) else {
+                    let Some(target) = ctx.get_hash_map(&(sketch_entities), link.entity_ref.as_str(), "look up SLDPRT hash key")? else {
                         return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                             ctx.format_retained(
                                 format_args!(

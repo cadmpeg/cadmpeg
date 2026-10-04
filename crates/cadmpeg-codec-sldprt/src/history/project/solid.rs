@@ -236,8 +236,7 @@ pub(super) fn project_extrude(
     let profile = if let Some(source) = feature.properties.get("Profile") {
         ProfileRef::Planar(PlanarProfileRef::Native(copy_projected_feature_text(
             ctx,
-            native_by_source
-                .get(source.as_str())
+            ctx.get_hash_map(&(native_by_source), source.as_str(), "look up SLDPRT hash key")?
                 .copied()
                 .unwrap_or(source.as_str()),
         )?))
@@ -255,7 +254,7 @@ pub(super) fn project_extrude(
             Some(profile) => {
                 ProfileRef::Planar(PlanarProfileRef::Native(copy_projected_feature_text(
                     ctx,
-                    native_by_source.get(profile).copied().unwrap_or(profile),
+                    ctx.get_hash_map(&(native_by_source), profile, "look up SLDPRT hash key")?.copied().unwrap_or(profile),
                 )?))
             }
             None => ProfileRef::Planar(PlanarProfileRef::Unresolved(copy_projected_feature_text(
@@ -529,23 +528,22 @@ fn hole_profile_construction(
     let constructions = children
         .split(',')
         .map(str::trim)
-        .filter(|source| !source.is_empty())
-        .filter_map(|source| {
-            crate::records::FeatureSource::try_from(source)
-                .ok()
-                .and_then(|source| features_by_source.get(&source).copied())
+        .filter(|source| !source.is_empty()).map(|source| -> Result<_, cadmpeg_core::CodecError> {
+            Ok::<_, cadmpeg_core::CodecError>(crate::records::FeatureSource::try_from(source)
+                .ok().map(|source| {Ok::<_, cadmpeg_core::CodecError>(ctx.get_hash_map(&(features_by_source), &source, "look up SLDPRT hash key")?.copied())}).transpose()?.flatten()
                 .or_else(|| {
                     let mut profiles = history_features
                         .iter()
                         .filter(|candidate| candidate.id == source);
                     let profile = profiles.next()?;
                     profiles.next().is_none().then_some(profile)
-                })
-        });
+                }))
+        }).filter_map(Result::transpose);
     let mut sole = None;
     let mut multiple = false;
     let mut complete = None;
     for profile in constructions {
+        let profile = profile?;
         if classify(ctx, profile)? != Some(FeatureClass::Sketch) { continue; }
         let Some(construction) = hole_sketch_construction(ctx, profile)? else {
             continue;

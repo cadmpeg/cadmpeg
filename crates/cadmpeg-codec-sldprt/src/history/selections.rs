@@ -98,18 +98,16 @@ fn surface_selection_face_bindings<'a>(
         ctx.charge_work(1, "bind SLDPRT topology selections")?;
         let candidate = selection
             .components
-            .last()
-            .and_then(|component| {
-                let feature_source_id = match selection.terminal_feature_ref.as_deref() {
-                    Some(terminal) => feature_sources.get(terminal).copied().flatten(),
+            .last().map(|component| {
+                let feature_source_id = match match selection.terminal_feature_ref.as_deref() {
+                    Some(terminal) => ctx.get_hash_map(&(feature_sources), terminal, "look up SLDPRT hash key")?.copied().flatten(),
                     None => View::u32_le_at(&component.type_signature, 4)
                         .and_then(|source| FeatureSourceId::try_from(source).ok()),
-                }?;
-                faces_by_identity
-                    .get(&(feature_source_id, component.local_id?))
+                } { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) };
+                Ok::<_, cadmpeg_core::CodecError>(ctx.get_hash_map(&(faces_by_identity), &(feature_source_id, match component.local_id { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }), "look up SLDPRT hash key")?
                     .copied()
-                    .flatten()
-            })
+                    .flatten())
+            }).transpose()?.flatten()
             .map(|face| copy_selection_id(ctx, face.as_str()))
             .transpose()?;
         let native = crate::resolved_features::terminations::compact_surface_selection_value(
@@ -579,17 +577,17 @@ fn resolve_planar_face_selection(
         cadmpeg_core::decode::u64_from_index(faces.len()),
         "match SLDPRT planar selection faces",
     )?;
-    let candidates = faces.iter().filter_map(|face| {
+    let candidates = faces.iter().map(|face| -> Result<_, cadmpeg_core::CodecError> {
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
-            &surfaces.get(&face.surface)?.geometry
+            &match ctx.get_hash_map(&(surfaces), &face.surface, "look up SLDPRT hash key")? { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }.geometry
         else {
-            return None;
+            return Ok::<_, cadmpeg_core::CodecError>(None);
         };
         let candidate_origin = plane_surface.origin();
         let candidate_normal = plane_surface.frame().axis().as_raw();
         let candidate_length = candidate_normal.norm();
         if !candidate_length.is_finite() || candidate_length <= f64::EPSILON {
-            return None;
+            return Ok::<_, cadmpeg_core::CodecError>(None);
         }
         let alignment = (normal.x * candidate_normal.x
             + normal.y * candidate_normal.y
@@ -604,12 +602,13 @@ fn resolve_planar_face_selection(
             + displacement.y * candidate_normal.y
             + displacement.z * candidate_normal.z)
             / candidate_length;
-        ((alignment.abs() - 1.0).abs() <= EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E9
+        Ok::<_, cadmpeg_core::CodecError>(((alignment.abs() - 1.0).abs() <= EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E9
             && separation.abs() <= EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E8)
-            .then_some(&face.id)
-    });
+            .then_some(&face.id))
+    }).filter_map(Result::transpose);
     let mut matching = Vec::new();
     for face in candidates {
+        let face = face?;
         ctx.reserve_vec(
             &mut matching,
             1,
@@ -734,7 +733,7 @@ fn resolve_ids<Id: TryFrom<String, Error = cadmpeg_ir::ids::IdentityError>>(
         .filter(|token| !token.is_empty())
     {
         ctx.charge_work(1, "resolve SLDPRT topology selection tokens")?;
-        let Some(Some(id)) = ids.get(token) else {
+        let Some(Some(id)) = ctx.get_hash_map(&(ids), token, "look up SLDPRT hash key")? else {
             return Ok(None);
         };
         ctx.reserve_vec(

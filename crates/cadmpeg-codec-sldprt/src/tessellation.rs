@@ -954,14 +954,12 @@ pub(crate) fn assign_unique_surface_owners(
             .map(|region| (&region.id, &region.body)),
         "index SLDPRT tessellation regions",
     )?;
-    let shell_bodies = collect_index(
-        ctx,
-        model
-            .shells
-            .iter()
-            .filter_map(|shell| Some((&shell.id, *regions.get(&shell.region)?))),
-        "index SLDPRT tessellation shells",
-    )?;
+    let mut shell_bodies = HashMap::new();
+    for shell in ctx.admit_iter(&model.shells, "index SLDPRT tessellation shells")? {
+        if let Some(body) = ctx.get_hash_map(&regions, &shell.region, "look up SLDPRT hash key")? {
+            ctx.insert_hash_map(&mut shell_bodies, &shell.id, *body, "index SLDPRT tessellation shells")?;
+        }
+    }
     let body_transforms = collect_index(
         ctx,
         model.bodies.iter().map(|body| (&body.id, body.transform)),
@@ -1014,26 +1012,26 @@ pub(crate) fn assign_unique_surface_owners(
     let mut candidates = Vec::new();
     for face in &model.faces {
         ctx.charge_work(1, "select SLDPRT tessellation face candidates")?;
-        let candidate = (|| {
-            let body = *shell_bodies.get(&face.shell)?;
-            let inverse = match body_transforms.get(body).copied().flatten() {
+        let candidate = (|| -> Result<_, cadmpeg_core::CodecError> {
+            let body = *match ctx.get_hash_map(&(shell_bodies), &face.shell, "look up SLDPRT hash key")? { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) };
+            let inverse = match ctx.get_hash_map(&(body_transforms), body, "look up SLDPRT hash key")?.copied().flatten() {
                 Some(transform) if transform.is_proper_rigid() => {
-                    transform.try_inverse_affine().ok()?
+                    match transform.try_inverse_affine().ok() { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }
                 }
-                Some(_) => return None,
+                Some(_) => return Ok::<_, cadmpeg_core::CodecError>(None),
                 None => cadmpeg_ir::transform::Transform::identity(),
             };
-            Some(SurfaceCandidate {
+            Ok::<_, cadmpeg_core::CodecError>(Some(SurfaceCandidate {
                 face: &face.id,
                 body,
-                surface: *surfaces.get(&face.surface)?,
+                surface: *match ctx.get_hash_map(&(surfaces), &face.surface, "look up SLDPRT hash key")? { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) },
                 tolerance: face
                     .tolerance
                     .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get),
                 inverse,
                 trim: None,
-            })
-        })();
+            }))
+        })()?;
         if let Some(mut candidate) = candidate {
             candidate.trim = analytic_trim(ctx, face, candidate.surface, &topology)?;
             ctx.reserve_vec(
@@ -1355,22 +1353,18 @@ pub(crate) fn assign_persistent_owners(
             .map(|region| (&region.id, &region.body)),
         "index SLDPRT tessellation regions",
     )?;
-    let shell_bodies = collect_index(
-        ctx,
-        model
-            .shells
-            .iter()
-            .filter_map(|shell| Some((&shell.id, *regions.get(&shell.region)?))),
-        "index SLDPRT tessellation shells",
-    )?;
-    let face_bodies = collect_index(
-        ctx,
-        model
-            .faces
-            .iter()
-            .filter_map(|face| Some((&face.id, *shell_bodies.get(&face.shell)?))),
-        "index SLDPRT tessellation faces",
-    )?;
+    let mut shell_bodies = HashMap::new();
+    for shell in ctx.admit_iter(&model.shells, "index SLDPRT tessellation shells")? {
+        if let Some(body) = ctx.get_hash_map(&regions, &shell.region, "look up SLDPRT hash key")? {
+            ctx.insert_hash_map(&mut shell_bodies, &shell.id, *body, "index SLDPRT tessellation shells")?;
+        }
+    }
+    let mut face_bodies = HashMap::new();
+    for face in ctx.admit_iter(&model.faces, "index SLDPRT tessellation faces")? {
+        if let Some(body) = ctx.get_hash_map(&shell_bodies, &face.shell, "look up SLDPRT hash key")? {
+            ctx.insert_hash_map(&mut face_bodies, &face.id, *body, "index SLDPRT tessellation faces")?;
+        }
+    }
 
     let mut bindings_by_mesh = HashMap::<&str, Option<&PersistentFaceIdentity>>::new();
     for binding in bindings {
@@ -1399,13 +1393,13 @@ pub(crate) fn assign_persistent_owners(
         if mesh.body.is_some() || !mesh.faces.is_empty() {
             continue;
         }
-        let Some(Some(identity)) = bindings_by_mesh.get(mesh.id.as_str()) else {
+        let Some(Some(identity)) = ctx.get_hash_map(&(bindings_by_mesh), mesh.id.as_str(), "look up SLDPRT hash key")? else {
             continue;
         };
-        let Some(Some(face)) = faces_by_identity.get(identity) else {
+        let Some(Some(face)) = ctx.get_hash_map(&(faces_by_identity), identity, "look up SLDPRT hash key")? else {
             continue;
         };
-        let Some(body) = face_bodies.get(face) else {
+        let Some(body) = ctx.get_hash_map(&(face_bodies), face, "look up SLDPRT hash key")? else {
             continue;
         };
         ctx.reserve_vec(
@@ -1742,48 +1736,33 @@ struct TrimTopology<'a> {
 }
 
 fn closed_planar_circle(
+    ctx: &DecodeContext<'_>,
     loop_: &cadmpeg_ir::topology::Loop,
     surface: &SurfaceGeometry,
     frame: PlaneFrame,
     tolerance: f64,
     topology: &TrimTopology<'_>,
-) -> Option<CircularHole> {
-    let TrimTopology {
-        coedges,
-        edges,
-        vertices,
-        points,
-        curves,
-        ..
-    } = *topology;
-    let coedge = *coedges.get(&loop_.coedges()[0])?;
-    let edge = *edges.get(&coedge.edge)?;
-    if coedge.owner_loop != loop_.id || loop_.coedges().len() != 1 {
-        return None;
-    }
+) -> Result<Option<CircularHole>, cadmpeg_core::CodecError> {
+    let TrimTopology { coedges, edges, vertices, points, curves, .. } = *topology;
+    let coedge = *require_some!(ctx.get_hash_map(coedges, &loop_.coedges()[0], "look up SLDPRT hash key")?);
+    let edge = *require_some!(ctx.get_hash_map(edges, &coedge.edge, "look up SLDPRT hash key")?);
+    if coedge.owner_loop != loop_.id || loop_.coedges().len() != 1 { return Ok(None); }
     let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
-        *curves.get(edge.curve()?)?
-    else {
-        return None;
-    };
+        *require_some!(ctx.get_hash_map(curves, require_some!(edge.curve()), "look up SLDPRT hash key")?)
+    else { return Ok(None); };
     let center = circle_curve.center().get();
     let axis = *circle_curve.frame().axis().as_raw();
     let radius = circle_curve.radius().get();
-    let boundary_point = *points.get(&vertices.get(&edge.start)?.point)?;
-    let end_point = *points.get(&vertices.get(&edge.end)?.point)?;
+    let boundary_point = *require_some!(ctx.get_hash_map(points, &require_some!(ctx.get_hash_map(vertices, &edge.start, "look up SLDPRT hash key")?).point, "look up SLDPRT hash key")?);
+    let end_point = *require_some!(ctx.get_hash_map(points, &require_some!(ctx.get_hash_map(vertices, &edge.end, "look up SLDPRT hash key")?).point, "look up SLDPRT hash key")?);
     if radius <= tolerance
         || axis.dot(frame.normal).abs() < 1.0 - EPS_AXIS_ALIGNMENT
-        || analytic_surface_residual(surface.solved()?, center)? > tolerance
-        || analytic_surface_residual(surface.solved()?, boundary_point)? > tolerance
+        || require_some!(analytic_surface_residual(require_some!(surface.solved()), center)) > tolerance
+        || require_some!(analytic_surface_residual(require_some!(surface.solved()), boundary_point)) > tolerance
         || boundary_point.distance(end_point) > tolerance
         || (boundary_point.distance(center) - radius).abs() > tolerance
-    {
-        return None;
-    }
-    Some(CircularHole {
-        center: frame.project(center),
-        radius,
-    })
+    { return Ok(None); }
+    Ok(Some(CircularHole { center: frame.project(center), radius }))
 }
 
 #[derive(Clone, Copy)]
@@ -2075,15 +2054,15 @@ fn planar_trim(
     };
     for loop_id in ctx.admit_iter(outer_loop, "scan SLDPRT planar trim loop")?
         .chain(ctx.admit_iter(inner_loops, "scan SLDPRT planar trim loop")?) {
-        let loop_ = *require_some!(loops.get(loop_id));
+        let loop_ = *require_some!(ctx.get_hash_map(&(loops), loop_id, "look up SLDPRT hash key")?);
         if loop_.face != face.id || loop_.coedges().is_empty() || loop_.vertices().next().is_some()
         {
             return Ok(None);
         }
         if loop_.coedges().len() == 1 {
             let circle = require_some!(closed_planar_circle(
-                loop_, surface, frame, tolerance, topology,
-            ));
+                ctx, loop_, surface, frame, tolerance, topology,
+            )?);
             ctx.reserve_vec(&mut circles, 1, "collect SLDPRT planar trim circles")?;
             circles.push(circle);
             continue;
@@ -2094,8 +2073,8 @@ fn planar_trim(
         let mut previous_end = None;
         for coedge_id in loop_.coedges() {
             ctx.charge_work(1, "scan SLDPRT planar trim coedge")?;
-            let coedge = *require_some!(coedges.get(coedge_id));
-            let edge = *require_some!(edges.get(&coedge.edge));
+            let coedge = *require_some!(ctx.get_hash_map(&(coedges), coedge_id, "look up SLDPRT hash key")?);
+            let edge = *require_some!(ctx.get_hash_map(&(edges), &coedge.edge, "look up SLDPRT hash key")?);
             if coedge.owner_loop != loop_.id {
                 return Ok(None);
             }
@@ -2103,8 +2082,8 @@ fn planar_trim(
                 Sense::Forward => (&edge.start, &edge.end),
                 Sense::Reversed => (&edge.end, &edge.start),
             };
-            let start = *require_some!(points.get(&require_some!(vertices.get(start)).point));
-            let end = *require_some!(points.get(&require_some!(vertices.get(end)).point));
+            let start = *require_some!(ctx.get_hash_map(&(points), &require_some!(ctx.get_hash_map(&(vertices), start, "look up SLDPRT hash key")?).point, "look up SLDPRT hash key")?);
+            let end = *require_some!(ctx.get_hash_map(&(points), &require_some!(ctx.get_hash_map(&(vertices), end, "look up SLDPRT hash key")?).point, "look up SLDPRT hash key")?);
             if require_some!(analytic_surface_residual(
                 require_some!(surface.solved()),
                 start
@@ -2119,7 +2098,7 @@ fn planar_trim(
             }
             let (samples, sample_tolerance) = require_some!(planar_boundary_samples(
                 ctx,
-                require_some!(curves.get(require_some!(edge.curve()))),
+                require_some!(ctx.get_hash_map(&(curves), require_some!(edge.curve()), "look up SLDPRT hash key")?),
                 start,
                 end,
                 surface,
@@ -2265,7 +2244,7 @@ fn planar_hole_trim(
     };
     for loop_id in ctx.admit_iter(outer_loop, "scan SLDPRT planar hole loop")?
         .chain(ctx.admit_iter(inner_loops, "scan SLDPRT planar hole loop")?) {
-        let loop_ = require_some!(loops.get(loop_id));
+        let loop_ = require_some!(ctx.get_hash_map(&(loops), loop_id, "look up SLDPRT hash key")?);
         has_polygon_loop |= loop_.coedges().len() > 1;
     }
     if !has_polygon_loop {
@@ -2274,10 +2253,10 @@ fn planar_hole_trim(
     let mut holes = Vec::new();
     for loop_id in ctx.admit_iter(outer_loop, "test SLDPRT planar hole loop")?
         .chain(ctx.admit_iter(inner_loops, "test SLDPRT planar hole loop")?) {
-        let loop_ = require_some!(loops.get(loop_id));
+        let loop_ = require_some!(ctx.get_hash_map(&(loops), loop_id, "look up SLDPRT hash key")?);
         if loop_.face == face.id && loop_.coedges().len() == 1 && loop_.vertices().next().is_none()
         {
-            if let Some(circle) = closed_planar_circle(loop_, surface, frame, tolerance, topology) {
+            if let Some(circle) = closed_planar_circle(ctx, loop_, surface, frame, tolerance, topology)? {
                 ctx.reserve_vec(&mut holes, 1, "collect SLDPRT planar hole trim")?;
                 holes.push(PlanarHole::Circle(circle));
             }
@@ -2319,7 +2298,7 @@ fn cylindrical_trim(
         return Ok(None);
     }
     let loop_id = require_some!(face.loops.iter().next());
-    let loop_ = *require_some!(loops.get(loop_id));
+    let loop_ = *require_some!(ctx.get_hash_map(&(loops), loop_id, "look up SLDPRT hash key")?);
     if loop_.face != face.id || loop_.coedges().is_empty() || loop_.vertices().next().is_some() {
         return Ok(None);
     }
@@ -2327,12 +2306,12 @@ fn cylindrical_trim(
     let mut axial_bounds = None::<(f64, f64)>;
     for coedge_id in loop_.coedges() {
         ctx.charge_work(1, "scan SLDPRT cylindrical trim coedges")?;
-        let coedge = *require_some!(coedges.get(coedge_id));
+        let coedge = *require_some!(ctx.get_hash_map(&(coedges), coedge_id, "look up SLDPRT hash key")?);
         if coedge.owner_loop != loop_.id {
             return Ok(None);
         }
-        let edge = *require_some!(edges.get(&coedge.edge));
-        let curve = require_some!(curves.get(require_some!(edge.curve())));
+        let edge = *require_some!(ctx.get_hash_map(&(edges), &coedge.edge, "look up SLDPRT hash key")?);
+        let curve = require_some!(ctx.get_hash_map(&(curves), require_some!(edge.curve()), "look up SLDPRT hash key")?);
         match curve {
             CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
                 let direction = *line_curve.direction().as_raw();
@@ -2353,8 +2332,8 @@ fn cylindrical_trim(
         }
         for vertex_id in [&edge.start, &edge.end] {
             ctx.charge_work(1, "scan SLDPRT cylindrical trim endpoints")?;
-            let vertex = require_some!(vertices.get(vertex_id));
-            let point = *require_some!(points.get(&vertex.point));
+            let vertex = require_some!(ctx.get_hash_map(&(vertices), vertex_id, "look up SLDPRT hash key")?);
+            let point = *require_some!(ctx.get_hash_map(&(points), &vertex.point, "look up SLDPRT hash key")?);
             if require_some!(analytic_surface_residual(
                 require_some!(surface.solved()),
                 point
@@ -2376,11 +2355,11 @@ fn cylindrical_trim(
     let mut angles = Vec::new();
     for coedge_id in loop_.coedges() {
         ctx.charge_work(1, "scan SLDPRT cylindrical trim angles")?;
-        let coedge = require_some!(coedges.get(coedge_id));
-        let edge = require_some!(edges.get(&coedge.edge));
+        let coedge = require_some!(ctx.get_hash_map(&(coedges), coedge_id, "look up SLDPRT hash key")?);
+        let edge = require_some!(ctx.get_hash_map(&(edges), &coedge.edge, "look up SLDPRT hash key")?);
         for vertex_id in [&edge.start, &edge.end] {
-            let vertex = require_some!(vertices.get(vertex_id));
-            let point = *require_some!(points.get(&vertex.point));
+            let vertex = require_some!(ctx.get_hash_map(&(vertices), vertex_id, "look up SLDPRT hash key")?);
+            let point = *require_some!(ctx.get_hash_map(&(points), &vertex.point, "look up SLDPRT hash key")?);
             let angle = require_some!(cylinder_angle(point, origin, &frame));
             ctx.reserve_vec(&mut angles, 1, "collect SLDPRT cylindrical trim angles")?;
             angles.push(angle);
@@ -2431,7 +2410,7 @@ fn conical_trim(
         return Ok(None);
     }
     let loop_id = require_some!(face.loops.iter().next());
-    let loop_ = *require_some!(loops.get(loop_id));
+    let loop_ = *require_some!(ctx.get_hash_map(&(loops), loop_id, "look up SLDPRT hash key")?);
     if loop_.face != face.id || loop_.coedges().is_empty() || loop_.vertices().next().is_some() {
         return Ok(None);
     }
@@ -2440,12 +2419,12 @@ fn conical_trim(
     let mut angles = Vec::new();
     for coedge_id in loop_.coedges() {
         ctx.charge_work(1, "scan SLDPRT conical trim coedges")?;
-        let coedge = *require_some!(coedges.get(coedge_id));
+        let coedge = *require_some!(ctx.get_hash_map(&(coedges), coedge_id, "look up SLDPRT hash key")?);
         if coedge.owner_loop != loop_.id {
             return Ok(None);
         }
-        let edge = *require_some!(edges.get(&coedge.edge));
-        let curve = require_some!(curves.get(require_some!(edge.curve())));
+        let edge = *require_some!(ctx.get_hash_map(&(edges), &coedge.edge, "look up SLDPRT hash key")?);
+        let curve = require_some!(ctx.get_hash_map(&(curves), require_some!(edge.curve()), "look up SLDPRT hash key")?);
         match curve {
             CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
                 let direction = *line_curve.direction().as_raw();
@@ -2521,8 +2500,8 @@ fn conical_trim(
         }
         for vertex_id in [&edge.start, &edge.end] {
             ctx.charge_work(1, "scan SLDPRT conical trim endpoints")?;
-            let vertex = require_some!(vertices.get(vertex_id));
-            let point = *require_some!(points.get(&vertex.point));
+            let vertex = require_some!(ctx.get_hash_map(&(vertices), vertex_id, "look up SLDPRT hash key")?);
+            let point = *require_some!(ctx.get_hash_map(&(points), &vertex.point, "look up SLDPRT hash key")?);
             if require_some!(analytic_surface_residual(
                 require_some!(surface.solved()),
                 point

@@ -43,13 +43,13 @@ enum ParameterAliasMap<'a> {
 }
 
 impl ParameterAliasMap<'_> {
-    fn get(&self, alias: &str) -> Option<&Option<ParameterId>> {
-        match self {
-            Self::Layered(aliases) => aliases.get(alias),
-            #[cfg(test)]
-            Self::Flat(aliases) => aliases.get(alias),
-        }
+    fn get(&self, ctx: &DecodeContext<'_>, alias: &str) -> Result<Option<&Option<ParameterId>>, CodecError> {
+    match self {
+        Self::Layered(aliases) => aliases.get(ctx, alias),
+        #[cfg(test)]
+        Self::Flat(aliases) => ctx.get_hash_map(aliases, alias, "look up SLDPRT hash key"),
     }
+}
 }
 
 impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
@@ -222,13 +222,11 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
             }
         }
         let referenced = |token: &str| -> Result<ParameterValue, ExpressionFailure> {
-            let value = self
-                .aliases
-                .get(token)
-                .and_then(Option::as_ref)
-                .and_then(|id| self.values.get(id))
+            let id = self.aliases.get(self.ctx, token)?.and_then(Option::as_ref)
                 .ok_or(ExpressionFailure::NoValue)?;
-            Ok((value).try_clone_for_decode(self.ctx, "retain SLDPRT parameter value text")?)
+            let value = self.ctx.get_hash_map(self.values, id, "look up SLDPRT hash key")?
+                .ok_or(ExpressionFailure::NoValue)?;
+            Ok(value.try_clone_for_decode(self.ctx, "retain SLDPRT parameter value text")?)
         };
         match token {
             Token::Quoted(token) => referenced(token.as_str()),

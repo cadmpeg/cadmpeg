@@ -379,10 +379,11 @@ pub(super) fn principal_plane_in_history(ctx: &cadmpeg_core::decode::DecodeConte
             && record.properties.is_empty()
             && !record.kind.is_empty()
     };
-    let source_triplet = [2, 3, 4].map(|source| {
-        FeatureSource::from_value(source)
-            .and_then(|source| features_by_source.get(&source).copied())
+    let source_triplet = [2, 3, 4].map(|source| -> Result<_, cadmpeg_core::CodecError> {
+        Ok::<_, cadmpeg_core::CodecError>(FeatureSource::from_value(source).map(|source| {Ok::<_, cadmpeg_core::CodecError>(ctx.get_hash_map(&(features_by_source), &source, "look up SLDPRT hash key")?.copied())}).transpose()?.flatten())
     });
+        let [front, top, right] = source_triplet;
+        let source_triplet = [front?, top?, right?];
     if let [Some(front), Some(top), Some(right)] = source_triplet {
         if [front, top, right].into_iter().all(legacy_shape)
             && front.kind == top.kind

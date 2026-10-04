@@ -288,7 +288,8 @@ fn planar_polygon_construction_refuses_boundary_comparison_work() {
         .geometry;
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 128;
+    // 128 work units plus 1027 bytes hashed by one loop and 28 boundary-record lookups.
+    policy.limits.max_work_units = 1155;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
         matches!(super::super::planar_trim(&ctx, face, surface, &topology), Err(CodecError::ResourceLimit(limit)) if limit.operation == "compare SLDPRT planar trim boundaries")

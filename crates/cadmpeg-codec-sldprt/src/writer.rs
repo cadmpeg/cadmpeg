@@ -1990,8 +1990,7 @@ pub(crate) fn validate_feature_graph(
             if !ctx.insert_hash_set(&mut seen, id, "index SLDPRT feature graph parents")? {
                 return Err(CodecError::Malformed("feature parent cycle".into()));
             }
-            let node = by_id
-                .get(&id)
+            let node = ctx.get_hash_map(&(by_id), &id, "look up SLDPRT hash key")?
                 .ok_or_else(|| CodecError::Malformed("feature references missing parent".into()))?;
             parent = node.parent_source_id();
         }
@@ -2002,7 +2001,7 @@ pub(crate) fn validate_feature_graph(
             if !ctx.insert_hash_set(&mut seen, id, "index SLDPRT feature graph parents")? {
                 return Err(CodecError::Malformed("feature tree cycle".into()));
             }
-            let node = by_record.get(id).ok_or_else(|| {
+            let node = ctx.get_hash_map(&(by_record), id, "look up SLDPRT hash key")?.ok_or_else(|| {
                 CodecError::Malformed("feature references missing tree parent".into())
             })?;
             parent = node.tree_parent_record_id();
@@ -2422,23 +2421,7 @@ fn body_material<'ir>(
         let AppearanceTarget::Body(_) = &binding.target else {
             continue;
         };
-        let work = cadmpeg_core::decode::u64_from_index(appearances.len())
-            .checked_add(2)
-            .and_then(|count| {
-                count.checked_mul(
-                    cadmpeg_core::decode::u64_from_index(binding.appearance.as_str().len())
-                        .checked_add(1)?,
-                )
-            })
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "find SLDPRT body material appearance",
-                    u64::MAX - 1,
-                    u64::MAX,
-                )
-            })?;
-        ctx.charge_work(work, "find SLDPRT body material appearance")?;
-        let appearance = appearances.get(&binding.appearance).ok_or_else(|| {
+        let appearance = ctx.get_hash_map(&(appearances), &binding.appearance, "look up SLDPRT hash key")?.ok_or_else(|| {
             CodecError::Malformed("body binding references missing appearance".into())
         })?;
         let color = appearance.base_color.ok_or_else(|| {

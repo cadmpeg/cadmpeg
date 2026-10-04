@@ -406,7 +406,7 @@ pub(crate) fn resolve_display_appearances(
     for (&source_id, face_indexes) in ctx.admit_iter(&faces_by_source, "scan SLDPRT feature appearance face sources")? {
         const FEATURE_APPEARANCE_NAME: &str = "SolidWorks feature appearance";
 
-        let Some(Some(assignment)) = feature_by_source.get(&source_id) else {
+        let Some(Some(assignment)) = ctx.get_hash_map(&(feature_by_source), &source_id, "look up SLDPRT hash key")? else {
             continue;
         };
         ctx.insert_btree_set(

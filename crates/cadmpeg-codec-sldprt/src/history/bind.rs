@@ -190,23 +190,17 @@ pub(crate) fn bind_unique_sketch_feature(
         else {
             continue;
         };
-        ctx.charge_work(
-            u64::try_from(feature_indices.len()).map_err(|_| {
-                ctx.refuse_codec_limit("match SLDPRT sketch aliases", u64::MAX - 1, u64::MAX)
-            })?,
-            "match SLDPRT sketch aliases",
-        )?;
-        let mut candidates = feature_indices
-            .iter()
-            .filter(|base_index| {
+        let mut selected_index = None;
+        let mut multiple = false;
+        for candidate_index in ctx.admit_iter(&feature_indices, "match SLDPRT sketch aliases")? {
+            let base_index = &candidate_index;
+            let matches = {
                 let alias_native = features[*index]
                     .native_ref
-                    .as_deref()
-                    .and_then(|native_ref| native_features.get(native_ref));
+                    .as_deref().map(|native_ref| {Ok::<_, cadmpeg_core::CodecError>(ctx.get_hash_map(&(native_features), native_ref, "look up SLDPRT hash key")?)}).transpose()?.flatten();
                 let base_native = features[**base_index]
                     .native_ref
-                    .as_deref()
-                    .and_then(|native_ref| native_features.get(native_ref));
+                    .as_deref().map(|native_ref| {Ok::<_, cadmpeg_core::CodecError>(ctx.get_hash_map(&(native_features), native_ref, "look up SLDPRT hash key")?)}).transpose()?.flatten();
                 features[**base_index].name.as_deref() == Some(base_name)
                     && alias_native.zip(base_native).is_some_and(|(alias, base)| {
                         let compatible_class = alias.input_class == base.input_class
@@ -220,14 +214,14 @@ pub(crate) fn bind_unique_sketch_feature(
                             && alias.parameters == base.parameters
                             && alias.content == base.content
                     })
-            });
-        let Some(base_index) = candidates.next() else {
-            continue;
-        };
-        if candidates.next().is_some() {
-            continue;
+            };
+            if matches {
+                if selected_index.is_some() { multiple = true; break; }
+                selected_index = Some(*candidate_index);
+            }
         }
-        let base_index = *base_index;
+        let Some(base_index) = selected_index else { continue; };
+        if multiple { continue; }
         let base_dependency = copy_binding_feature_id(ctx, &features[base_index].id)?;
         let Some(native_ref) = features[*index].native_ref.as_deref() else {
             continue;
@@ -381,7 +375,7 @@ fn regeneration_order(
         for predecessor in ctx.admit_iter(feature.dependencies.as_slice(), "collect SLDPRT feature predecessors")? {
             add_regeneration_predecessor(ctx, &mut predecessors, predecessor)?;
         }
-        if let Some(parent) = tree_parent_by_child.get(&feature.id) {
+        if let Some(parent) = ctx.get_hash_map(&(tree_parent_by_child), &feature.id, "look up SLDPRT hash key")? {
             add_regeneration_predecessor(ctx, &mut predecessors, parent)?;
         }
         if let Some(model) = model {
@@ -403,7 +397,7 @@ fn regeneration_order(
         }
         for predecessor in predecessors {
             ctx.charge_work(1, "build SLDPRT feature regeneration graph")?;
-            let Some(&source) = by_id.get(predecessor) else {
+            let Some(&source) = ctx.get_hash_map(&(by_id), predecessor, "look up SLDPRT hash key")? else {
                 continue;
             };
             ctx.reserve_vec(
@@ -503,7 +497,7 @@ fn face_owner_bodies<'a>(
     let mut shell_bodies = HashMap::new();
     for shell in shells {
         ctx.charge_work(1, "index SLDPRT face owner shells")?;
-        let Some(&body) = region_bodies.get(shell.region.as_str()) else {
+        let Some(&body) = ctx.get_hash_map(&(region_bodies), shell.region.as_str(), "look up SLDPRT hash key")? else {
             continue;
         };
         ctx.insert_hash_map(
@@ -516,7 +510,7 @@ fn face_owner_bodies<'a>(
     let mut owners = HashMap::new();
     for face in faces {
         ctx.charge_work(1, "index SLDPRT face owner bodies")?;
-        let Some(&body) = shell_bodies.get(face.shell.as_str()) else {
+        let Some(&body) = ctx.get_hash_map(&(shell_bodies), face.shell.as_str(), "look up SLDPRT hash key")? else {
             continue;
         };
         ctx.insert_hash_map(
@@ -652,7 +646,7 @@ pub(crate) fn derive_feature_outputs(
     let owners = face_owner_bodies(ctx, faces, shells, regions)?;
     let mut produced: HashMap<u32, Vec<&BodyId>> = HashMap::new();
     for (face, source_id) in ctx.admit_iter(face_producers, "collect SLDPRT produced bodies")? {
-        let Some(body) = owners.get(face.as_str()) else {
+        let Some(body) = ctx.get_hash_map(&(owners), face.as_str(), "look up SLDPRT hash key")? else {
             continue;
         };
         ctx.admit_hash_map_entry(&mut produced, source_id, "index SLDPRT produced bodies")?;
