@@ -42,6 +42,18 @@ pub(crate) enum MetaSectionNumber {
     Eleven = 11,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for MetaSectionNumber {
+    const FIXED_BYTES: Option<u64> = Some(1);
+
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(1)
+    }
+}
+
 impl TryFrom<u8> for MetaSectionNumber {
     type Error = String;
 
@@ -193,21 +205,21 @@ pub(crate) fn parse_meta_tables<'a>(
 
     let (block_count, section_1_payload, section_1_footer) =
         counted_section(&mut view, 4, "block-size table")?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(block_count),
-        "admit Inventor RSe block descriptors",
-    )?;
     let mut blocks = ctx.vector_storage(block_count, "admit Inventor RSe block descriptors")?;
     let mut sizes = section_1_payload;
-    for ordinal in 0..block_count {
+    for ordinal in ctx.admit_iter(&(0..block_count), "visit Inventor RSe table entries")? {
         let encoded = crate::reader::u32(&mut sizes, "block-size entry")?;
-        blocks.push(BlockDescriptor {
-            ordinal: u32::try_from(ordinal).map_err(|_| {
-                CodecError::Malformed("Inventor numeric value exceeds target range".into())
-            })?,
-            stored: encoded & 0x8000_0000 != 0,
-            payload_len: encoded & 0x7fff_ffff,
-        });
+        ctx.push_vec(
+            &mut blocks,
+            BlockDescriptor {
+                ordinal: u32::try_from(ordinal).map_err(|_| {
+                    CodecError::Malformed("Inventor numeric value exceeds target range".into())
+                })?,
+                stored: encoded & 0x8000_0000 != 0,
+                payload_len: encoded & 0x7fff_ffff,
+            },
+            "admit Inventor RSe block descriptors",
+        )?;
     }
     let section_1 = MetaSection {
         number: MetaSectionNumber::One,
@@ -240,15 +252,13 @@ pub(crate) fn parse_meta_tables<'a>(
             "RSe type table has more than 256 entries".into(),
         ));
     }
-    // The test above bounds `type_count` at 256 and `SECTION_COUNT` is 11, so
-    // the charge is at most 267 and `u64` holds it exactly.
+    // The eleven metadata sections occupy eleven collection slots.
     ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(type_count)
-            + cadmpeg_core::decode::u64_from_index(SECTION_COUNT),
+        cadmpeg_core::decode::u64_from_index(SECTION_COUNT),
         "admit Inventor RSe metadata tables",
     )?;
     let mut types = ctx.vector_storage(type_count, "admit Inventor RSe metadata tables")?;
-    for index in 0..type_count {
+    for index in ctx.admit_iter(&(0..type_count), "visit Inventor RSe table entries")? {
         let entry = child(
             section_4_payload,
             index * type_desc::LEN,
@@ -256,22 +266,26 @@ pub(crate) fn parse_meta_tables<'a>(
             "type descriptor",
         )?;
         let mut entry = crate::pmdc::Cursor::new(entry);
-        types.push(TypeDescriptor {
-            index: u8::try_from(index).map_err(|_| {
-                CodecError::Malformed("Inventor numeric value exceeds target range".into())
-            })?,
-            id: entry.take_array("type descriptor id")?,
-            fields: [
-                (
-                    entry.u16("type descriptor field 0 key")?,
-                    entry.u32("type descriptor field 0 value")?,
-                ),
-                (
-                    entry.u16("type descriptor field 1 key")?,
-                    entry.u32("type descriptor field 1 value")?,
-                ),
-            ],
-        });
+        ctx.push_vec(
+            &mut types,
+            TypeDescriptor {
+                index: u8::try_from(index).map_err(|_| {
+                    CodecError::Malformed("Inventor numeric value exceeds target range".into())
+                })?,
+                id: entry.take_array("type descriptor id")?,
+                fields: [
+                    (
+                        entry.u16("type descriptor field 0 key")?,
+                        entry.u32("type descriptor field 0 value")?,
+                    ),
+                    (
+                        entry.u16("type descriptor field 1 key")?,
+                        entry.u32("type descriptor field 1 value")?,
+                    ),
+                ],
+            },
+            "admit Inventor RSe metadata tables",
+        )?;
     }
 
     let section_4 = MetaSection {
@@ -322,14 +336,16 @@ pub(crate) fn frame_bulk_records<'a>(
     tables: &MetaTables<'_>,
     segment_version_major: u8,
 ) -> Result<RseRecordTable<'a>, CodecError> {
-    let stored_count = tables.blocks.iter().filter(|block| block.stored).count();
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(stored_count),
-        "admit Inventor RSe record frames",
-    )?;
+    let stored_count = ctx
+        .admit_iter(&tables.blocks, "count stored Inventor RSe blocks")?
+        .filter(|block| block.stored)
+        .count();
     let mut cursor = Cursor::new(bulk);
     let mut records = ctx.vector_storage(stored_count, "admit Inventor RSe record frames")?;
-    for block in tables.blocks.iter().filter(|block| block.stored) {
+    for block in ctx
+        .admit_iter(&tables.blocks, "scan stored Inventor RSe blocks")?
+        .filter(|block| block.stored)
+    {
         let selector = cursor.u32("record type selector")?;
         let type_index = u8::try_from(selector & 0xff).map_err(|_| {
             CodecError::Malformed("Inventor numeric value exceeds target range".into())
@@ -359,15 +375,19 @@ pub(crate) fn frame_bulk_records<'a>(
             parse_extended_record_trailer(ctx, &mut cursor)?;
         }
         let trailer = child(bulk, trailer_start, cursor.position(), "record trailer")?;
-        records.push(RseRecordFrame {
-            ordinal: block.ordinal,
-            selector,
-            type_id: descriptor.id,
-            payload_offset,
-            payload,
-            trailing_length_written: trailing_payload_len != 0,
-            trailer,
-        });
+        ctx.push_vec(
+            &mut records,
+            RseRecordFrame {
+                ordinal: block.ordinal,
+                selector,
+                type_id: descriptor.id,
+                payload_offset,
+                payload,
+                trailing_length_written: trailing_payload_len != 0,
+                trailer,
+            },
+            "admit Inventor RSe record frames",
+        )?;
     }
     let trailer_start = cursor.position();
     let trailer_marker = cursor.u32("stream trailer marker")?;
@@ -524,7 +544,7 @@ fn parse_extended_record_trailer(
         u64::from(property_count),
         "admit Inventor RSe record trailer properties",
     )?;
-    for _ in 0..property_count {
+    for _ in ctx.admit_iter(&(0..property_count), "visit Inventor RSe table entries")? {
         cursor.sized_bytes(65_536, "record trailer property name")?;
         match cursor.u32("record trailer property type")? {
             1 => cursor.skip(3, "record trailer property")?,
@@ -569,7 +589,7 @@ fn parse_extended_record_trailer(
     )?;
     if reference_count != 0 {
         cursor.skip(8, "record trailer reference header")?;
-        for _ in 0..reference_count {
+        for _ in ctx.admit_iter(&(0..reference_count), "visit Inventor RSe table entries")? {
             cursor.sized_bytes(65_536, "record trailer reference name")?;
             cursor.skip(4, "record trailer reference value")?;
         }
