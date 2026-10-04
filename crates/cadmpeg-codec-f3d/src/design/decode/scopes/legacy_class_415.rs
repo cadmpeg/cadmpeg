@@ -199,7 +199,15 @@ pub(super) fn exact_one_sided_extrude_prologue(
     if let Some(offset) = first_side_offset_reference {
         let record_index =
             super::shared_frames::marked_record_reference(bytes, start.checked_add(offset)?)?;
-        if !reference_members.contains(&record_index) {
+        let is_reference_member = match ctx.contains(
+            reference_members,
+            &record_index,
+            "search F3D class-415 first-side offset reference",
+        ) {
+            Ok(value) => value,
+            Err(error) => return Some(Err(error)),
+        };
+        if !is_reference_member {
             return None;
         }
     }

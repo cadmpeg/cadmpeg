@@ -1659,10 +1659,16 @@ pub(crate) fn bind_face_operand_candidates(
             continue;
         };
         operand.candidate_faces.clear();
-        for tag in ctx.admit_iter(tags, "scan F3D face operand tags")?.filter(|tag| {
-            crate::ids::same_native_occurrence(&tag.id, &operand.id)
-                && tag.design_references.contains(&design_reference)
-        }) {
+        for tag in ctx.admit_iter(tags, "scan F3D face operand tags")? {
+            if !crate::ids::same_native_occurrence(&tag.id, &operand.id)
+                || !ctx.contains(
+                    &tag.design_references,
+                    &design_reference,
+                    "find F3D face operand Design reference",
+                )?
+            {
+                continue;
+            }
             if let AttributeTarget::Face(face) = &tag.target {
                 push_operand_face_candidate(ctx, &mut operand.candidate_faces, face)?;
             }
@@ -1730,10 +1736,16 @@ pub(crate) fn bind_edge_operand_candidates(
         else {
             continue;
         };
-        for tag in ctx.admit_iter(tags, "scan F3D edge operand tags")?.filter(|tag| {
-            crate::ids::same_native_occurrence(&tag.id, &operand.id)
-                && tag.design_references.contains(&design_reference)
-        }) {
+        for tag in ctx.admit_iter(tags, "scan F3D edge operand tags")? {
+            if !crate::ids::same_native_occurrence(&tag.id, &operand.id)
+                || !ctx.contains(
+                    &tag.design_references,
+                    &design_reference,
+                    "find F3D edge operand Design reference",
+                )?
+            {
+                continue;
+            }
             if let cadmpeg_ir::attributes::AttributeTarget::Face(face) = &tag.target {
                 push_operand_face_candidate(ctx, &mut operand.candidate_faces, face)?;
             }
@@ -2445,12 +2457,20 @@ pub(crate) fn decode_fillet_radius_groups(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let mut scope_groups = ctx.collect_vec(
-            groups.iter().filter(|group| {
-                native_stream(&group.id) == Some(stream)
-                    && group.scope_record_index == scope.record_index
-            }),
+        let _scope_groups_storage;
+        let mut scope_groups;
+        (scope_groups, _scope_groups_storage) = ctx.with_scoped_storage(
             "f3d Fillet scope groups",
+            || {
+                ctx.collect_vec(
+                    ctx.admit_iter(groups, "scan F3D Fillet scope groups")?
+                        .filter(|group| {
+                            native_stream(&group.id) == Some(stream)
+                                && group.scope_record_index == scope.record_index
+                        }),
+                    "f3d Fillet scope groups",
+                )
+            },
         )?;
         ctx.stable_sort_by_key(
             &mut scope_groups[..],
@@ -2463,20 +2483,26 @@ pub(crate) fn decode_fillet_radius_groups(
             Ord::cmp,
             "sort f3d design operands 12",
         )?;
-        let mut owned_parameters = ctx.collect_vec(
-            owners
-                .iter()
-                .filter(|owner| {
-                    native_stream(owner.id()) == Some(stream)
-                        && owner.scope_record_index() == scope.record_index
-                })
-                .filter_map(|owner| {
-                    Some((
-                        owner.local_ordinal(),
-                        *parameter_index.get(&(stream, owner.parameter_record_index()))?,
-                    ))
-                }),
+        let _owned_parameters_storage;
+        let mut owned_parameters;
+        (owned_parameters, _owned_parameters_storage) = ctx.with_scoped_storage(
             "f3d Fillet owned parameters",
+            || {
+                ctx.collect_vec(
+                    ctx.admit_iter(owners, "scan F3D Fillet owners")?
+                        .filter(|owner| {
+                            native_stream(owner.id()) == Some(stream)
+                                && owner.scope_record_index() == scope.record_index
+                        })
+                        .filter_map(|owner| {
+                            Some((
+                                owner.local_ordinal(),
+                                *parameter_index.get(&(stream, owner.parameter_record_index()))?,
+                            ))
+                        }),
+                    "f3d Fillet owned parameters",
+                )
+            },
         )?;
         ctx.stable_sort_by_key(
             &mut owned_parameters[..],
@@ -2487,17 +2513,33 @@ pub(crate) fn decode_fillet_radius_groups(
             Ord::cmp,
             "sort f3d design operands 13",
         )?;
-        let radii = ctx.collect_vec(
-            owned_parameters.iter().filter_map(|(_, parameter)| {
-                (parameter.source_kind() == "Radius").then_some(*parameter)
-            }),
+        let _radii_storage;
+        let radii;
+        (radii, _radii_storage) = ctx.with_scoped_storage(
             "f3d Fillet radius parameters",
+            || {
+                ctx.collect_vec(
+                    ctx.admit_iter(&owned_parameters, "scan F3D Fillet radius parameters")?
+                        .filter_map(|(_, parameter)| {
+                            (parameter.source_kind() == "Radius").then_some(*parameter)
+                        }),
+                    "f3d Fillet radius parameters",
+                )
+            },
         )?;
-        let weights = ctx.collect_vec(
-            owned_parameters.iter().filter_map(|(_, parameter)| {
-                (parameter.source_kind() == "TangencyWeight").then_some(*parameter)
-            }),
+        let _weights_storage;
+        let weights;
+        (weights, _weights_storage) = ctx.with_scoped_storage(
             "f3d Fillet weight parameters",
+            || {
+                ctx.collect_vec(
+                    ctx.admit_iter(&owned_parameters, "scan F3D Fillet weight parameters")?
+                        .filter_map(|(_, parameter)| {
+                            (parameter.source_kind() == "TangencyWeight").then_some(*parameter)
+                        }),
+                    "f3d Fillet weight parameters",
+                )
+            },
         )?;
         if owned_parameters.len() == radii.len() + weights.len()
             && scope_groups.len() == radii.len()
@@ -2526,11 +2568,20 @@ pub(crate) fn decode_fillet_radius_groups(
         let [group] = scope_groups.as_slice() else {
             continue;
         };
-        let chord_lengths = ctx.collect_vec(
-            owned_parameters.iter().filter_map(|(_, parameter)| {
-                (parameter.source_kind() == "ChordLen").then_some(parameter.record_index)
-            }),
+        let _chord_lengths_storage;
+        let chord_lengths;
+        (chord_lengths, _chord_lengths_storage) = ctx.with_scoped_storage(
             "f3d Fillet chord lengths",
+            || {
+                ctx.collect_vec(
+                    ctx.admit_iter(&owned_parameters, "scan F3D Fillet chord-length parameters")?
+                        .filter_map(|(_, parameter)| {
+                            (parameter.source_kind() == "ChordLen")
+                                .then_some(parameter.record_index)
+                        }),
+                    "f3d Fillet chord lengths",
+                )
+            },
         )?;
         // TangencyWeight is optional for the chordal law; older records carry
         // only the required ChordLen input.
@@ -2554,17 +2605,22 @@ pub(crate) fn decode_fillet_radius_groups(
             continue;
         }
         let asymmetric_offsets = |kind: &str| {
-            ctx.collect_vec(
-                owned_parameters.iter().filter_map(|(_, parameter)| {
-                    (parameter.source_kind() == kind).then_some(parameter.record_index)
-                }),
-                "f3d Fillet asymmetric offsets",
-            )
+            ctx.with_scoped_storage("f3d Fillet asymmetric offsets", || {
+                ctx.collect_vec(
+                    ctx.admit_iter(&owned_parameters, "scan F3D Fillet asymmetric parameters")?
+                        .filter_map(|(_, parameter)| {
+                            (parameter.source_kind() == kind).then_some(parameter.record_index)
+                        }),
+                    "f3d Fillet asymmetric offsets",
+                )
+            })
         };
-        let (offset_one, offset_two) = (
-            asymmetric_offsets("EdgeOffset1")?,
-            asymmetric_offsets("EdgeOffset2")?,
-        );
+        let _offset_one_storage;
+        let offset_one;
+        (offset_one, _offset_one_storage) = asymmetric_offsets("EdgeOffset1")?;
+        let _offset_two_storage;
+        let offset_two;
+        (offset_two, _offset_two_storage) = asymmetric_offsets("EdgeOffset2")?;
         if owned_parameters.len() == 3 {
             if let ([offset_one], [offset_two], [weight]) = (
                 offset_one.as_slice(),
@@ -2587,19 +2643,28 @@ pub(crate) fn decode_fillet_radius_groups(
             }
         }
         let records = |kind: &str| {
-            ctx.collect_vec(
-                owned_parameters.iter().filter_map(|(_, parameter)| {
-                    (parameter.source_kind() == kind).then_some(parameter.record_index)
-                }),
-                "f3d Fillet variable parameters",
-            )
+            ctx.with_scoped_storage("f3d Fillet variable parameters", || {
+                ctx.collect_vec(
+                    ctx.admit_iter(&owned_parameters, "scan F3D Fillet variable parameters")?
+                        .filter_map(|(_, parameter)| {
+                            (parameter.source_kind() == kind).then_some(parameter.record_index)
+                        }),
+                    "f3d Fillet variable parameters",
+                )
+            })
         };
-        let (start, end, middle_radii, middle_parameters) = (
-            records("StartRadius")?,
-            records("EndRadius")?,
-            records("MidRadius")?,
-            records("MidParams")?,
-        );
+        let _start_storage;
+        let start;
+        (start, _start_storage) = records("StartRadius")?;
+        let _end_storage;
+        let end;
+        (end, _end_storage) = records("EndRadius")?;
+        let _middle_radii_storage;
+        let middle_radii;
+        (middle_radii, _middle_radii_storage) = records("MidRadius")?;
+        let _middle_parameters_storage;
+        let middle_parameters;
+        (middle_parameters, _middle_parameters_storage) = records("MidParams")?;
         let ([start], [end]) = (start.as_slice(), end.as_slice()) else {
             continue;
         };
@@ -2613,8 +2678,13 @@ pub(crate) fn decode_fillet_radius_groups(
         {
             continue;
         }
+        let middle_radii = ctx.admit_iter(&middle_radii, "scan F3D Fillet midpoint radii")?;
+        let middle_parameters = ctx.admit_iter(
+            &middle_parameters,
+            "scan F3D Fillet midpoint parameter indices",
+        )?;
         let middle = ctx.collect_vec(
-            middle_radii.into_iter().zip(middle_parameters).map(
+            middle_radii.copied().zip(middle_parameters.copied()).map(
                 |(radius_parameter_record_index, parameter_record_index)| {
                     crate::records::topology::fillet::DesignFilletMidpoint {
                         radius_parameter_record_index,
@@ -5193,13 +5263,19 @@ pub(crate) fn bind_body_recipe_operand_candidates(
             let Ok(design_reference) = i64::try_from(reference.design_reference) else {
                 continue;
             };
-    for tag in ctx.admit_iter(tags, "scan F3D body recipe tags")?.filter(|tag| {
-                crate::ids::same_native_occurrence(&tag.id, &operand_id)
-                    && tag.design_references.contains(&design_reference)
-                    && (reference.form != 3
+    for tag in ctx.admit_iter(tags, "scan F3D body recipe tags")? {
+                if !crate::ids::same_native_occurrence(&tag.id, &operand_id)
+                    || !ctx.contains(
+                        &tag.design_references,
+                        &design_reference,
+                        "find F3D body recipe Design reference",
+                    )?
+                    || !(reference.form != 3
                         || !form_three_uses_recipe_selector
                         || tag_selector == Some(tag.selector))
-            }) {
+                {
+                    continue;
+                }
                 if let AttributeTarget::Face(face) = &tag.target {
                     {
                         push_operand_face_candidate(ctx, reference.candidate_faces, face)?;

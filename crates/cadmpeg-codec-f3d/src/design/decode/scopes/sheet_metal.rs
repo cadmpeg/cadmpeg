@@ -14,6 +14,7 @@ use crate::layout::hem_gap_length_fixed_operation_section as hem_gap;
 use crate::layout::hem_rolled_fixed_operation_section as hem_rolled;
 use crate::layout::hem_teardrop_fixed_operation_section as hem_teardrop;
 use crate::records::feature::scope::DesignParameterScope;
+use crate::records::identity::ReferenceRun;
 use crate::records::feature::sheet_metal::DesignBaseFlangeOperation;
 use crate::records::feature::sheet_metal::DesignBendPosition;
 use crate::records::feature::sheet_metal::DesignEdgeFlangeHeightExtent;
@@ -580,10 +581,27 @@ fn legacy_edge_flange_operation_at(
     let auxiliary_reference_record_indices = unclaimed;
     let width_distance_owner_record_indices_by_edge =
         if layout.width_mode == DesignEdgeWidthMode::TwoSidesPerEdge {
-            width_distance_owner_record_indices
-                .chunks_exact(2)
-                .map(|pair| [pair[0], pair[1]])
-                .collect()
+            let owners = match ctx.admit_iter(
+                &width_distance_owner_record_indices,
+                "scan F3D edge flange two-sided width owners",
+            ) {
+                Ok(owners) => owners,
+                Err(error) => return Some(Err(CodecError::ResourceLimit(error))),
+            };
+            let pairs = owners
+                .copied()
+                .scan(None, |first, value| match first.take() {
+                    Some(first) => Some(Some([first, value])),
+                    None => {
+                        *first = Some(value);
+                        Some(None)
+                    }
+                })
+                .filter_map(|pair| pair);
+            match ctx.collect_vec(pairs, "collect F3D edge flange two-sided width owners") {
+                Ok(pairs) => pairs,
+                Err(error) => return Some(Err(error)),
+            }
         } else {
             Vec::new()
         };
@@ -900,9 +918,24 @@ fn edge_flange_to_object_operation_at(
         )?,
     ];
     if reference_record_indices[0] == reference_record_indices[1]
-        || reference_record_indices
-            .iter()
-            .any(|record_index| references.contains(record_index))
+        || {
+            let mut is_member = false;
+            for record_index in &reference_record_indices {
+                match ctx.contains(
+                    references,
+                    record_index,
+                    "search F3D sheet-metal ToObject reference members",
+                ) {
+                    Ok(true) => {
+                        is_member = true;
+                        break;
+                    }
+                    Ok(false) => {}
+                    Err(error) => return Some(Err(error)),
+                }
+            }
+            is_member
+        }
         || View::u32_le_at(
             bytes,
             common.checked_add(flange_to_object::INSERTED_REFERENCE_COUNT)?,
@@ -1004,7 +1037,7 @@ fn exact_hem_operation(
     bytes: &[u8],
     start: usize,
     paired_at: usize,
-    references: &(impl ExactSizeIterator<Item = u32> + Clone),
+    references: &ReferenceRun<u32>,
     has_kind: &impl Fn(u32, &str) -> Result<bool, CodecError>,
 ) -> Result<Option<DesignHemOperation>, CodecError> {
     // The header shift and form are recovered by agreement, so all candidates
@@ -1017,7 +1050,7 @@ fn exact_hem_operation(
                 bytes,
                 start,
                 paired_at,
-                (*references).clone(),
+                references,
                 header_shift,
             )?,
             hem_radius_angle_operation_at(
@@ -1025,7 +1058,7 @@ fn exact_hem_operation(
                 bytes,
                 start,
                 paired_at,
-                (*references).clone(),
+                references,
                 header_shift,
             )?,
             hem_gap_length_radius_operation_at(
@@ -1033,7 +1066,7 @@ fn exact_hem_operation(
                 bytes,
                 start,
                 paired_at,
-                (*references).clone(),
+                references,
                 header_shift,
             )?,
         ];
@@ -1137,7 +1170,7 @@ pub(super) fn bind_hem_operation_from_parameters(
             bytes,
             start,
             paired_at,
-            &scope.reference_members().values().copied(),
+            scope.reference_members(),
             &has_kind,
         )?;
         if let crate::records::feature::scope::DesignScopePayloadMut::Hem(slot) =
@@ -1161,7 +1194,7 @@ fn hem_gap_length_operation_at(
     bytes: &[u8],
     start: usize,
     paired_at: usize,
-    references: impl ExactSizeIterator<Item = u32>,
+    references: &ReferenceRun<u32>,
     header_shift: usize,
 ) -> Result<Option<DesignHemOperation>, CodecError> {
     let parsed = (|| -> Option<Result<DesignHemOperation, CodecError>> {
@@ -1175,7 +1208,34 @@ fn hem_gap_length_operation_at(
         return None;
     }
 
-    let mut unclaimed: Vec<u32> = references.collect::<Vec<_>>();
+    let _unclaimed_storage;
+    let mut unclaimed;
+    (unclaimed, _unclaimed_storage) = if let Some(values) = references.unlocated_values() {
+        match ctx.with_scoped_storage("collect F3D gap-length Hem references", || {
+            let values = ctx
+                .admit_iter(values, "scan F3D gap-length Hem reference source")
+                .map_err(CodecError::from)?;
+            ctx.collect_vec(values.copied(), "collect F3D gap-length Hem references")
+        }) {
+            Ok(values) => values,
+            Err(error) => return Some(Err(error)),
+        }
+    } else if let Some(rows) = references.located_rows() {
+        match ctx.with_scoped_storage("collect F3D gap-length Hem references", || {
+            let rows = ctx
+                .admit_iter(rows, "scan F3D gap-length Hem reference source")
+                .map_err(CodecError::from)?;
+            ctx.collect_vec(
+                rows.map(|row| row.value),
+                "collect F3D gap-length Hem references",
+            )
+        }) {
+            Ok(values) => values,
+            Err(error) => return Some(Err(error)),
+        }
+    } else {
+        return None;
+    };
     let claim = |index: u32, pool: &mut Vec<u32>| -> Result<Option<u32>, CodecError> {
         let mut entries = ctx
             .admit_iter(pool, "claim F3D gap-length Hem reference")
@@ -1276,7 +1336,7 @@ fn hem_radius_angle_operation_at(
     bytes: &[u8],
     start: usize,
     paired_at: usize,
-    references: impl ExactSizeIterator<Item = u32>,
+    references: &ReferenceRun<u32>,
     header_shift: usize,
 ) -> Result<Option<DesignHemOperation>, CodecError> {
     let parsed = (|| -> Option<Result<DesignHemOperation, CodecError>> {
@@ -1290,7 +1350,34 @@ fn hem_radius_angle_operation_at(
         return None;
     }
 
-    let mut unclaimed = references.collect::<Vec<_>>();
+    let _unclaimed_storage;
+    let mut unclaimed;
+    (unclaimed, _unclaimed_storage) = if let Some(values) = references.unlocated_values() {
+        match ctx.with_scoped_storage("collect F3D rolled Hem references", || {
+            let values = ctx
+                .admit_iter(values, "scan F3D rolled Hem reference source")
+                .map_err(CodecError::from)?;
+            ctx.collect_vec(values.copied(), "collect F3D rolled Hem references")
+        }) {
+            Ok(values) => values,
+            Err(error) => return Some(Err(error)),
+        }
+    } else if let Some(rows) = references.located_rows() {
+        match ctx.with_scoped_storage("collect F3D rolled Hem references", || {
+            let rows = ctx
+                .admit_iter(rows, "scan F3D rolled Hem reference source")
+                .map_err(CodecError::from)?;
+            ctx.collect_vec(
+                rows.map(|row| row.value),
+                "collect F3D rolled Hem references",
+            )
+        }) {
+            Ok(values) => values,
+            Err(error) => return Some(Err(error)),
+        }
+    } else {
+        return None;
+    };
     let claim = |index: u32, pool: &mut Vec<u32>| -> Result<Option<u32>, CodecError> {
         let mut entries = ctx
             .admit_iter(pool, "claim F3D rolled Hem reference")
@@ -1383,7 +1470,7 @@ fn hem_gap_length_radius_operation_at(
     bytes: &[u8],
     start: usize,
     paired_at: usize,
-    references: impl ExactSizeIterator<Item = u32>,
+    references: &ReferenceRun<u32>,
     header_shift: usize,
 ) -> Result<Option<DesignHemOperation>, CodecError> {
     let parsed = (|| -> Option<Result<DesignHemOperation, CodecError>> {
@@ -1397,7 +1484,34 @@ fn hem_gap_length_radius_operation_at(
         return None;
     }
 
-    let mut unclaimed = references.collect::<Vec<_>>();
+    let _unclaimed_storage;
+    let mut unclaimed;
+    (unclaimed, _unclaimed_storage) = if let Some(values) = references.unlocated_values() {
+        match ctx.with_scoped_storage("collect F3D teardrop Hem references", || {
+            let values = ctx
+                .admit_iter(values, "scan F3D teardrop Hem reference source")
+                .map_err(CodecError::from)?;
+            ctx.collect_vec(values.copied(), "collect F3D teardrop Hem references")
+        }) {
+            Ok(values) => values,
+            Err(error) => return Some(Err(error)),
+        }
+    } else if let Some(rows) = references.located_rows() {
+        match ctx.with_scoped_storage("collect F3D teardrop Hem references", || {
+            let rows = ctx
+                .admit_iter(rows, "scan F3D teardrop Hem reference source")
+                .map_err(CodecError::from)?;
+            ctx.collect_vec(
+                rows.map(|row| row.value),
+                "collect F3D teardrop Hem references",
+            )
+        }) {
+            Ok(values) => values,
+            Err(error) => return Some(Err(error)),
+        }
+    } else {
+        return None;
+    };
     let claim = |index: u32, pool: &mut Vec<u32>| -> Result<Option<u32>, CodecError> {
         let mut entries = ctx
             .admit_iter(pool, "claim F3D teardrop Hem reference")

@@ -664,7 +664,24 @@ pub(super) fn exact_ruled_surface_operation(
             &edge_group_record_indices,
             "validate F3D ruled surface edge groups",
         ) {
-            Ok(mut groups) => groups.any(|record_index| !reference_members.contains(record_index)),
+            Ok(groups) => {
+                let mut unlisted = false;
+                for record_index in groups {
+                    match ctx.contains(
+                        reference_members,
+                        record_index,
+                        "find F3D ruled surface listed edge group",
+                    ) {
+                        Ok(true) => {}
+                        Ok(false) => {
+                            unlisted = true;
+                            break;
+                        }
+                        Err(error) => return Some(Err(error)),
+                    }
+                }
+                unlisted
+            },
             Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
         };
         if has_unlisted_edge_group {

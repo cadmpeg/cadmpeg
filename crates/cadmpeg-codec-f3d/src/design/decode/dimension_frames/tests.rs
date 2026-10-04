@@ -629,6 +629,23 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         bound.alternate_selector_edges,
         [EdgeId::mint("test:model:edge#edge-c").expect("identity grammar")]
     );
+    for (skip, additional) in [(0, 1), (1, 8), (2, 8)] {
+        let refused = std::cell::RefCell::new(bound.clone());
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "find F3D dimension recipe design reference", skip,
+            |ctx| super::bind_recipe_reference_candidates_charged(
+                ctx, &mut refused.borrow_mut(), &tags, None,
+            ),
+        );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "find F3D dimension recipe design reference"
+                && limit.additional == additional));
+        let refused = refused.into_inner();
+        assert!(refused.candidate_faces.is_empty());
+        assert!(refused.candidate_edges.is_empty());
+    }
     let stream_tags = [
         PersistentSubentityTag {
             id: "f3d:xref/A/occurrence-0/design:persistent-subentity-tag#1".into(),

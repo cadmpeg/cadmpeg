@@ -85,6 +85,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             bytes[second_side_extent_offset..second_side_extent_offset + 4]
                 .copy_from_slice(&side_extents.1.to_le_bytes());
         }
+        let mut legacy_reference_count_at = None;
         if legacy_side_extents.is_some() {
             let reference_count_offset = legacy_reference_count_offset.unwrap_or_else(|| {
                 if legacy_side_extents.is_some_and(|(_, widened)| widened)
@@ -95,6 +96,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
                     252
                 }
             }) + legacy_field_shift;
+            legacy_reference_count_at = Some(reference_count_offset);
             bytes.resize(reference_count_offset, 0);
         }
         let compact_two_sided =
@@ -157,7 +159,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
                 .unwrap(),
             byte_offset: 0,
         };
-        parse_parameter_scope(
+        let parsed = parse_parameter_scope(
             &cadmpeg_test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
@@ -166,7 +168,33 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             header.byte_offset,
         )
         .unwrap()
-        .unwrap()
+        .unwrap();
+        if direction_face_extend.0 == 2 {
+            let contains_operation = if legacy_reference_count_offset == Some(283) {
+                Some("search F3D compact shifted Extrude parameter references")
+            } else if legacy_reference_count_offset.is_none() {
+                Some("search F3D shifted Extrude parameter references")
+            } else {
+                None
+            };
+            if let (Some(operation), Some(reference_count_at)) =
+                (contains_operation, legacy_reference_count_at)
+            {
+                assert!(parsed.extrude_prologue().is_some());
+                let reference_members = [reference_padding.map_or(55, |_| 77_u32)];
+                super::assert_work_refusal(operation, |ctx| {
+                    super::super::exact_legacy_shifted_extrude_prologue(
+                        ctx,
+                        &bytes,
+                        0,
+                        reference_count_at,
+                        &reference_members,
+                    )
+                    .transpose()
+                });
+            }
+        }
+        parsed
     };
 
     let direct = scope(
@@ -1306,6 +1334,31 @@ fn legacy_class_415_one_sided_scope_decodes_distinct_extent_lanes() {
     assert_eq!(extent, DesignExtrudeExtent::OneSidedToFace);
     assert!(direction_reversed);
 
+    let contains_refusal = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "search F3D class-415 first-side offset reference",
+        0,
+        |ctx| {
+            super::super::exact_extrude_prologue(
+                ctx,
+                &to_face_bytes,
+                0,
+                481,
+                "415",
+                "265",
+                to_face_layout::REFERENCE_COUNT,
+                &TO_FACE_REFERENCES,
+            )
+        },
+    );
+    assert!(matches!(
+        contains_refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "search F3D class-415 first-side offset reference"
+                && limit.additional == 1
+    ));
+
     let distance = parse(&make_bytes(false, &DISTANCE_REFERENCES));
     assert_eq!(distance.frame_length(), 449);
     assert_eq!(distance.reference_count_offset(), 268);
@@ -1458,6 +1511,23 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
                 start_offset: 41,
             })
         );
+    }
+
+    let ordered_bytes = make_bytes(b"357", b"258", 2);
+    for operation in [
+        "search F3D shifted reference-aware Extrude slot members",
+        "search F3D shifted reference-aware tail references",
+        "search F3D shifted reference-aware trailing reference",
+    ] {
+        super::assert_work_refusal(operation, |ctx| {
+            super::super::exact_shifted_reference_aware_extrude_prologue(
+                ctx,
+                &ordered_bytes,
+                0,
+                REFERENCE_COUNT_OFFSET,
+                &REFERENCE_MEMBERS,
+            )
+        });
     }
 
     let mut invalid_class_397 = make_bytes(b"397", b"262", 2);
@@ -1671,6 +1741,19 @@ fn shifted_reference_aware_extrude_scope_decodes_516_byte_class_323_face_targets
         })
     );
 
+    super::assert_work_refusal(
+        "search F3D shifted reference-aware unordered trailing reference",
+        |ctx| {
+            super::super::exact_shifted_reference_aware_extrude_prologue(
+                ctx,
+                &bytes,
+                0,
+                layout::REFERENCE_COUNT,
+                &REFERENCE_MEMBERS,
+            )
+        },
+    );
+
     let mut invalid_trailing_reference = bytes.clone();
     invalid_trailing_reference
         [class_323_tail::TRAILING_REFERENCE + 1..class_323_tail::TRAILING_REFERENCE + 5]
@@ -1833,6 +1916,19 @@ fn shifted_reference_aware_extrude_scope_decodes_485_byte_class_323_symmetric_th
             start: DesignExtrudeStart::ProfilePlane,
             start_offset: u64_from_index(layout::START_SUPPORT),
         })
+    );
+
+    super::assert_work_refusal(
+        "search F3D shifted reference-aware symmetric tail references",
+        |ctx| {
+            super::super::exact_shifted_reference_aware_extrude_prologue(
+                ctx,
+                &bytes,
+                0,
+                symmetric::REFERENCE_COUNT,
+                &REFERENCE_MEMBERS,
+            )
+        },
     );
 
     let mut invalid_extent = bytes.clone();

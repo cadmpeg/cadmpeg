@@ -366,6 +366,31 @@ fn class_296_two_sided_to_faces_extrude_scope_requires_exact_frame_shape() {
         })
     );
 
+    let refusal = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "search F3D class-296 two-sided Extrude reference members",
+        0,
+        |ctx| {
+            super::super::exact_extrude_prologue(
+                ctx,
+                &bytes,
+                0,
+                536,
+                "296",
+                "261",
+                layout::REFERENCE_COUNT,
+                &REFERENCE_MEMBERS,
+            )
+        },
+    );
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "search F3D class-296 two-sided Extrude reference members"
+                && limit.additional == 1
+    ));
+
     let mut alternate_face_extend = bytes.clone();
     alternate_face_extend[layout::FACE_EXTEND..layout::FACE_EXTEND + 4]
         .copy_from_slice(&1u32.to_le_bytes());
@@ -592,6 +617,55 @@ fn class_296_legacy_one_sided_extrude_scopes_require_exact_frame_shape() {
         1,
         true,
     );
+
+    let leading_reference_refusal = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "search F3D class-296 legacy Extrude leading reference",
+        0,
+        |ctx| {
+            super::super::exact_extrude_prologue(
+                ctx,
+                &to_face_scalar_54,
+                0,
+                515,
+                "296",
+                "261",
+                to_face_tail::REFERENCE_COUNT,
+                &TO_FACE_REFERENCES,
+            )
+        },
+    );
+    assert!(matches!(
+        leading_reference_refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "search F3D class-296 legacy Extrude leading reference"
+                && limit.additional == 1
+    ));
+    let slot_reference_refusal = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "search F3D class-296 legacy Extrude slot references",
+        0,
+        |ctx| {
+            super::super::exact_extrude_prologue(
+                ctx,
+                &to_face_scalar_54,
+                0,
+                515,
+                "296",
+                "261",
+                to_face_tail::REFERENCE_COUNT,
+                &TO_FACE_REFERENCES,
+            )
+        },
+    );
+    assert!(matches!(
+        slot_reference_refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "search F3D class-296 legacy Extrude slot references"
+                && limit.additional == 1
+    ));
 
     let to_face_scalar_70 = build(
         515,

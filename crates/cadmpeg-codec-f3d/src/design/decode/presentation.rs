@@ -518,10 +518,24 @@ fn bare_presentation_material(
     let Some(bytes) = bytes.get(..end) else {
         return Ok(None);
     };
-    let marker = lp_utf16_bytes(BODY_PRESENTATION_MATERIAL_ENVELOPE_ID)?
-        .into_iter()
-        .chain(lp_utf16_bytes(PHYSICAL_MATERIAL_LIBRARY_ID)?)
-        .collect::<Vec<_>>();
+    let _marker_storage;
+    let marker;
+    (marker, _marker_storage) = ctx.with_scoped_storage(
+        "collect F3D bare presentation material marker",
+        || {
+            let envelope_marker = lp_utf16_bytes(BODY_PRESENTATION_MATERIAL_ENVELOPE_ID)?;
+            let library_marker = lp_utf16_bytes(PHYSICAL_MATERIAL_LIBRARY_ID)?;
+            ctx.collect_vec(
+                ctx.admit_iter(&envelope_marker, "admit F3D bare material envelope marker")?
+                    .copied()
+                    .chain(
+                        ctx.admit_iter(&library_marker, "admit F3D bare material library marker")?
+                            .copied(),
+                    ),
+                "collect F3D bare presentation material marker",
+            )
+        },
+    )?;
     let modern_marker = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[0])?;
     let modern_trailer = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1])?;
     let mut candidate = None;
@@ -1475,5 +1489,63 @@ mod tests {
         let material = presentation.material.as_ref().expect("material envelope");
         assert_eq!(material.physical_token, "PrismMaterial-018");
         assert_eq!(&*material.visual_guid, visual_guid);
+
+        let parse_material = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            bare_presentation_material_with_context(ctx, &bytes, 15, node_start, entity)
+        };
+        let material = crate::test_support::with_decode_context(|ctx| parse_material(ctx))
+            .expect("service admission")
+            .expect("valid bare material envelope");
+        assert_eq!(material.physical_token, "PrismMaterial-018");
+        assert_eq!(&*material.visual_guid, visual_guid);
+
+        for (operation, additional) in [
+            (
+                "admit F3D bare material envelope marker",
+                lp_utf16_bytes(BODY_PRESENTATION_MATERIAL_ENVELOPE_ID)
+                    .expect("fixed envelope marker")
+                    .len() as u64,
+            ),
+            (
+                "admit F3D bare material library marker",
+                lp_utf16_bytes(PHYSICAL_MATERIAL_LIBRARY_ID)
+                    .expect("fixed library marker")
+                    .len() as u64,
+            ),
+        ] {
+            let refusal = crate::test_support::resource_refusal_at(
+                cadmpeg_core::decode::ResourceDimension::WorkUnits,
+                operation,
+                0,
+                |ctx| parse_material(ctx).map(|_| ()),
+            );
+            assert!(matches!(
+                refusal,
+                cadmpeg_core::CodecError::ResourceLimit(failure)
+                    if failure.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                        && failure.operation == operation
+                        && failure.additional == additional
+            ));
+        }
+
+        for (dimension, additional) in [
+            (cadmpeg_core::decode::ResourceDimension::WorkUnits, 1),
+            (cadmpeg_core::decode::ResourceDimension::CollectionItems, 1),
+            (cadmpeg_core::decode::ResourceDimension::MaterializedBytes, 8),
+        ] {
+            let refusal = crate::test_support::resource_refusal_at(
+                dimension,
+                "collect F3D bare presentation material marker",
+                0,
+                |ctx| parse_material(ctx).map(|_| ()),
+            );
+            assert!(matches!(
+                refusal,
+                cadmpeg_core::CodecError::ResourceLimit(failure)
+                    if failure.dimension == dimension
+                        && failure.operation == "collect F3D bare presentation material marker"
+                        && failure.additional == additional
+            ));
+        }
     }
 }

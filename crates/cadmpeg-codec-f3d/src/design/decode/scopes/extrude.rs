@@ -138,7 +138,13 @@ pub(super) fn exact_extrude_prologue(
         ).transpose()
     })
     .or_else(|| {
-        exact_legacy_shifted_extrude_prologue(bytes, start, reference_count_at, reference_members).map(Ok)
+        exact_legacy_shifted_extrude_prologue(
+            ctx,
+            bytes,
+            start,
+            reference_count_at,
+            reference_members,
+        )
     })
     .or_else(|| exact_compact_shifted_extrude_prologue(bytes, start, reference_count_at).map(Ok))
     .or_else(|| {
@@ -173,6 +179,7 @@ pub(super) fn exact_extrude_prologue(
     })
     .or_else(|| {
         exact_class_296_two_sided_to_faces_extrude_prologue(
+            ctx,
             bytes,
             start,
             paired_at,
@@ -180,10 +187,11 @@ pub(super) fn exact_extrude_prologue(
             paired_class_tag,
             reference_count_at,
             reference_members,
-        ).map(Ok)
+        )
     })
     .or_else(|| {
         exact_class_296_legacy_one_sided_extrude_prologue(
+            ctx,
             bytes,
             start,
             paired_at,
@@ -191,7 +199,7 @@ pub(super) fn exact_extrude_prologue(
             paired_class_tag,
             reference_count_at,
             reference_members,
-        ).map(Ok)
+        )
     })
     .or_else(|| exact_legacy_distance_extrude_prologue(bytes, start, reference_count_at).map(Ok)).transpose()
 }
@@ -595,6 +603,7 @@ fn exact_class_296_symmetric_distance_extrude_prologue(
 }
 
 fn exact_class_296_two_sided_to_faces_extrude_prologue(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     paired_at: usize,
@@ -602,7 +611,7 @@ fn exact_class_296_two_sided_to_faces_extrude_prologue(
     paired_class_tag: &str,
     reference_count_at: usize,
     reference_members: &[u32],
-) -> Option<DesignExtrudePrologue> {
+) -> Option<Result<DesignExtrudePrologue, cadmpeg_core::CodecError>> {
     const PROFILE_NORMAL_UNIT_EPS: f64 = 1.0e-12;
 
     let frame_length = paired_at.checked_sub(start)?;
@@ -675,7 +684,15 @@ fn exact_class_296_two_sided_to_faces_extrude_prologue(
         }
         if present {
             let record_index = marked_record_reference(bytes, slot_offset)?;
-            if !reference_members.contains(&record_index) {
+            let is_reference_member = match ctx.contains(
+                reference_members,
+                &record_index,
+                "search F3D class-296 two-sided Extrude reference members",
+            ) {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            };
+            if !is_reference_member {
                 return None;
             }
             slot_offset = slot_offset.checked_add(11)?;
@@ -699,7 +716,7 @@ fn exact_class_296_two_sided_to_faces_extrude_prologue(
     {
         return None;
     }
-    Some(DesignExtrudePrologue::LegacyShifted {
+    Some(Ok(DesignExtrudePrologue::LegacyShifted {
         operation_prefix_marker_offset: None,
         operation,
         operation_offset: u64::try_from(operation_offset).ok()?,
@@ -720,10 +737,11 @@ fn exact_class_296_two_sided_to_faces_extrude_prologue(
         solid_operation_offset: u64::try_from(solid_operation_offset).ok()?,
         start: start_support,
         start_offset: u64::try_from(start_offset).ok()?,
-    })
+    }))
 }
 
 fn exact_class_296_legacy_one_sided_extrude_prologue(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     paired_at: usize,
@@ -731,7 +749,7 @@ fn exact_class_296_legacy_one_sided_extrude_prologue(
     paired_class_tag: &str,
     reference_count_at: usize,
     reference_members: &[u32],
-) -> Option<DesignExtrudePrologue> {
+) -> Option<Result<DesignExtrudePrologue, cadmpeg_core::CodecError>> {
     const PROFILE_NORMAL_UNIT_EPS: f64 = 1.0e-12;
 
     let frame_length = paired_at.checked_sub(start)?;
@@ -762,10 +780,17 @@ fn exact_class_296_legacy_one_sided_extrude_prologue(
             start.checked_add(class_296_legacy_scalar_54::ZERO_BEFORE_REFERENCE)?
                 ..start.checked_add(class_296_legacy_scalar_54::REFERENCE)?,
         )? != [0]
-        || !reference_members.contains(&marked_record_reference(
-            bytes,
-            start.checked_add(class_296_legacy_scalar_54::REFERENCE)?,
-        )?)
+        || !(match ctx.contains(
+            reference_members,
+            &marked_record_reference(
+                bytes,
+                start.checked_add(class_296_legacy_scalar_54::REFERENCE)?,
+            )?,
+            "search F3D class-296 legacy Extrude leading reference",
+        ) {
+            Ok(value) => value,
+            Err(error) => return Some(Err(error)),
+        })
         || bytes.get(
             start
                 .checked_add(class_296_legacy_scalar_54::REFERENCE)?
@@ -842,7 +867,15 @@ fn exact_class_296_legacy_one_sided_extrude_prologue(
         }
         if present {
             let record_index = marked_record_reference(bytes, slot_offset)?;
-            if !reference_members.contains(&record_index) {
+            let is_reference_member = match ctx.contains(
+                reference_members,
+                &record_index,
+                "search F3D class-296 legacy Extrude slot references",
+            ) {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            };
+            if !is_reference_member {
                 return None;
             }
             slot_offset = slot_offset.checked_add(11)?;
@@ -863,7 +896,7 @@ fn exact_class_296_legacy_one_sided_extrude_prologue(
     {
         return None;
     }
-    Some(DesignExtrudePrologue::LegacyShifted {
+    Some(Ok(DesignExtrudePrologue::LegacyShifted {
         operation_prefix_marker_offset: None,
         operation,
         operation_offset: u64::try_from(operation_offset).ok()?,
@@ -888,7 +921,7 @@ fn exact_class_296_legacy_one_sided_extrude_prologue(
         solid_operation_offset: u64::try_from(solid_operation_offset).ok()?,
         start: start_support,
         start_offset: u64::try_from(start_offset).ok()?,
-    })
+    }))
 }
 
 fn exact_legacy_distance_extrude_prologue(
@@ -985,7 +1018,14 @@ fn exact_current_extrude_prologue(
                 None => false,
             })
                 && marker_offset.is_none_or(|offset| bytes.get(offset) == Some(&1))
-                && reference_members.contains(&record_index)
+                && (match ctx.contains(
+                    reference_members,
+                    &record_index,
+                    "search F3D current Extrude candidate reference member",
+                ) {
+                    Ok(value) => value,
+                    Err(error) => return Some(Err(error)),
+                })
                 && matches!(View::u32_le_at(bytes, operation_offset), Some(1..=4))
                 && matches!(
                     operation_offset
@@ -1085,7 +1125,15 @@ fn exact_current_extrude_prologue(
             1 => {
                 *slot_present = true;
                 let record_index = marked_record_reference(bytes, extent_cursor)?;
-                if !reference_members.contains(&record_index) {
+                let is_reference_member = match ctx.contains(
+                    reference_members,
+                    &record_index,
+                    "search F3D current Extrude slot reference members",
+                ) {
+                    Ok(value) => value,
+                    Err(error) => return Some(Err(error)),
+                };
+                if !is_reference_member {
                     return None;
                 }
                 if slot_ordinal == 6 {
@@ -1376,7 +1424,15 @@ fn exact_shifted_reference_aware_extrude_prologue(
         }
         if present {
             let record_index = marked_record_reference(bytes, slot_offset)?;
-            if !reference_members.contains(&record_index) {
+            let is_reference_member = match ctx.contains(
+                reference_members,
+                &record_index,
+                "search F3D shifted reference-aware Extrude slot members",
+            ) {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            };
+            if !is_reference_member {
                 return None;
             }
             slot_offset = slot_offset.checked_add(11)?;
@@ -1407,7 +1463,7 @@ fn exact_shifted_reference_aware_extrude_prologue(
         return None;
     }
     let ordered_tail_references_valid = if tail_form == TailForm::SymmetricThroughAll {
-        [
+        let ordered_tail_references = [
             marked_record_reference(
                 bytes,
                 start.checked_add(
@@ -1419,11 +1475,25 @@ fn exact_shifted_reference_aware_extrude_prologue(
                 start
                     .checked_add(shifted_reference_aware_323_symmetric::PROFILE_GROUP_REFERENCE)?,
             )?,
-        ]
-        .iter()
-        .all(|record_index| reference_members.contains(record_index))
+        ];
+        let mut all_members = true;
+        for record_index in ordered_tail_references {
+            match ctx.contains(
+                reference_members,
+                &record_index,
+                "search F3D shifted reference-aware symmetric tail references",
+            ) {
+                Ok(true) => {}
+                Ok(false) => {
+                    all_members = false;
+                    break;
+                }
+                Err(error) => return Some(Err(error)),
+            }
+        }
+        all_members
     } else {
-        [
+        let ordered_tail_references = [
             marked_record_reference(
                 bytes,
                 start.checked_add(shifted_reference_aware::FIRST_SIDE_OWNER_REFERENCE)?,
@@ -1440,18 +1510,47 @@ fn exact_shifted_reference_aware_extrude_prologue(
                 bytes,
                 start.checked_add(shifted_reference_aware::PROFILE_GROUP_REFERENCE)?,
             )?,
-        ]
-        .iter()
-        .all(|record_index| reference_members.contains(record_index))
+        ];
+        let mut all_members = true;
+        for record_index in ordered_tail_references {
+            match ctx.contains(
+                reference_members,
+                &record_index,
+                "search F3D shifted reference-aware tail references",
+            ) {
+                Ok(true) => {}
+                Ok(false) => {
+                    all_members = false;
+                    break;
+                }
+                Err(error) => return Some(Err(error)),
+            }
+        }
+        all_members
     };
     let trailing_reference =
         marked_record_reference(bytes, start.checked_add(trailing_reference_offset)?)?;
     let trailing_reference_valid = match tail_form {
         TailForm::Unordered => {
-            trailing_reference != 0 && !reference_members.contains(&trailing_reference)
+            trailing_reference != 0
+                && !(match ctx.contains(
+                    reference_members,
+                    &trailing_reference,
+                    "search F3D shifted reference-aware unordered trailing reference",
+                ) {
+                    Ok(value) => value,
+                    Err(error) => return Some(Err(error)),
+                })
         }
         TailForm::Ordered | TailForm::SymmetricThroughAll => {
-            reference_members.contains(&trailing_reference)
+            match ctx.contains(
+                reference_members,
+                &trailing_reference,
+                "search F3D shifted reference-aware trailing reference",
+            ) {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            }
         }
     };
     let zero_range = |range_start: usize, range_end: usize| -> Result<bool, cadmpeg_core::CodecError> {
@@ -1578,11 +1677,12 @@ pub(super) fn exact_extrude_extent(
 }
 
 fn exact_legacy_shifted_extrude_prologue(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     reference_count_at: usize,
     reference_members: &[u32],
-) -> Option<DesignExtrudePrologue> {
+) -> Option<Result<DesignExtrudePrologue, cadmpeg_core::CodecError>> {
     if View::u32_le_at(bytes, start.checked_add(shifted_extrude::PREFIX_CONSTANT)?)? != 1
         || bytes.get(
             start.checked_add(shifted_extrude::ZERO_RUN_3)?
@@ -1619,7 +1719,7 @@ fn exact_legacy_shifted_extrude_prologue(
     if !matches!(direction_face_extend_values[0], 1..=3) {
         return None;
     }
-    let two_sided_offsets = || {
+    let two_sided_offsets = || -> Option<Result<[usize; 2], cadmpeg_core::CodecError>> {
         if reference_count_delta == 283 {
             let first_parameter_at =
                 start.checked_add(shifted_283::FIRST_PARAMETER_REFERENCE + field_shift)?;
@@ -1629,17 +1729,33 @@ fn exact_legacy_shifted_extrude_prologue(
                 start.checked_add(shifted_283::SECOND_PARAMETER_REFERENCE + field_shift)?;
             let second_side_extent_offset =
                 start.checked_add(shifted_283::SECOND_SIDE_EXTENT + field_shift)?;
-            let compact_valid = bytes
+            let compact_padding_valid = bytes
                 .get(start.checked_add(150 + field_shift)?..first_side_extent_offset)?
                 == [0; 16]
                 && bytes.get(start.checked_add(175 + field_shift)?..second_side_extent_offset)?
-                    == [0; 6]
-                && [first_parameter_at, second_parameter_at]
-                    .into_iter()
-                    .map(|offset| marked_record_reference(bytes, offset))
-                    .all(|reference| {
-                        reference.is_some_and(|value| reference_members.contains(&value))
-                    })
+                    == [0; 6];
+            let mut compact_members_valid = compact_padding_valid;
+            if compact_members_valid {
+                for offset in [first_parameter_at, second_parameter_at] {
+                    let Some(reference) = marked_record_reference(bytes, offset) else {
+                        compact_members_valid = false;
+                        break;
+                    };
+                    match ctx.contains(
+                        reference_members,
+                        &reference,
+                        "search F3D compact shifted Extrude parameter references",
+                    ) {
+                        Ok(true) => {}
+                        Ok(false) => {
+                            compact_members_valid = false;
+                            break;
+                        }
+                        Err(error) => return Some(Err(error)),
+                    }
+                }
+            }
+            let compact_valid = compact_members_valid
                 && marked_record_reference(
                     bytes,
                     start.checked_add(shifted_283::TRAILING_ENTITY_REFERENCE + field_shift)?,
@@ -1650,7 +1766,7 @@ fn exact_legacy_shifted_extrude_prologue(
                         ..start.checked_add(shifted_283::LEN + field_shift)?,
                 )? == [0; 8];
             if compact_valid {
-                return Some([first_side_extent_offset, second_side_extent_offset]);
+                return Some(Ok([first_side_extent_offset, second_side_extent_offset]));
             }
         }
         let first_parameter_at = start.checked_add(139 + field_shift)?;
@@ -1662,14 +1778,24 @@ fn exact_legacy_shifted_extrude_prologue(
             || bytes.get(start.checked_add(150 + field_shift)?..first_side_extent_offset)? != [0; 5]
             || bytes.get(start.checked_add(170 + field_shift)?..second_side_extent_offset)?
                 != [0; 8]
-            || [first_parameter_at, first_offset_at, second_parameter_at]
-                .into_iter()
-                .map(|offset| marked_record_reference(bytes, offset))
-                .any(|reference| !reference.is_some_and(|value| reference_members.contains(&value)))
         {
             return None;
         }
-        Some([first_side_extent_offset, second_side_extent_offset])
+        for offset in [first_parameter_at, first_offset_at, second_parameter_at] {
+            let Some(reference) = marked_record_reference(bytes, offset) else {
+                return None;
+            };
+            match ctx.contains(
+                reference_members,
+                &reference,
+                "search F3D shifted Extrude parameter references",
+            ) {
+                Ok(true) => {}
+                Ok(false) => return None,
+                Err(error) => return Some(Err(error)),
+            }
+        }
+        Some(Ok([first_side_extent_offset, second_side_extent_offset]))
     };
     let candidate = |first_side_extent_offset: usize, default_second_offset: usize| {
         if first_side_extent_offset.checked_add(4)? > reference_count_at {
@@ -1694,7 +1820,10 @@ fn exact_legacy_shifted_extrude_prologue(
     };
     let (side_extent_discriminator_offsets, side_extent_discriminators, extent) =
         if direction_face_extend_values[0] == 2 {
-            let offsets = two_sided_offsets()?;
+            let offsets = match two_sided_offsets()? {
+                Ok(offsets) => offsets,
+                Err(error) => return Some(Err(error)),
+            };
             let discriminators = [
                 View::u32_le_at(bytes, offsets[0])?,
                 View::u32_le_at(bytes, offsets[1])?,
@@ -1734,7 +1863,7 @@ fn exact_legacy_shifted_extrude_prologue(
     let solid_operation = flag_byte_at(bytes, solid_operation_offset)?;
     let start_offset = operation_offset.checked_add(extrude_fields::START_SUPPORT)?;
     let start = extrude_start_at(bytes, start_offset)?;
-    Some(DesignExtrudePrologue::LegacyShifted {
+    Some(Ok(DesignExtrudePrologue::LegacyShifted {
         operation_prefix_marker_offset,
         operation,
         operation_offset: u64_from_index(operation_offset),
@@ -1755,7 +1884,7 @@ fn exact_legacy_shifted_extrude_prologue(
         solid_operation_offset: u64_from_index(solid_operation_offset),
         start,
         start_offset: u64_from_index(start_offset),
-    })
+    }))
 }
 
 fn exact_class_338_two_sided_distance_extrude_prologue(
@@ -1834,7 +1963,15 @@ fn exact_class_338_two_sided_distance_extrude_prologue(
         class_338_legacy::BODY_GROUP_REFERENCE,
     ] {
         let record_index = marked_record_reference(bytes, start.checked_add(offset)?)?;
-        if !reference_members.contains(&record_index) {
+        let is_reference_member = match ctx.contains(
+            reference_members,
+            &record_index,
+            "search F3D class-338 Extrude reference members",
+        ) {
+            Ok(value) => value,
+            Err(error) => return Some(Err(error)),
+        };
+        if !is_reference_member {
             return None;
         }
     }
