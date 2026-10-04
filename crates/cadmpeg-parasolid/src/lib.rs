@@ -43,17 +43,26 @@ impl<'a> SchemaToken<'a> {
 ///
 /// The caller owns the carrier-specific bound. The token grammar is shared:
 /// `SCH_` followed by one or more ASCII alphanumeric or underscore bytes.
-pub fn find_schema_token<'a>(ctx: &DecodeContext<'_>, prologue: &'a [u8]) -> Result<Option<SchemaToken<'a>>, CodecError> {
+pub fn find_schema_token<'a>(
+    ctx: &DecodeContext<'_>,
+    prologue: &'a [u8],
+) -> Result<Option<SchemaToken<'a>>, CodecError> {
     let width = std::num::NonZeroUsize::new(4)
         .ok_or_else(|| CodecError::Malformed("Parasolid schema prefix width is zero".into()))?;
-    for (offset, bytes) in ctx.admit_iter(prologue, "Parasolid schema marker search")?.windows(width).enumerate() {
+    for (offset, bytes) in ctx
+        .admit_iter(prologue, "Parasolid schema marker search")?
+        .windows(width)
+        .enumerate()
+    {
         if bytes != b"SCH_" {
             continue;
         }
         let mut end = offset + 4;
         loop {
             ctx.charge_work(1, "Parasolid schema token extent")?;
-            if end == prologue.len() || !(prologue[end].is_ascii_alphanumeric() || prologue[end] == b'_') {
+            if end == prologue.len()
+                || !(prologue[end].is_ascii_alphanumeric() || prologue[end] == b'_')
+            {
                 break;
             }
             end += 1;
@@ -67,10 +76,17 @@ pub fn find_schema_token<'a>(ctx: &DecodeContext<'_>, prologue: &'a [u8]) -> Res
 
 /// Find a complete schema token whose byte length immediately precedes it.
 /// The declared length bounds the SLDPRT token before its first record.
-pub fn find_u8_length_prefixed_schema_token<'a>(ctx: &DecodeContext<'_>, prologue: &'a [u8]) -> Result<Option<SchemaToken<'a>>, CodecError> {
+pub fn find_u8_length_prefixed_schema_token<'a>(
+    ctx: &DecodeContext<'_>,
+    prologue: &'a [u8],
+) -> Result<Option<SchemaToken<'a>>, CodecError> {
     let width = std::num::NonZeroUsize::new(4)
         .ok_or_else(|| CodecError::Malformed("Parasolid schema prefix width is zero".into()))?;
-    for (offset, bytes) in ctx.admit_iter(prologue, "Parasolid prefixed schema marker search")?.windows(width).enumerate() {
+    for (offset, bytes) in ctx
+        .admit_iter(prologue, "Parasolid prefixed schema marker search")?
+        .windows(width)
+        .enumerate()
+    {
         if bytes != b"SCH_" {
             continue;
         }
@@ -87,17 +103,31 @@ pub fn find_u8_length_prefixed_schema_token<'a>(ctx: &DecodeContext<'_>, prologu
     Ok(None)
 }
 
-fn schema_token<'a>(ctx: &DecodeContext<'_>, prologue: &'a [u8], offset: usize, end: usize) -> Result<Option<SchemaToken<'a>>, CodecError> {
-    let Some(bytes) = prologue.get(offset..end) else { return Ok(None); };
-    if !is_schema_token(ctx, bytes)? { return Ok(None); }
-    let Ok(value) = ctx.validate_utf8(bytes, "Parasolid schema token UTF-8")? else { return Ok(None); };
+fn schema_token<'a>(
+    ctx: &DecodeContext<'_>,
+    prologue: &'a [u8],
+    offset: usize,
+    end: usize,
+) -> Result<Option<SchemaToken<'a>>, CodecError> {
+    let Some(bytes) = prologue.get(offset..end) else {
+        return Ok(None);
+    };
+    if !is_schema_token(ctx, bytes)? {
+        return Ok(None);
+    }
+    let Ok(value) = ctx.validate_utf8(bytes, "Parasolid schema token UTF-8")? else {
+        return Ok(None);
+    };
     Ok(Some(SchemaToken { value, offset }))
 }
 
 /// The shared token grammar: `SCH_` and at least one more token byte.
 fn is_schema_token(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<bool, CodecError> {
-    Ok(bytes.len() > 4 && bytes.starts_with(b"SCH_")
-        && ctx.admit_iter(bytes, "Parasolid schema token grammar")?.all(|byte| byte.is_ascii_alphanumeric() || *byte == b'_'))
+    Ok(bytes.len() > 4
+        && bytes.starts_with(b"SCH_")
+        && ctx
+            .admit_iter(bytes, "Parasolid schema token grammar")?
+            .all(|byte| byte.is_ascii_alphanumeric() || *byte == b'_'))
 }
 
 /// Text offered in the schema position that is not a Parasolid schema token.
@@ -133,14 +163,24 @@ impl std::fmt::Display for OwnedSchemaToken {
 impl SchemaToken<'_> {
     /// Retain this validated token under the caller's context.
     pub fn into_owned(self, ctx: &DecodeContext<'_>) -> Result<OwnedSchemaToken, CodecError> {
-        Ok(OwnedSchemaToken(ctx.copy_retained_text(self.value, "Parasolid schema token")?))
+        Ok(OwnedSchemaToken(ctx.copy_retained_text(
+            self.value,
+            "Parasolid schema token",
+        )?))
     }
 }
 
 impl OwnedSchemaToken {
     /// Validate owned token text under the caller's context.
-    pub fn parse(ctx: &DecodeContext<'_>, value: String) -> Result<Result<Self, NotSchemaToken>, CodecError> {
-        Ok(if is_schema_token(ctx, value.as_bytes())? { Ok(Self(value)) } else { Err(NotSchemaToken) })
+    pub fn parse(
+        ctx: &DecodeContext<'_>,
+        value: String,
+    ) -> Result<Result<Self, NotSchemaToken>, CodecError> {
+        Ok(if is_schema_token(ctx, value.as_bytes())? {
+            Ok(Self(value))
+        } else {
+            Err(NotSchemaToken)
+        })
     }
 }
 
@@ -173,15 +213,31 @@ impl std::fmt::Display for Carrier {
 /// Identity comes from this shared schema-token map so hosts cannot disagree
 /// about the identity of the same declaration.
 fn schema_row(ctx: &DecodeContext<'_>, schema: &str) -> Result<DialectId, CodecError> {
-    Ok(if ctx.eq_ignore_ascii_case(schema, "SCH_SW_33103_11000", "Parasolid schema row comparison")? {
-        PARASOLID_SCH_SW_33103
-    } else if ctx.eq_ignore_ascii_case(schema, "SCH_SW_32001_11000", "Parasolid schema row comparison")? {
-        PARASOLID_SCH_SW_32001
-    } else if let Some((_, suffix)) = ctx.rsplit_once(schema, "_", "Parasolid schema format suffix")? {
-        if ctx.eq_ignore_ascii_case(suffix, "13006", "Parasolid schema suffix comparison")? {
-            PARASOLID_FORMAT_13006
-        } else { PARASOLID_UNKNOWN }
-    } else { PARASOLID_UNKNOWN })
+    Ok(
+        if ctx.eq_ignore_ascii_case(
+            schema,
+            "SCH_SW_33103_11000",
+            "Parasolid schema row comparison",
+        )? {
+            PARASOLID_SCH_SW_33103
+        } else if ctx.eq_ignore_ascii_case(
+            schema,
+            "SCH_SW_32001_11000",
+            "Parasolid schema row comparison",
+        )? {
+            PARASOLID_SCH_SW_32001
+        } else if let Some((_, suffix)) =
+            ctx.rsplit_once(schema, "_", "Parasolid schema format suffix")?
+        {
+            if ctx.eq_ignore_ascii_case(suffix, "13006", "Parasolid schema suffix comparison")? {
+                PARASOLID_FORMAT_13006
+            } else {
+                PARASOLID_UNKNOWN
+            }
+        } else {
+            PARASOLID_UNKNOWN
+        },
+    )
 }
 
 /// Classify one schema-bearing Parasolid stream and record its host carrier.
@@ -220,7 +276,13 @@ pub fn classify_layer(
     )?;
     let matched = if ctx.any_by(
         verified,
-        |candidate| ctx.equal(candidate.as_str(), id.as_str(), "compare Parasolid verified row"),
+        |candidate| {
+            ctx.equal(
+                candidate.as_str(),
+                id.as_str(),
+                "compare Parasolid verified row",
+            )
+        },
         "scan Parasolid verified rows",
     )? {
         DialectMatch::admitted(id)
@@ -307,7 +369,9 @@ pub fn push_extras(
     let count = extras.len();
     let mut extras = extras.into_iter();
     for _ in ctx.admit_iter(&(0..count), "scan Parasolid extra layers")? {
-        let Some(layer) = extras.next() else { break; };
+        let Some(layer) = extras.next() else {
+            break;
+        };
         let ClassifiedLayer { matched, carrier } = layer;
         match layers.insert_for_decode(ctx, matched, "collect Parasolid dialect layers") {
             Ok(()) => {}
@@ -399,7 +463,9 @@ mod tests {
     ];
 
     fn token(text: &str) -> OwnedSchemaToken {
-        OwnedSchemaToken::parse(&cadmpeg_test_support::service_decode_context(), text.into()).expect("service token admission").expect("the fixture text is a schema token")
+        OwnedSchemaToken::parse(&cadmpeg_test_support::service_decode_context(), text.into())
+            .expect("service token admission")
+            .expect("the fixture text is a schema token")
     }
 
     fn carrier(text: &str) -> Carrier {
@@ -446,8 +512,7 @@ mod tests {
                 + std::mem::size_of::<String>())
             + 16 * std::mem::size_of::<usize>()
             + 2 * std::mem::align_of::<String>();
-        policy.limits.max_retained_bytes =
-            9 + cadmpeg_core::decode::u64_from_index(node_bytes);
+        policy.limits.max_retained_bytes = 9 + cadmpeg_core::decode::u64_from_index(node_bytes);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let error = classify_layer(
             &ctx,
@@ -508,23 +573,39 @@ mod tests {
 
     #[test]
     fn schema_token_uses_one_exact_ascii_grammar() {
-        let token =
-            find_schema_token(&cadmpeg_test_support::service_decode_context(), b"prologue\0SCH_3501171_35102_13006\0body").expect("service token search").expect("complete token");
+        let token = find_schema_token(
+            &cadmpeg_test_support::service_decode_context(),
+            b"prologue\0SCH_3501171_35102_13006\0body",
+        )
+        .expect("service token search")
+        .expect("complete token");
         assert_eq!(token.value(), "SCH_3501171_35102_13006");
         assert_eq!(token.offset, 9);
         assert_eq!(token.end(), 32);
 
-        assert!(find_schema_token(&cadmpeg_test_support::service_decode_context(), b"SCH_").expect("service token search").is_none());
+        assert!(
+            find_schema_token(&cadmpeg_test_support::service_decode_context(), b"SCH_")
+                .expect("service token search")
+                .is_none()
+        );
         assert_eq!(
-            find_schema_token(&cadmpeg_test_support::service_decode_context(), b"SCH_-SCH_REAL").expect("service token search")
-                .expect("the first complete token is selected")
-                .value(),
+            find_schema_token(
+                &cadmpeg_test_support::service_decode_context(),
+                b"SCH_-SCH_REAL"
+            )
+            .expect("service token search")
+            .expect("the first complete token is selected")
+            .value(),
             "SCH_REAL"
         );
         assert_eq!(
-            find_schema_token(&cadmpeg_test_support::service_decode_context(), b"SCH_TEST-ignored").expect("service token search")
-                .expect("token before delimiter")
-                .value(),
+            find_schema_token(
+                &cadmpeg_test_support::service_decode_context(),
+                b"SCH_TEST-ignored"
+            )
+            .expect("service token search")
+            .expect("token before delimiter")
+            .value(),
             "SCH_TEST"
         );
 
@@ -532,8 +613,12 @@ mod tests {
         prefixed.push(8);
         prefixed.extend_from_slice(b"SCH_TEST");
         prefixed.extend_from_slice(b"1234");
-        let token = find_u8_length_prefixed_schema_token(&cadmpeg_test_support::service_decode_context(), &prefixed).expect("service token search")
-            .expect("the declared length bounds the token");
+        let token = find_u8_length_prefixed_schema_token(
+            &cadmpeg_test_support::service_decode_context(),
+            &prefixed,
+        )
+        .expect("service token search")
+        .expect("the declared length bounds the token");
         assert_eq!(token.value(), "SCH_TEST");
         assert_eq!(token.end(), 16);
     }
@@ -716,14 +801,18 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         assert!(matches!(find_schema_token(&ctx, b"SCH_TEST"),
             Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits));
-        assert!(matches!(find_u8_length_prefixed_schema_token(&ctx, b"\x08SCH_TEST"),
-            Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits));
+        assert!(
+            matches!(find_u8_length_prefixed_schema_token(&ctx, b"\x08SCH_TEST"),
+            Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits)
+        );
         assert!(matches!(OwnedSchemaToken::parse(&ctx, "SCH_TEST".into()),
             Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits));
         policy.limits.max_work_units = DecodePolicy::service().limits.max_work_units;
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let token = find_schema_token(&ctx, b"SCH_TEST").expect("scan admission").expect("token");
+        let token = find_schema_token(&ctx, b"SCH_TEST")
+            .expect("scan admission")
+            .expect("token");
         assert!(matches!(token.into_owned(&ctx),
             Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes));
     }

@@ -200,11 +200,12 @@ impl SchemaCatalog {
         name: &str,
     ) -> Result<&BTreeMap<String, Property>, CodecError> {
         resolve_inheritance(ctx, &self.schemas, &mut self.properties, name)?;
-        ctx.get_hash_map(&self.properties, name, "Protein resolved schema lookup")?.ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "Protein instance references absent schema {name}"
-            ))
-        })
+        ctx.get_hash_map(&self.properties, name, "Protein resolved schema lookup")?
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "Protein instance references absent schema {name}"
+                ))
+            })
     }
 }
 
@@ -231,15 +232,32 @@ fn resolve_inheritance(
                 "Protein schema inheritance contains a cycle at {current}"
             )));
         }
-        let schema = ctx.get_hash_map(schemas, current, "Protein inherited schema lookup")?.ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "Protein instance references absent schema {current}"
-            ))
+        let schema = ctx
+            .get_hash_map(schemas, current, "Protein inherited schema lookup")?
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "Protein instance references absent schema {current}"
+                ))
+            })?;
+        ctx.push_scoped_vec(
+            &mut guard_storage,
+            &mut depth_guards,
+            ctx.enter_nested("Protein schema inheritance")?,
+            "Protein schema inheritance guards",
+        )?;
+        active_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut active,
+                current,
+                "Protein schema inheritance active set",
+            )
         })?;
-        ctx.push_scoped_vec(&mut guard_storage, &mut depth_guards,
-            ctx.enter_nested("Protein schema inheritance")?, "Protein schema inheritance guards")?;
-        active_storage.with_storage(|| ctx.insert_btree_set(&mut active, current, "Protein schema inheritance active set"))?;
-        ctx.push_scoped_vec(&mut path_storage, &mut path, current, "Protein schema inheritance path")?;
+        ctx.push_scoped_vec(
+            &mut path_storage,
+            &mut path,
+            current,
+            "Protein schema inheritance path",
+        )?;
         let Some(base) = schema.base.as_deref() else {
             break;
         };
@@ -250,11 +268,13 @@ fn resolve_inheritance(
         let Some(current) = path.pop() else {
             break;
         };
-        let schema = ctx.get_hash_map(schemas, current, "Protein inherited schema lookup")?.ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "Protein instance references absent schema {current}"
-            ))
-        })?;
+        let schema = ctx
+            .get_hash_map(schemas, current, "Protein inherited schema lookup")?
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "Protein instance references absent schema {current}"
+                ))
+            })?;
         let inherited = match schema.base.as_deref() {
             Some(base) => ctx.get_hash_map(resolved, base, "Protein inherited closure lookup")?,
             None => None,
@@ -263,15 +283,29 @@ fn resolve_inheritance(
         if let Some(inherited) = inherited {
             for (id, property) in ctx.admit_iter(inherited, "Protein inherited property closure")? {
                 let id = ctx.copy_retained_text(id, "Protein inherited property names")?;
-                ctx.insert_btree_map(&mut properties, id, property.clone(), "Protein inherited property closure")?;
+                ctx.insert_btree_map(
+                    &mut properties,
+                    id,
+                    property.clone(),
+                    "Protein inherited property closure",
+                )?;
             }
         }
-        for (id, property) in ctx.admit_iter(&schema.properties, "Protein inherited property closure")? {
-            if let Some(value) = ctx.get_mut_btree_map(&mut properties, id, "Protein local property override")? {
+        for (id, property) in
+            ctx.admit_iter(&schema.properties, "Protein inherited property closure")?
+        {
+            if let Some(value) =
+                ctx.get_mut_btree_map(&mut properties, id, "Protein local property override")?
+            {
                 *value = property.clone();
             } else {
                 let id = ctx.copy_retained_text(id, "Protein inherited property names")?;
-                ctx.insert_btree_map(&mut properties, id, property.clone(), "Protein inherited property closure")?;
+                ctx.insert_btree_map(
+                    &mut properties,
+                    id,
+                    property.clone(),
+                    "Protein inherited property closure",
+                )?;
             }
         }
         let name = ctx.copy_retained_text(current, "Protein inherited property names")?;
@@ -365,7 +399,10 @@ fn decode_frames(
     frames: &[framing::RecordFrame],
 ) -> Result<DecodeOutcome, CodecError> {
     let mut outcome = DecodeOutcome::default();
-    for (ordinal, frame) in ctx.admit_iter(frames, "Protein record outcome traversal")?.enumerate() {
+    for (ordinal, frame) in ctx
+        .admit_iter(frames, "Protein record outcome traversal")?
+        .enumerate()
+    {
         let ordinal = cadmpeg_core::decode::u64_from_index(ordinal);
         ctx.charge_collection_items(1, "Protein record outcome")?;
         match decode_record(ctx, frame.bytes(), catalog, ordinal, frame.logical_offset()) {
@@ -408,7 +445,8 @@ pub fn has_schemas(ctx: &DecodeContext<'_>, protein: &[u8]) -> Result<bool, Code
 }
 
 fn is_schema_entry(ctx: &DecodeContext<'_>, name: &str) -> Result<bool, CodecError> {
-    Ok((name.starts_with("Schemas/") || ctx.contains_text(name, "/Schemas/", "Protein schema entry path search")?)
+    Ok((name.starts_with("Schemas/")
+        || ctx.contains_text(name, "/Schemas/", "Protein schema entry path search")?)
         && name.ends_with("Schema.xml"))
 }
 
@@ -467,30 +505,40 @@ fn parse_schema_document(
     let mut root = None;
     let mut descendants = document.descendants();
     for _ in ctx.admit_iter(&(0..node_count), "Protein schema root search")? {
-        let Some(node) = descendants.next() else { break; };
+        let Some(node) = descendants.next() else {
+            break;
+        };
         if node.is_element() {
             root = Some(node);
             break;
         }
     }
-    let root = root.ok_or_else(|| CodecError::malformed(format_args!("Protein schema {name} has no root")))?;
+    let root = root
+        .ok_or_else(|| CodecError::malformed(format_args!("Protein schema {name} has no root")))?;
     let mut uid_node = None;
     let mut children = root.children();
     for _ in ctx.admit_iter(&(0..node_count), "Protein schema UID node search")? {
-        let Some(node) = children.next() else { break; };
+        let Some(node) = children.next() else {
+            break;
+        };
         if node.has_tag_name("UID") {
             uid_node = Some(node);
             break;
         }
     }
-    let uid_node = uid_node.ok_or_else(|| CodecError::malformed(format_args!("Protein schema {name} has no UID")))?;
+    let uid_node = uid_node
+        .ok_or_else(|| CodecError::malformed(format_args!("Protein schema {name} has no UID")))?;
     let uid = schema_attribute(ctx, uid_node, "val", "Protein schema UID search")?
         .ok_or_else(|| CodecError::malformed(format_args!("Protein schema {name} has no UID")))?;
     let mut schema = Schema::default();
     let mut children = root.children();
     for _ in ctx.admit_iter(&(0..node_count), "Protein schema child scan")? {
-        let Some(node) = children.next() else { break; };
-        if !node.is_element() { continue; }
+        let Some(node) = children.next() else {
+            break;
+        };
+        if !node.is_element() {
+            continue;
+        }
         if node.has_tag_name("Base") {
             if let Some(value) = schema_attribute(ctx, node, "val", "Protein schema base search")? {
                 ctx.charge_retained(
@@ -504,15 +552,31 @@ fn parse_schema_document(
         if node.has_tag_name("PropertyAlias") {
             continue;
         }
-        if schema_attribute(ctx, node, "readonly", "Protein readonly attribute search")? == Some("true") { continue; }
-        if schema_attribute(ctx, node, "definitionIteratorData", "Protein definition attribute search")? == Some("true") { continue; }
+        if schema_attribute(ctx, node, "readonly", "Protein readonly attribute search")?
+            == Some("true")
+        {
+            continue;
+        }
+        if schema_attribute(
+            ctx,
+            node,
+            "definitionIteratorData",
+            "Protein definition attribute search",
+        )? == Some("true")
+        {
+            continue;
+        }
         let Some(property) = schema_property(ctx, node)? else {
             continue;
         };
         let Some(id) = schema_attribute(ctx, node, "id", "Protein property id search")? else {
             continue;
         };
-        if ctx.contains_key_btree_map(&schema.properties, id, "Protein local property uniqueness")? {
+        if ctx.contains_key_btree_map(
+            &schema.properties,
+            id,
+            "Protein local property uniqueness",
+        )? {
             return Err(CodecError::malformed(format_args!(
                 "Protein schema {uid} declares property {id} more than once"
             )));
@@ -550,7 +614,9 @@ fn schema_attribute<'node>(
     let mut attributes = node.attributes();
     let count = attributes.len();
     for _ in ctx.admit_iter(&(0..count), operation)? {
-        let Some(attribute) = attributes.next() else { break; };
+        let Some(attribute) = attributes.next() else {
+            break;
+        };
         if ctx.equal(attribute.name(), name, operation)? {
             return Ok(Some(attribute.value()));
         }
@@ -558,9 +624,23 @@ fn schema_attribute<'node>(
     Ok(None)
 }
 
-fn schema_property(ctx: &DecodeContext<'_>, node: roxmltree::Node<'_, '_>) -> Result<Option<Property>, CodecError> {
-    let multiple = schema_attribute(ctx, node, "allowmultiplevalues", "Protein multiple-values attribute search")? == Some("true");
-    let connectable = schema_attribute(ctx, node, "allowconnectedassets", "Protein connected-assets attribute search")?.is_some();
+fn schema_property(
+    ctx: &DecodeContext<'_>,
+    node: roxmltree::Node<'_, '_>,
+) -> Result<Option<Property>, CodecError> {
+    let multiple = schema_attribute(
+        ctx,
+        node,
+        "allowmultiplevalues",
+        "Protein multiple-values attribute search",
+    )? == Some("true");
+    let connectable = schema_attribute(
+        ctx,
+        node,
+        "allowconnectedassets",
+        "Protein connected-assets attribute search",
+    )?
+    .is_some();
     let carrier = match node.tag_name().name() {
         "Reference" => return Ok(Some(Property::Reference { multiple })),
         "TextureURI" => {
@@ -572,8 +652,12 @@ fn schema_property(ctx: &DecodeContext<'_>, node: roxmltree::Node<'_, '_>) -> Re
         "Boolean" => ValueCarrier::Boolean,
         "Integer" | "Choice" => ValueCarrier::Integer,
         "Float" => {
-            if schema_attribute(ctx, node, "unit", "Protein unit attribute search")?.is_some() { ValueCarrier::UnitFloat } else { ValueCarrier::Float }
-        },
+            if schema_attribute(ctx, node, "unit", "Protein unit attribute search")?.is_some() {
+                ValueCarrier::UnitFloat
+            } else {
+                ValueCarrier::Float
+            }
+        }
         "Distance" => ValueCarrier::Distance,
         "String" | "Uuid" | "URL" => ValueCarrier::String,
         "Color" => ValueCarrier::Color,
@@ -746,9 +830,10 @@ fn read_property(
         ValueLayout::TextureUri => read_texture_uri(ctx, bytes, at, id),
         ValueLayout::Multiple(carrier) => {
             let count = read_count(ctx, bytes, at, id)?;
-            let values = ctx.collect_indexed_vec(count, "Protein multiple property members", |_| {
-                read_value(ctx, bytes, at, carrier, id)
-            })?;
+            let values =
+                ctx.collect_indexed_vec(count, "Protein multiple property members", |_| {
+                    read_value(ctx, bytes, at, carrier, id)
+                })?;
             ctx.charge_work(
                 cadmpeg_core::decode::u64_from_index(values.len()),
                 "Protein repeated carrier validation",
@@ -956,10 +1041,20 @@ mod tests {
 
     #[test]
     fn schema_attribute_preserves_first_local_name_match() {
-        let document = roxmltree::Document::parse(r#"<UID xmlns:p="urn:test" p:val="first" val="second"/>"#).unwrap();
+        let document =
+            roxmltree::Document::parse(r#"<UID xmlns:p="urn:test" p:val="first" val="second"/>"#)
+                .unwrap();
         with_service_context(&[], |ctx| {
-            assert_eq!(super::schema_attribute(ctx, document.root_element(), "val", "attribute test").unwrap(), Some("first"));
-            assert_eq!(super::schema_attribute(ctx, document.root_element(), "missing", "attribute test").unwrap(), None);
+            assert_eq!(
+                super::schema_attribute(ctx, document.root_element(), "val", "attribute test")
+                    .unwrap(),
+                Some("first")
+            );
+            assert_eq!(
+                super::schema_attribute(ctx, document.root_element(), "missing", "attribute test")
+                    .unwrap(),
+                None
+            );
         });
     }
 
@@ -970,8 +1065,11 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::schema_attribute(&ctx, document.root_element(), "val", "attribute test").unwrap_err();
-        let CodecError::ResourceLimit(ref refusal) = error else { panic!("expected work refusal") };
+        let error = super::schema_attribute(&ctx, document.root_element(), "val", "attribute test")
+            .unwrap_err();
+        let CodecError::ResourceLimit(ref refusal) = error else {
+            panic!("expected work refusal")
+        };
         assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
     }
 
@@ -1315,7 +1413,8 @@ mod tests {
         let active_node_bytes = 11 * std::mem::size_of::<&str>()
             + 16 * std::mem::size_of::<usize>()
             + 2 * std::mem::align_of::<usize>();
-        policy.limits.max_work_units = 20 + cadmpeg_core::decode::u64_from_index(4 * active_node_bytes);
+        policy.limits.max_work_units =
+            20 + cadmpeg_core::decode::u64_from_index(4 * active_node_bytes);
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("fixture fits input limit");
         assert!(matches!(
