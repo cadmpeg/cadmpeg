@@ -300,7 +300,7 @@ fn unique_entity_from_link_intersection(
             count += 1;
         }
     }
-    ctx.truncate_vec(&mut candidates, count, OPERATION)?;
+    candidates.truncate(count);
     sort_marker_entity_ids(ctx, &mut candidates, OPERATION)?;
     Ok(if candidates.len() == 1 {
         candidates.into_iter().next()
@@ -940,7 +940,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                                 candidates.swap(count, index);
                                 count += 1;
                             }
-                            ctx.truncate_vec(&mut candidates, count, BINARY_OPERATION)?;
+                            candidates.truncate(count);
                             Ok(candidates)
                         };
                     let candidates = [resolve(first_link)?, resolve(second_link)?];
@@ -1880,7 +1880,7 @@ fn axis_relation_point_loci(
     if collection.loci.len() > 2 {
         return Ok(None);
     }
-    ctx.clear_vec(&mut collection.loci, "discard SLDPRT incomplete axis relation loci")?;
+    collection.loci.clear();
     collection.locus_bytes = 0;
     collection.visited.clear();
     collection.visited_bytes = 0;

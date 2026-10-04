@@ -1385,7 +1385,7 @@ fn closed_marker_profiles_with_policy<E: Borrow<SketchEntity>>(
                 break;
             }
             let [curve_start, curve_end] = entities[curve].borrow().endpoint_refs.as_slice() else {
-                ctx.clear_vec(&mut profile, "discard SLDPRT incomplete closed profile")?;
+                profile.clear();
                 break;
             };
             let (reversed, next) = if curve_start == current {
@@ -1393,7 +1393,7 @@ fn closed_marker_profiles_with_policy<E: Borrow<SketchEntity>>(
             } else if curve_end == current {
                 (true, curve_start.as_str())
             } else {
-                ctx.clear_vec(&mut profile, "discard SLDPRT incomplete closed profile")?;
+                profile.clear();
                 break;
             };
             let id_text = ctx.format_retained(
@@ -1401,7 +1401,7 @@ fn closed_marker_profiles_with_policy<E: Borrow<SketchEntity>>(
                 "copy SLDPRT closed curve identity",
             )?;
             let Ok(id) = SketchEntityId::mint(id_text) else {
-                ctx.clear_vec(&mut profile, "discard SLDPRT incomplete closed profile")?;
+                profile.clear();
                 break;
             };
             ctx.reserve_vec(&mut profile, 1, "collect SLDPRT closed curve profile")?;
@@ -1414,11 +1414,11 @@ fn closed_marker_profiles_with_policy<E: Borrow<SketchEntity>>(
                 break;
             }
             let Some(candidates) = incidence.get(current) else {
-                ctx.clear_vec(&mut profile, "discard SLDPRT incomplete closed profile")?;
+                profile.clear();
                 break;
             };
             if reject_branching_components && candidates.len() != 2 {
-                ctx.clear_vec(&mut profile, "discard SLDPRT incomplete closed profile")?;
+                profile.clear();
                 break;
             }
             let Some(next_curve) = candidates
@@ -1426,7 +1426,7 @@ fn closed_marker_profiles_with_policy<E: Borrow<SketchEntity>>(
                 .copied()
                 .find(|index| unused.contains(index))
             else {
-                ctx.clear_vec(&mut profile, "discard SLDPRT incomplete closed profile")?;
+                profile.clear();
                 break;
             };
             curve = next_curve;

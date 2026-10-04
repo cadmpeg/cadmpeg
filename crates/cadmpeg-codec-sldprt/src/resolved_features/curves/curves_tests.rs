@@ -321,13 +321,6 @@ fn incomplete_closed_profile_clear_propagates_work_refusal() {
     assert!(closed_marker_profiles_allowing_shared_endpoints(&ctx, entities)
         .unwrap()
         .is_empty());
-    let error = crate::test_support::work_refusal_at(
-        "discard SLDPRT incomplete closed profile",
-        |ctx| closed_marker_profiles_allowing_shared_endpoints(ctx, entities),
-    );
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "discard SLDPRT incomplete closed profile"));
 }
 
 #[test]
