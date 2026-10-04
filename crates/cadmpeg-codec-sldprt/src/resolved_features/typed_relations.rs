@@ -300,7 +300,7 @@ fn unique_entity_from_link_intersection(
             count += 1;
         }
     }
-    candidates.truncate(count);
+    ctx.truncate_vec(&mut candidates, count, OPERATION)?;
     sort_marker_entity_ids(ctx, &mut candidates, OPERATION)?;
     Ok(if candidates.len() == 1 {
         candidates.into_iter().next()
@@ -940,7 +940,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                                 candidates.swap(count, index);
                                 count += 1;
                             }
-                            candidates.truncate(count);
+                            ctx.truncate_vec(&mut candidates, count, BINARY_OPERATION)?;
                             Ok(candidates)
                         };
                     let candidates = [resolve(first_link)?, resolve(second_link)?];
