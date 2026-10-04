@@ -36,7 +36,11 @@ pub(crate) fn decode_body_members(
 ) -> Result<Vec<DesignBodyMember>, CodecError> {
     let mut out = Vec::new();
     let mut prefix = Vec::new();
-    prefix.extend_from_slice(&10u32.to_le_bytes());
+    ctx.extend_from_slice(
+        &mut prefix,
+        &10u32.to_le_bytes(),
+        "build F3D body-member marker prefix",
+    )?;
     prefix.extend_from_slice(b"BodiesRoot");
     prefix.extend_from_slice(&0u16.to_le_bytes());
     prefix.extend_from_slice(&10u32.to_le_bytes());
@@ -1800,6 +1804,7 @@ fn is_utf16_guid(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<bool, CodecErr
 
 #[cfg(test)]
 mod tests {
+    mod extend_slice;
     mod map_limits;
 
     use cadmpeg_core::decode::u64_from_index;
