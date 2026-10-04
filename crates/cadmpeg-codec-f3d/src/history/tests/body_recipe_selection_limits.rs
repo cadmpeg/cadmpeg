@@ -169,15 +169,50 @@ fn bind_direct(
     max_items: u64,
     native_set: bool,
 ) -> Result<BodySelection, cadmpeg_core::CodecError> {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_items;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = bind_direct_with_context(&ctx, native_set);
+    if let Err(cadmpeg_core::CodecError::ResourceLimit(first)) = &result {
+        assert!(matches!(ctx.finish_session(),
+            Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == *first));
+    }
+    result
+}
+
+fn bind_direct_with_context(
+    ctx: &DecodeContext<'_>,
+    native_set: bool,
+) -> Result<BodySelection, cadmpeg_core::CodecError> {
+    let native_members = if native_set {
+        &["f3d:Design/BulkStream.dat:design-record#21"][..]
+    } else {
+        &[]
+    };
+    bind_direct_with_native_members(ctx, native_members, false)
+}
+
+fn bind_direct_with_native_members(
+    ctx: &DecodeContext<'_>,
+    native_members: &[&str],
+    duplicate_operand: bool,
+) -> Result<BodySelection, cadmpeg_core::CodecError> {
     let (scope, groups, mut operands, mut selection) = selection_fixture();
     let (body, region, shell) = face_geometry();
-    if native_set {
+    if !native_members.is_empty() {
         operands[0].owner =
             crate::records::topology::body_recipe::DesignOperandOwner::ScopeReference {
                 scope_reference_ordinal: 0,
             };
+        if duplicate_operand {
+            operands.push(operands[0].clone());
+        }
         selection = BodySelection::NativeSet(
-            vec!["f3d:Design/BulkStream.dat:design-record#21".to_owned()]
+            native_members
+                .iter()
+                .map(|member| (*member).to_owned())
+                .collect::<Vec<_>>()
                 .try_into()
                 .unwrap(),
         );
@@ -193,19 +228,7 @@ fn bind_direct(
         regions: std::slice::from_ref(&region),
         shells: std::slice::from_ref(&shell),
     };
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = max_items;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    if let Err(error) =
-        super::super::bind_direct_body_recipe_body_selection(&ctx, &mut selection, &scope, &inputs)
-    {
-        if let cadmpeg_core::CodecError::ResourceLimit(first) = &error {
-            assert!(matches!(ctx.finish_session(),
-                Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == *first));
-        }
-        return Err(error);
-    }
+    super::super::bind_direct_body_recipe_body_selection(ctx, &mut selection, &scope, &inputs)?;
     Ok(selection)
 }
 
@@ -397,6 +420,74 @@ fn direct_body_recipe_rows_validation_refuses_collection_limit() {
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "validate body selection members")
     );
+}
+
+#[test]
+fn direct_body_recipe_native_identity_text_queries_refuse_work_limits() {
+    const ONE_MEMBER: &[&str] = &["f3d:Design/BulkStream.dat:design-record#21"];
+    const TWO_MEMBERS: &[&str] = &[
+        "f3d:Design/BulkStream.dat:design-record#21",
+        "f3d:Design/BulkStream.dat:design-record#22",
+    ];
+    for (operation, native_members, duplicate_operand) in [
+        (
+            "scan F3D direct body recipe native members",
+            ONE_MEMBER,
+            false,
+        ),
+        (
+            "scan previous F3D direct body recipe native members",
+            TWO_MEMBERS,
+            false,
+        ),
+        (
+            "compare F3D direct body recipe native members",
+            TWO_MEMBERS,
+            false,
+        ),
+        (
+            "split F3D direct body recipe native identity",
+            ONE_MEMBER,
+            false,
+        ),
+        (
+            "parse F3D direct body recipe record index",
+            ONE_MEMBER,
+            false,
+        ),
+        (
+            "compare F3D direct body recipe stream identity",
+            ONE_MEMBER,
+            false,
+        ),
+        (
+            "compare F3D direct body recipe operand stream",
+            ONE_MEMBER,
+            false,
+        ),
+        (
+            "find F3D direct body recipe operand",
+            ONE_MEMBER,
+            false,
+        ),
+        (
+            "find duplicate F3D direct body recipe operand",
+            ONE_MEMBER,
+            true,
+        ),
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |ctx| {
+                bind_direct_with_native_members(ctx, native_members, duplicate_operand)
+                    .map(|_| ())
+            },
+        );
+        assert!(matches!(error,
+            cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation));
+    }
 }
 
 #[test]

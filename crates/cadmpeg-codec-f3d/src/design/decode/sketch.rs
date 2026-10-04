@@ -108,18 +108,6 @@ impl IndexedRecordOffsets {
     }
 }
 
-/// Build the retained native stream key with the identity component's percent encoding.
-pub(in crate::design) fn native_scope_charged(
-    ctx: &DecodeContext<'_>,
-    name: &str,
-) -> Result<String, CodecError> {
-    let encoded_len = native_scope_encoded_len(ctx, name)?;
-
-    let mut out = ctx.retained_string(encoded_len, "f3d native stream key")?;
-    append_native_scope(name, &mut out);
-    Ok(out)
-}
-
 pub(in crate::design) fn native_scope_scoped<'a>(
     ctx: &'a DecodeContext<'_>,
     name: &str,
@@ -272,7 +260,7 @@ pub(crate) fn decode_sketch_placements(
             continue;
         }
         let bytes = scan.entry_bytes(ctx, &entry.name)?;
-        let scope = native_scope_charged(ctx, &entry.name)?;
+        let scope = ids::native_scope(ctx, &entry.name, "f3d native stream key")?;
         if !record_offsets.contains_key(&scope) {
             ctx.reserve_map(&mut record_offsets, 1, "f3d sketch placement stream index")?;
         }
@@ -1795,7 +1783,7 @@ pub(crate) fn decode_sketch_relations(
             continue;
         }
         let stream_types = stream_types_by_class_tag(ctx, &types, &entry.name)?;
-        let scope = ids::native_scope(&entry.name);
+        let scope = ids::native_scope(ctx, &entry.name, "retain F3D native scope")?;
         let bytes = scan.entry_bytes(ctx, &entry.name)?;
         for record in records
             .iter()
@@ -4097,7 +4085,7 @@ pub(crate) fn decode_sketch_surfaces(
 
             ctx.reserve_vec(&mut out, 1, "f3d sketch surface output")?;
             out.push(SketchSurface {
-                id: ids::native_sketch_surface_id(&entry.name, record_at),
+                id: ids::native_sketch_surface_id(ctx, &entry.name, record_at)?,
                 record_index,
                 owner_reference: None,
                 class_tag: crate::design::decode::text::class_tag_from_view(class_tag)

@@ -542,7 +542,12 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
 
     let mut taper_owner = parse_parameter_owner(&bytes_decode_ctx, &parameter_owner_frame()).transpose().unwrap()
         .expect("taper owner")
-        .into_record("Design/BulkStream.dat", 0)
+        .into_record(
+            &bytes_decode_ctx,
+            "Design/BulkStream.dat",
+            0,
+        )
+        .unwrap()
         .unwrap();
     {
         let mut wire =

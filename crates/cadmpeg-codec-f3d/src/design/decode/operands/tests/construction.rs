@@ -205,7 +205,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let group = parse_construction_operand_group(&bytes, &scope, 0, &RecordFrame::from(&record))
         .complete()
         .expect("counted Extrude operand group");
-    let id_len = crate::ids::native_scope("Design/BulkStream.dat").len()
+    let id_len = crate::test_support::with_decode_context(|ctx| {crate::ids::native_scope(ctx, "Design/BulkStream.dat", "retain F3D native scope").expect("test F3D native identity")}).len()
         + ":design-construction-operand-group#".len()
         + 1;
     for (collection_limit, retained_limit, dimension, operation) in [

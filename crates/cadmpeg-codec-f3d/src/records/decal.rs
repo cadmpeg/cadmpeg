@@ -439,5 +439,19 @@ pub(crate) struct DesignRecordHeader {
     pub(crate) byte_offset: u64,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for DesignRecordHeader {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.id, &self.record_index, &self.class_tag, &self.byte_offset),
+            ctx,
+            operation,
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests;

@@ -618,7 +618,9 @@ impl<'a, 'd> Ctx<'a, 'd> {
             Finding {
                 check,
                 severity: Severity::Error,
-                message: message.into(),
+                message: self
+                    .decode
+                    .copy_retained_text(message, "retain F3D validation finding message")?,
                 entity,
             },
             "collect F3D native validation findings",
@@ -1997,6 +1999,47 @@ fn validate_body_bounds(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Resul
     Ok(())
 }
 
+/// Collects the record indices claimed by an edge-flange operation.
+fn collect_edge_flange_claimed_references<'a>(
+    decode: &DecodeContext<'_>,
+    edges: impl Iterator<Item = &'a records::feature::sheet_metal::DesignEdgeFlangeEdge>,
+    owner_indices: impl Iterator<Item = &'a u32>,
+    operation: &records::feature::sheet_metal::DesignEdgeFlangeOperation,
+) -> Result<Vec<u32>, CodecError> {
+    let fixed_references = [
+        operation.selection.aggregate_group_record_index(),
+        operation.height_owner_record_index,
+        operation.angle_owner_record_index,
+        operation.settings_record_index,
+    ];
+    decode.collect_vec(
+        edges
+            .flat_map(|edge| {
+                [
+                    edge.wrapper,
+                    edge.group_record_index.get(),
+                    edge.operand_record_index(),
+                    edge.aggregate_operand_record_index,
+                ]
+            })
+            .chain(owner_indices.copied())
+            .chain(
+                decode
+                    .admit_iter(
+                        &operation.auxiliary_reference_record_indices,
+                        "scan F3D edge flange auxiliary references",
+                    )?
+                    .copied(),
+            )
+            .chain(
+                decode
+                    .admit_iter(&fixed_references, "scan F3D edge flange fixed references")?
+                    .copied(),
+            ),
+        "collect F3D edge flange claimed references",
+    )
+}
+
 /// Validate feature parameter scopes and their paired feature-operation frames.
 fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
     let native = ctx.native;
@@ -2086,31 +2129,95 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 // The ordered reference table is in record-index order, so the
                 // check is that every role names a distinct table entry and that
                 // the entries no role claims are exactly the width owners.
-                let edge_count = operation.selection.shape().edges().count();
-                let claimed = ctx.decode.collect_vec(
-                    operation
-                        .selection
-                        .shape()
-                        .edges()
-                        .flat_map(|edge| {
-                            [
-                                edge.wrapper,
-                                edge.group_record_index.get(),
-                                edge.operand_record_index(),
-                                edge.aggregate_operand_record_index,
-                            ]
-                        })
-                        .chain(operation.selection.shape().owner_indices().copied())
-                        .chain(operation.auxiliary_reference_record_indices.iter().copied())
-                        .chain([
-                            operation.selection.aggregate_group_record_index(),
-                            operation.height_owner_record_index,
-                            operation.angle_owner_record_index,
-                            operation.settings_record_index,
-                        ]),
-                    "collect F3D edge flange claimed references",
-                )?;
-                let mut claimed = claimed;
+                let shape = operation.selection.shape();
+                let edge_count = match shape {
+                    records::feature::sheet_metal::DesignEdgeFlangeShape::FullEdge {
+                        edges, ..
+                    }
+                    | records::feature::sheet_metal::DesignEdgeFlangeShape::Symmetric {
+                        edges, ..
+                    }
+                    | records::feature::sheet_metal::DesignEdgeFlangeShape::TwoSides {
+                        edges, ..
+                    } => ctx
+                        .decode
+                        .count(edges, "count F3D edge flange selected edges")?,
+                    records::feature::sheet_metal::DesignEdgeFlangeShape::SymmetricPerEdge(
+                        edges,
+                    ) => ctx
+                        .decode
+                        .count(edges, "count F3D edge flange selected edges")?,
+                    records::feature::sheet_metal::DesignEdgeFlangeShape::TwoSidesPerEdge {
+                        edges, ..
+                    } => ctx
+                        .decode
+                        .count(edges, "count F3D edge flange selected edges")?,
+                };
+                let mut claimed_storage = ctx
+                    .decode
+                    .reserve_scoped(0, "hold F3D edge flange claimed references")?;
+                let mut claimed = claimed_storage.with_storage(|| -> Result<Vec<u32>, CodecError> {
+                    Ok(match shape {
+                        records::feature::sheet_metal::DesignEdgeFlangeShape::FullEdge {
+                            edges, ..
+                        } => collect_edge_flange_claimed_references(
+                            ctx.decode,
+                            ctx.decode
+                                .admit_iter(edges, "scan F3D edge flange selected edges")?,
+                            std::iter::empty(),
+                            operation,
+                        )?,
+                        records::feature::sheet_metal::DesignEdgeFlangeShape::Symmetric {
+                            edges,
+                            owner,
+                        } => collect_edge_flange_claimed_references(
+                            ctx.decode,
+                            ctx.decode
+                                .admit_iter(edges, "scan F3D edge flange selected edges")?,
+                            ctx.decode.admit_iter(
+                                std::slice::from_ref(owner),
+                                "scan F3D edge flange width owners",
+                            )?,
+                            operation,
+                        )?,
+                        records::feature::sheet_metal::DesignEdgeFlangeShape::TwoSides {
+                            edges,
+                            owners,
+                        } => collect_edge_flange_claimed_references(
+                            ctx.decode,
+                            ctx.decode
+                                .admit_iter(edges, "scan F3D edge flange selected edges")?,
+                            ctx.decode
+                                .admit_iter(owners, "scan F3D edge flange width owners")?,
+                            operation,
+                        )?,
+                        records::feature::sheet_metal::DesignEdgeFlangeShape::SymmetricPerEdge(
+                            edges,
+                        ) => collect_edge_flange_claimed_references(
+                            ctx.decode,
+                            ctx.decode
+                                .admit_iter(edges, "scan F3D edge flange selected edges")?
+                                .map(|row| &row.edge),
+                            ctx.decode
+                                .admit_iter(edges, "scan F3D edge flange width owners")?
+                                .map(|row| &row.owners),
+                            operation,
+                        )?,
+                        records::feature::sheet_metal::DesignEdgeFlangeShape::TwoSidesPerEdge {
+                            edges,
+                            ..
+                        } => collect_edge_flange_claimed_references(
+                            ctx.decode,
+                            ctx.decode
+                                .admit_iter(edges, "scan F3D edge flange selected edges")?
+                                .map(|row| &row.edge),
+                            ctx.decode
+                                .admit_iter(edges, "scan F3D edge flange width owners")?
+                                .flat_map(|row| row.owners.iter()),
+                            operation,
+                        )?,
+                    })
+                })?;
                 if let records::feature::sheet_metal::DesignEdgeFlangeHeightExtent::ToObject {
                     target_group_record_index,
                     target_operand_record_index,
@@ -2123,12 +2230,13 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         target_operand_record_index,
                         offset_owner_record_index,
                     ] {
-                        ctx.decode.reserve_vec(
-                            &mut claimed,
-                            1,
-                            "collect F3D edge flange target references",
-                        )?;
-                        claimed.push(index);
+                        claimed_storage.with_storage(|| {
+                            ctx.decode.push_vec(
+                                &mut claimed,
+                                index,
+                                "collect F3D edge flange target references",
+                            )
+                        })?;
                     }
                 }
                 let unique_claimed = ctx.decode.collect_hash_set(
@@ -2707,7 +2815,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                             .is_some_and(|expected_offset| {
                                 alignment.owners.len() == expected_offset
                             })
-                            && ctx.decode.admit_iter(&alignment.owners, "validate F3D assembly alignment owners")?.zip(&values).enumerate().try_fold(true,
+                            && ctx.decode.admit_iter(&alignment.owners, "validate F3D assembly alignment owners")?
+                                .zip(ctx.decode.admit_iter(&values, "scan F3D assembly alignment values")?)
+                                .enumerate().try_fold(true,
                                 |valid, (ordinal, (lane, value))| -> Result<bool, CodecError> {
                                     if !valid { return Ok(false); }
                                     let ordinal = alignment_start.checked_add(ordinal).ok_or_else(|| ctx.decode.refuse_codec_limit("count F3D alignment owner ordinal", u64::MAX - 1, u64::MAX))?;
@@ -2757,17 +2867,108 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     scope.class_tag.as_str(),
                     scope.paired_class_tag.as_str(),
                 ) {
-                    (0..scope.reference_members().len())
-                        .filter(|&start| {
-                            scope
-                                .reference_members()
-                                .values_in(start..start + alignment.owners.len())
-                                .is_some_and(|values| {
-                                    values.eq(alignment.owners.iter().map(|owner| &owner.value))
-                                })
-                        })
-                        .count()
-                        == 1
+                    let references = scope.reference_members();
+                    let (reference_values, located_reference_values) =
+                        references.storage_slices();
+                    let matching_windows = ctx
+                        .decode
+                        .admit_iter(
+                            reference_values,
+                            "scan F3D variable alignment reference-window starts",
+                        )?
+                        .chain(
+                            ctx.decode
+                                .admit_iter(
+                                    located_reference_values,
+                                    "scan F3D variable alignment reference-window starts",
+                                )?
+                                .map(|row| &row.value),
+                        )
+                        .enumerate()
+                        .try_fold(
+                            0usize,
+                            |count, (start, first_reference)| -> Result<usize, CodecError> {
+                                if alignment.owners.is_empty() {
+                                    return count.checked_add(1).ok_or_else(|| {
+                                        ctx.decode.refuse_codec_limit(
+                                            "count F3D variable alignment reference windows",
+                                            u64::MAX - 1,
+                                            u64::MAX,
+                                        )
+                                    });
+                                }
+                                let end = start.checked_add(alignment.owners.len()).ok_or_else(
+                                    || {
+                                        ctx.decode.refuse_codec_limit(
+                                            "compare F3D variable alignment reference window",
+                                            u64::MAX - 1,
+                                            u64::MAX,
+                                        )
+                                    },
+                                )?;
+                                if end > references.len() {
+                                    return Ok(count);
+                                }
+
+                                let mut first_owner = ctx.decode.admit_iter(
+                                    &alignment.owners[..1],
+                                    "compare F3D variable alignment reference window",
+                                )?;
+                                let Some(first_owner) = first_owner.next() else {
+                                    return Ok(count);
+                                };
+                                if first_owner.value != *first_reference {
+                                    return Ok(count);
+                                }
+
+                                let suffix_start = start + 1;
+                                let suffix_matches = if let Some(values) =
+                                    reference_values.get(suffix_start..end)
+                                {
+                                    ctx.decode
+                                        .admit_iter(
+                                            &alignment.owners[1..],
+                                            "compare F3D variable alignment reference window",
+                                        )?
+                                        .zip(ctx.decode.admit_iter(
+                                            values,
+                                            "compare F3D variable alignment reference window",
+                                        )?)
+                                        .all(|(owner, value)| owner.value == *value)
+                                } else if let Some(rows) =
+                                    located_reference_values.get(suffix_start..end)
+                                {
+                                    ctx.decode
+                                        .admit_iter(
+                                            &alignment.owners[1..],
+                                            "compare F3D variable alignment reference window",
+                                        )?
+                                        .zip(
+                                            ctx.decode
+                                                .admit_iter(
+                                                    rows,
+                                                    "compare F3D variable alignment reference window",
+                                                )?
+                                                .map(|row| &row.value),
+                                        )
+                                        .all(|(owner, value)| owner.value == *value)
+                                } else {
+                                    false
+                                };
+                                if suffix_matches {
+                                    count.checked_add(1).ok_or_else(|| {
+                                        ctx.decode.refuse_codec_limit(
+                                            "count F3D variable alignment reference windows",
+                                            u64::MAX - 1,
+                                            u64::MAX,
+                                        )
+                                    })
+                                } else {
+                                    Ok(count)
+                                }
+                            },
+                        )?;
+                    matching_windows == 1
                 } else {
                     scope
                         .reference_members()
@@ -7135,7 +7336,7 @@ fn validate_edge_treatment_vertex_operands<'a>(
                 break Some(group);
             }
         };
-        let expected_id = crate::ids::native_scoped_id_charged(
+        let expected_id = crate::ids::native_scoped_id(
             decode,
             stream,
             "edge-treatment-vertex-operand",

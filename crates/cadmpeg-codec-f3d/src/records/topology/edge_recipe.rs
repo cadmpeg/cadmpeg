@@ -15,6 +15,25 @@ pub(crate) struct DesignEdgeRecipeSelectorContext {
     pub(crate) boundary_count_matching_edge_slots: Vec<i64>,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for DesignEdgeRecipeSelectorContext {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                &self.selector,
+                &self.clauses,
+                &self.incidence_matching_edge_slots,
+                &self.boundary_count_matching_edge_slots,
+            ),
+            ctx,
+            operation,
+        )
+    }
+}
+
 #[cfg(test)]
 thread_local! {
     pub(super) static EDGE_RECIPE_SELECTOR_CONTEXT_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
@@ -86,6 +105,20 @@ impl Serialize for DesignEdgeRecipeSelectorContext {
 pub(crate) struct DesignEdgeRecipeSelectorClause {
     pub(crate) entry: DesignTopologyRecipeEntry,
     pub(crate) triplet_edge_slots: [Vec<i64>; 2],
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for DesignEdgeRecipeSelectorClause {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.entry, &self.triplet_edge_slots),
+            ctx,
+            operation,
+        )
+    }
 }
 
 impl DesignEdgeRecipeSelectorContext {

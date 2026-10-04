@@ -4,7 +4,7 @@
 use cadmpeg_core::container::ContainerRole;
 
 use crate::container::ContainerScan;
-use crate::design::decode::sketch::native_scope_charged;
+use crate::ids::native_scope;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{Asset, AssetContent};
@@ -103,7 +103,7 @@ pub(super) fn embedded_image_asset(
     let name =
         String::from_utf8(ctx.copy_retained(asset_name.as_bytes(), "f3d embedded image name")?)
             .map_err(|_| CodecError::Malformed("asset name must be UTF-8".into()))?;
-    let native_ref = native_scope_charged(ctx, &entry.name)?;
+    let native_ref = native_scope(ctx, &entry.name, "f3d native stream key")?;
     Ok(Some(Asset::try_new(
         ctx,
         neutral_asset_id_charged(ctx, &entry.name)?,
@@ -137,7 +137,7 @@ pub(super) fn decode_scoped_images<T>(
             continue;
         }
         let bytes = scan.entry_bytes(ctx, &entry.name)?;
-        let stream = native_scope_charged(ctx, &entry.name)?;
+    let stream = native_scope(ctx, &entry.name, "f3d native stream key")?;
         for scope in scopes.iter().filter(|scope| {
             scope.kind().as_str() == kind.as_str()
                 && crate::ids::native_stream(&scope.id) == Some(stream.as_str())
@@ -219,7 +219,7 @@ mod tests {
         zip.start_file(ENTRY, stored).unwrap();
         zip.write_all(b"scope").unwrap();
         let archive = zip.finish().unwrap().into_inner();
-        let stream = crate::ids::native_scope(ENTRY);
+        let stream = crate::test_support::with_decode_context(|ctx| {crate::ids::native_scope(ctx, ENTRY, "retain F3D native scope").expect("test F3D native identity")});
         let scope: crate::records::feature::scope::DesignParameterScope =
             serde_json::from_value(serde_json::json!({
                 "id": format!("{stream}:scope#1"),

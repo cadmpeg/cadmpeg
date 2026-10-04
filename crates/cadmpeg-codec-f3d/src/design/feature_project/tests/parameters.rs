@@ -244,7 +244,12 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
     parameter.record_index = 45;
     let mut owner = parse_parameter_owner(&bytes_decode_ctx, &parameter_owner_frame()).transpose().unwrap()
         .unwrap()
-        .into_record("Design/BulkStream.dat", 0)
+        .into_record(
+            &bytes_decode_ctx,
+            "Design/BulkStream.dat",
+            0,
+        )
+        .unwrap()
         .unwrap();
     {
         let mut wire = crate::records::parameters::DesignParameterOwnerWire::from(owner.clone());
@@ -373,7 +378,12 @@ fn owned_parameter_without_a_projected_scope_is_retained_unowned() {
     parameter.source_ordinal = 17;
     let mut owner = parse_parameter_owner(&bytes_decode_ctx, &parameter_owner_frame()).transpose().unwrap()
         .unwrap()
-        .into_record("Design/BulkStream.dat", 0)
+        .into_record(
+            &bytes_decode_ctx,
+            "Design/BulkStream.dat",
+            0,
+        )
+        .unwrap()
         .unwrap();
     {
         let mut wire = crate::records::parameters::DesignParameterOwnerWire::from(owner.clone());
@@ -609,7 +619,12 @@ fn parameter_expressions_project_feature_dependencies() {
     let owner = |record_index, scope_record_index, parameter_record_index| {
         let mut owner = parse_parameter_owner(&bytes_decode_ctx, &parameter_owner_frame()).transpose().unwrap()
             .expect("generated parameter owner is canonical")
-            .into_record("Design/BulkStream.dat", 0)
+            .into_record(
+                &bytes_decode_ctx,
+                "Design/BulkStream.dat",
+                0,
+            )
+            .unwrap()
             .unwrap();
         {
             let mut wire =

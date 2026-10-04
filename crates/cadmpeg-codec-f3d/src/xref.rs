@@ -728,7 +728,7 @@ fn bind_occurrences(
         streams.push((
             placements,
             failures,
-            crate::ids::native_scope_charged(ctx, &entry.name)?,
+            crate::ids::native_scope(ctx, &entry.name, "retain F3D native scope")?,
         ));
     }
     let mut expanded = Vec::new();

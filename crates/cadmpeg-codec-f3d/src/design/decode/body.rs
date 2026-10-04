@@ -6,11 +6,10 @@ use cadmpeg_core::container::ContainerRole;
 
 use crate::bytes::take_reference;
 use crate::container::ContainerScan;
-use crate::design::decode::sketch::native_scope_charged;
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::decode::text::design_record_id_charged;
 use crate::design::RECIPES;
-use crate::ids::native_stream;
+use crate::ids::{native_scope, native_stream};
 use crate::layout::indexed_design_record_header;
 use crate::records::{
     bodies::{DesignBodyBinding, DesignBodyBounds, DesignBodyMember},
@@ -1312,7 +1311,7 @@ pub(crate) fn bind_body_bounds(
         let mut matches = Vec::new();
         for binding in bindings {
             if binding.entity_suffix != bounds.entity_suffix()
-                || stream != native_scope_charged(ctx, binding.stream())?
+            || stream != native_scope(ctx, binding.stream(), "f3d native stream key")?
             {
                 continue;
             }
@@ -1735,7 +1734,7 @@ mod tests {
                 assert_eq!(members.len(), 1);
                 assert_eq!(
                     members[0].id(),
-                    &crate::ids::native_design_body_member_id(ENTRY, member_offset)
+                    &crate::test_support::with_decode_context(|ctx| {crate::ids::native_design_body_member_id(ctx, ENTRY, member_offset).expect("test F3D native identity")})
                 );
             });
         });
@@ -2249,7 +2248,7 @@ mod tests {
             };
             let blob_len = u64_from_index("BREP.synthetic.smbh".len());
             let stream_name = format!("{PREFIX}BulkStream.dat");
-            let scope_len = u64_from_index(crate::ids::native_scope(&stream_name).len());
+            let scope_len = u64_from_index(crate::test_support::with_decode_context(|ctx| {crate::ids::native_scope(ctx, &stream_name, "retain F3D native scope").expect("test F3D native identity")}).len());
             let suffix_len = u64_from_index(
                 format!(":design-body-binding#{}", bindings[0].asm_body_key_offset()).len(),
             );
@@ -2975,7 +2974,7 @@ mod tests {
         .unwrap();
         let make_bounds = || {
             DesignBodyBounds::try_from(DesignBodyBoundsWire {
-                id: format!("{}:design-body-bounds#0", crate::ids::native_scope(STREAM)),
+                id: format!("{}:design-body-bounds#0", crate::test_support::with_decode_context(|ctx| {crate::ids::native_scope(ctx, STREAM, "retain F3D native scope").expect("test F3D native identity")})),
                 entity_suffix: 7,
                 entity_byte_offset: 0,
                 record_indices: [8, 9, 10],
@@ -2987,7 +2986,7 @@ mod tests {
             })
             .unwrap()
         };
-        let scope_len = u64_from_index(crate::ids::native_scope(STREAM).len());
+        let scope_len = u64_from_index(crate::test_support::with_decode_context(|ctx| {crate::ids::native_scope(ctx, STREAM, "retain F3D native scope").expect("test F3D native identity")}).len());
         for (items, retained, dimension, operation) in [
             (
                 0,
@@ -3141,7 +3140,7 @@ mod tests {
             }
         }
         let entity = crate::records::entity_header::DesignEntityHeader {
-            id: format!("{}:design-entity-header#0", crate::ids::native_scope(ENTRY)),
+            id: format!("{}:design-entity-header#0", crate::test_support::with_decode_context(|ctx| {crate::ids::native_scope(ctx, ENTRY, "retain F3D native scope").expect("test F3D native identity")})),
             byte_offset: 0,
             entity_id: crate::records::identity::DesignEntityId::try_from("0_7".to_owned())
                 .unwrap(),
@@ -3161,7 +3160,7 @@ mod tests {
         zip.start_file(ENTRY, stored).unwrap();
         zip.write_all(&bulk).unwrap();
         let archive = zip.finish().unwrap().into_inner();
-        let scope_len = u64_from_index(crate::ids::native_scope(ENTRY).len());
+        let scope_len = u64_from_index(crate::test_support::with_decode_context(|ctx| {crate::ids::native_scope(ctx, ENTRY, "retain F3D native scope").expect("test F3D native identity")}).len());
         let suffix_len = u64_from_index(":design-body-bounds#0".len());
         with_scan(&archive, |scan| {
             for (items, retained, dimension, operation) in [
@@ -3238,7 +3237,7 @@ mod tests {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&16u32.to_le_bytes());
         bytes.extend_from_slice(b"body_recipe_data");
-        let scope_len = u64_from_index(crate::ids::native_scope(STREAM).len());
+        let scope_len = u64_from_index(crate::test_support::with_decode_context(|ctx| {crate::ids::native_scope(ctx, STREAM, "retain F3D native scope").expect("test F3D native identity")}).len());
         let suffix_len = u64_from_index(":construction-recipe#4".len());
         for (items, retained, dimension, operation) in [
             (

@@ -786,7 +786,7 @@ pub(crate) fn scan<'a>(
 
     let mut scope_entry_indices = std::collections::HashMap::<String, Vec<usize>>::new();
     for (index, entry) in ctx.admit_iter(&entries, "index F3D native entry scopes")?.enumerate() {
-        let scope = crate::ids::native_scope_charged(ctx, &entry.name)?;
+        let scope = crate::ids::native_scope(ctx, &entry.name, "retain F3D native scope")?;
         ctx.push_hash_group(
             &mut scope_entry_indices,
             scope,

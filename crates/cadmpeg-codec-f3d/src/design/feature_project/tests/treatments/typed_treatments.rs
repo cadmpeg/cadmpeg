@@ -62,7 +62,12 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     let owner = |record_index, scope_record_index, parameter_record_index, local_ordinal| {
         let mut owner = parse_parameter_owner(&bytes_decode_ctx, &parameter_owner_frame()).transpose().unwrap()
             .expect("generated parameter owner is canonical")
-            .into_record("Design/BulkStream.dat", 0)
+            .into_record(
+                &bytes_decode_ctx,
+                "Design/BulkStream.dat",
+                0,
+            )
+            .unwrap()
             .unwrap();
         {
             let mut wire = DesignParameterOwnerWire::from(owner.clone());

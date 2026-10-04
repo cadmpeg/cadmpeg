@@ -313,7 +313,11 @@ pub(super) fn bind_face_selection(
     let cadmpeg_ir::features::FaceSelection::Native(native) = selection else {
         return Ok(());
     };
-    if native == &scope.id {
+    if ctx.equal(
+        native.as_str(),
+        scope.id.as_str(),
+        "compare F3D face selection scope identity",
+    )? {
         if let Some(resolved) =
             crate::design::feature_project::direct_face_selection(ctx, scope, operands)?
         {
@@ -323,14 +327,47 @@ pub(super) fn bind_face_selection(
         }
         return Ok(());
     }
-    let mut matching_groups = groups.iter().filter(|group| group.id == *native);
-    let Some(group) = matching_groups.next() else {
+    let matches_group = |group: &crate::records::topology::construction::DesignConstructionOperandGroup| {
+        ctx.equal(
+            group.id.as_str(),
+            native.as_str(),
+            "compare F3D face selection group identity",
+        )
+    };
+    let Some(group_index) = ctx.position_by(
+        groups,
+        |group| matches_group(group),
+        "find F3D face selection group",
+    )? else {
         return Ok(());
     };
-    if matching_groups.next().is_some()
-        || group.scope_record_index != scope.record_index
-        || crate::ids::native_stream(&group.id) != crate::ids::native_stream(&scope.id)
+    if ctx
+        .position_by(
+            &groups[group_index + 1..],
+            |group| matches_group(group),
+            "find F3D face selection group",
+        )?
+        .is_some()
     {
+        return Ok(());
+    }
+    let group = &groups[group_index];
+    if group.scope_record_index != scope.record_index {
+        return Ok(());
+    }
+    let same_stream = match (
+        crate::ids::native_stream(&group.id),
+        crate::ids::native_stream(&scope.id),
+    ) {
+        (Some(group_stream), Some(scope_stream)) => ctx.equal(
+            group_stream,
+            scope_stream,
+            "compare F3D face selection group stream",
+        )?,
+        (None, None) => true,
+        _ => false,
+    };
+    if !same_stream {
         return Ok(());
     }
     if let Some(resolved) =
@@ -350,18 +387,40 @@ pub(super) fn bind_face_selection(
         return Ok(());
     };
     let mut faces = Vec::new();
-    for record_index in group.members().iter().map(|member| &member.value) {
-        let mut matches = operands.iter().filter(|operand| {
-            crate::ids::native_stream(&operand.id) == Some(stream)
-                && operand.scope_record_index == scope.record_index
-                && operand.record_index() == *record_index
-        });
-        let Some(operand) = matches.next() else {
+    for member in ctx.admit_iter(group.members(), "scan F3D face selection group members")? {
+        let record_index = &member.value;
+        let operand_matches = |operand: &crate::records::topology::face::DesignFaceOperand| {
+            let Some(operand_stream) = crate::ids::native_stream(&operand.id) else {
+                return Ok(false);
+            };
+            if !ctx.equal(
+                operand_stream,
+                stream,
+                "compare F3D face selection operand stream",
+            )? {
+                return Ok(false);
+            }
+            Ok(operand.scope_record_index == scope.record_index
+                && operand.record_index() == *record_index)
+        };
+        let Some(operand_index) = ctx.position_by(
+            operands,
+            |operand| operand_matches(operand),
+            "find F3D face selection operand",
+        )? else {
             return Ok(());
         };
-        if matches.next().is_some() {
+        if ctx
+            .position_by(
+                &operands[operand_index + 1..],
+                |operand| operand_matches(operand),
+                "find F3D face selection operand",
+            )?
+            .is_some()
+        {
             return Ok(());
         }
+        let operand = &operands[operand_index];
         let previous_candidates = &operand.preceding_candidate_faces;
         let candidate = match previous_candidates.as_slice() {
             [face] => face,
@@ -410,40 +469,97 @@ pub(super) fn bind_body_recipe_face_selection(
     let FaceSelection::Native(native) = selection else {
         return Ok(());
     };
-    let mut matching_groups = groups.iter().filter(|group| {
-        group.id == *native
-            && group.scope_record_index == scope.record_index
-            && group.role() == DesignOperandRole::ROLE_0X5
-            && crate::ids::native_stream(&group.id) == crate::ids::native_stream(&scope.id)
-    });
-    let Some(group) = matching_groups.next() else {
+    let group_matches = |group: &crate::records::topology::construction::DesignConstructionOperandGroup| {
+        if !ctx.equal(
+            group.id.as_str(),
+            native.as_str(),
+            "compare F3D body recipe face selection group identity",
+        )? {
+            return Ok(false);
+        }
+        if group.scope_record_index != scope.record_index
+            || group.role() != DesignOperandRole::ROLE_0X5
+        {
+            return Ok(false);
+        }
+        match (
+            crate::ids::native_stream(&group.id),
+            crate::ids::native_stream(&scope.id),
+        ) {
+            (Some(group_stream), Some(scope_stream)) => ctx.equal(
+                group_stream,
+                scope_stream,
+                "compare F3D body recipe face selection group stream",
+            ),
+            (None, None) => Ok(true),
+            _ => Ok(false),
+        }
+    };
+    let Some(group_index) = ctx.position_by(
+        groups,
+        |group| group_matches(group),
+        "find F3D body recipe face selection group",
+    )? else {
         return Ok(());
     };
-    if matching_groups.next().is_some() || group.members().is_empty() {
+    if ctx
+        .position_by(
+            &groups[group_index + 1..],
+            |group| group_matches(group),
+            "find F3D body recipe face selection group",
+        )?
+        .is_some()
+    {
+        return Ok(());
+    }
+    let group = &groups[group_index];
+    if group.members().is_empty() {
         return Ok(());
     }
     let stream = crate::ids::native_stream(&scope.id);
     let mut slots = Vec::new();
-    for (ordinal, record_index) in group
-        .members()
-        .iter()
-        .map(|member| &member.value)
+    for (ordinal, member) in ctx
+        .admit_iter(group.members(), "scan F3D body recipe selection group members")?
         .enumerate()
     {
+        let record_index = &member.value;
         let Ok(ordinal) = u32::try_from(ordinal) else {
             return Ok(());
         };
-        let mut matching_operands = operands.iter().filter(|operand| {
-            operand.owner.group() == Some((group.record_index, ordinal))
-                && operand.record_index() == *record_index
-                && crate::ids::native_stream(&operand.id) == stream
-        });
-        let Some(operand) = matching_operands.next() else {
+        let operand_matches = |operand: &crate::records::topology::body_recipe::DesignBodyRecipeOperand| {
+            if operand.owner.group() != Some((group.record_index, ordinal))
+                || operand.record_index() != *record_index
+            {
+                return Ok(false);
+            }
+            match (crate::ids::native_stream(&operand.id), stream) {
+                (Some(operand_stream), Some(scope_stream)) => ctx.equal(
+                    operand_stream,
+                    scope_stream,
+                    "compare F3D body recipe selection operand stream",
+                ),
+                (None, None) => Ok(true),
+                _ => Ok(false),
+            }
+        };
+        let Some(operand_index) = ctx.position_by(
+            operands,
+            |operand| operand_matches(operand),
+            "find F3D body recipe face selection operand",
+        )? else {
             return Ok(());
         };
-        if matching_operands.next().is_some() {
+        if ctx
+            .position_by(
+                &operands[operand_index + 1..],
+                |operand| operand_matches(operand),
+                "find F3D body recipe face selection operand",
+            )?
+            .is_some()
+        {
             return Ok(());
         }
+        let operand = &operands[operand_index];
         let Some(slot) = operand.resolved_face_slot else {
             return Ok(());
         };
@@ -472,7 +588,7 @@ pub(super) fn bind_body_recipe_face_selection(
 
 pub(super) fn faces_in_topology<'a>(
     decode: &cadmpeg_core::decode::DecodeContext<'_>,
-    candidates: impl IntoIterator<Item = &'a cadmpeg_ir::ids::FaceId>,
+    candidates: &'a [cadmpeg_ir::ids::FaceId],
     topology: &AsmHistoricalTopology,
 ) -> Result<Vec<cadmpeg_ir::ids::FaceId>, cadmpeg_core::CodecError> {
     let mut faces = HashSet::new();
@@ -481,13 +597,18 @@ pub(super) fn faces_in_topology<'a>(
     {
         decode.insert_hash_set(&mut faces, *face, "index F3D topology faces")?;
     }
-    decode.try_collect_vec(
-        candidates
-            .into_iter()
-            .filter(|face| stable_ref(face.as_str()).is_some_and(|slot| faces.contains(&slot)))
-            .map(|face| face.try_clone_for_decode(decode, "copy F3D historical face identity")),
-        "collect F3D faces in topology",
-    )
+    let mut selected = Vec::new();
+    for face in decode.admit_iter(candidates, "scan F3D face candidates")? {
+        let Some(slot) = stable_ref(decode, face.as_str())? else {
+            continue;
+        };
+        if !decode.contains_hash_set(&faces, &slot, "find F3D candidate topology face")? {
+            continue;
+        }
+        let face = face.try_clone_for_decode(decode, "copy F3D historical face identity")?;
+        decode.push_vec(&mut selected, face, "collect F3D faces in topology")?;
+    }
+    Ok(selected)
 }
 
 /// Topology families and states containing one requested stable ASM slot.
@@ -1248,7 +1369,10 @@ pub(crate) fn bind_hole_selection_history(
         let Some(selection) = &mut construction.face_selection else {
             continue;
         };
-        selection.historical_face_candidates.clear();
+        decode.clear_vec(
+            &mut selection.historical_face_candidates,
+            "clear F3D historical face candidates",
+        )?;
         selection.historical_face_candidates =
             entity_selection_face_candidates(decode, selection.primary_identity, histories)?;
         if selection.historical_face_candidates.is_empty() {
@@ -2041,7 +2165,7 @@ fn include_mirror_face_slots(
         faces,
         (false, *minimum_slot),
         |(_, minimum), face| {
-            let minimum = match stable_ref(face.as_str()) {
+            let minimum = match stable_ref(decode, face.as_str())? {
                 Some(slot) => Some(minimum.map_or(slot, |current| current.min(slot))),
                 None => minimum,
             };
@@ -2062,7 +2186,7 @@ fn mirror_face_candidates_match_plane(
     scan_operation: &'static str,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     for face in decode.admit_iter(faces, scan_operation)? {
-        let Some(slot) = stable_ref(face.as_str()) else {
+        let Some(slot) = stable_ref(decode, face.as_str())? else {
             continue;
         };
         let Some(candidate) = historical_mirror_plane_for_face_slot(slot, previous_state_id, history)
@@ -2878,7 +3002,10 @@ pub(crate) fn bind_edge_identity_history(
         HashMap::<(String, i64, i64), EdgeTreatmentTransitionCandidates>::new();
     for operand in operands {
         operand.historical = None;
-        operand.treatment_radius_candidates.clear();
+        decode.clear_vec(
+            &mut operand.treatment_radius_candidates,
+            "clear F3D edge treatment radius candidates",
+        )?;
         operand.transition_edge_candidates.clear();
         operand.resolved_edge_slots.clear();
         operand.resolved_edge_slot = None;
@@ -3229,20 +3356,27 @@ pub(crate) fn bind_edge_identity_bounded_face_rules(
         if operand.resolved_edge_slot.is_some() {
             continue;
         }
-        let mut matches = face_operands.iter().filter(|face| {
-            crate::ids::native_stream(&face.id) == crate::ids::native_stream(&operand.id)
-                && face.scope_record_index == operand.scope_record_index
+        let mut matches_face = |face: &crate::records::topology::face::DesignFaceOperand| {
+            Ok(decode.equal(
+                &crate::ids::native_stream(&face.id),
+                &crate::ids::native_stream(&operand.id),
+                "compare F3D bounded treatment operand streams",
+            )? && face.scope_record_index == operand.scope_record_index
                 && face.group_record_index() == Some(operand.group_record_index)
                 && face.group_member_ordinal() == Some(operand.group_member_ordinal)
                 && face.record_index() == operand.record_index()
-                && face.class_tag == operand.class_tag
+                && decode.equal(&face.class_tag, &operand.class_tag,
+                    "compare F3D bounded treatment operand class tags")?
                 && face.recipe_kind == ConstructionRecipeKind::BoundedFace
-                && u64::from(face.recipe_record_index()) == operand.local_id
-        });
-        let Some(face) = matches.next() else { continue };
-        if matches.next().is_some() {
+                && u64::from(face.recipe_record_index()) == operand.local_id)
+        };
+        let Some(face_index) = decode.position_by(face_operands, &mut matches_face,
+            "find F3D bounded treatment face operand")? else { continue };
+        if decode.position_by(&face_operands[face_index + 1..], &mut matches_face,
+            "find additional F3D bounded treatment face operand")?.is_some() {
             continue;
         }
+        let face = &face_operands[face_index];
         let [support] = face.historical_support_contexts.as_slice() else {
             continue;
         };
@@ -3257,7 +3391,7 @@ pub(crate) fn bind_edge_identity_bounded_face_rules(
             )?;
         }
         if support.preceding_face_slots.is_empty()
-            || support.changed_preceding_face_slots != support.preceding_face_slots
+            || !decode.equal(&support.changed_preceding_face_slots, &support.preceding_face_slots, "compare F3D bounded treatment preceding faces")?
             || support.preceding_face_boundaries.len() != support.preceding_face_slots.len()
             || unique_faces.len() != support.preceding_face_slots.len()
         {

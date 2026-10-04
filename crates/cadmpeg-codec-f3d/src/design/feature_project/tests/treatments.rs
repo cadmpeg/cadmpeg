@@ -509,7 +509,12 @@ fn localized_fillet_owner(
     let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
     let mut owner = parse_parameter_owner(&bytes_decode_ctx, &parameter_owner_frame()).transpose().unwrap()
         .unwrap()
-        .into_record("Design/BulkStream.dat", 0)
+        .into_record(
+            &bytes_decode_ctx,
+            "Design/BulkStream.dat",
+            0,
+        )
+        .unwrap()
         .unwrap();
     {
         let mut wire = DesignParameterOwnerWire::from(owner.clone());

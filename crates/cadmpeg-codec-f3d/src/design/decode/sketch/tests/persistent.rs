@@ -89,6 +89,7 @@ fn persistent_reference_scan_preserves_byte_order_after_kind_scan() {
     assert_eq!(references[1].value, 29);
     assert_eq!(
         references[0].id,
-        crate::ids::native_persistent_reference_id("BulkStream.dat", 0)
+        crate::ids::native_persistent_reference_id(&ctx, "BulkStream.dat", 0)
+            .expect("test F3D native identity")
     );
 }

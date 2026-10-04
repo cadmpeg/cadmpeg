@@ -320,6 +320,90 @@ pub(super) fn change_state(state_id: i64) -> AsmDeltaState {
     }
 }
 
+#[test]
+fn historical_entity_version_clear_propagates_work_refusal() {
+    let mut history = two_state_entity_history();
+    for state in &mut history.states {
+        state.topology_cache = crate::history_records::AsmTopologyCache::Released;
+    }
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "clear F3D historical entity versions",
+        0,
+        |decode| {
+            let mut histories = [history.clone()];
+            crate::history::discard_projection_caches(decode, &mut histories).map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "clear F3D historical entity versions"
+    ));
+}
+
+#[test]
+fn historical_entity_version_retain_propagates_work_refusal() {
+    let mut history = two_state_entity_history();
+    for state in &mut history.states {
+        state.topology_cache = crate::history_records::AsmTopologyCache::Complete(
+            AsmHistoricalTopology {
+                faces: vec![42],
+                face_loops: vec![crate::history_records::AsmHistoricalRelation {
+                    owner_ref: 42,
+                    member_refs: vec![1],
+                }],
+                ..Default::default()
+            },
+        );
+    }
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "retain F3D historical entity versions",
+        0,
+        |decode| {
+            let mut histories = [history.clone()];
+            crate::history::discard_projection_caches(decode, &mut histories).map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "retain F3D historical entity versions"
+    ));
+}
+
+#[test]
+fn historical_entity_version_membership_propagates_work_refusal() {
+    let mut history = two_state_entity_history();
+    for state in &mut history.states {
+        state.topology_cache = crate::history_records::AsmTopologyCache::Complete(
+            AsmHistoricalTopology {
+                faces: vec![42],
+                face_loops: vec![crate::history_records::AsmHistoricalRelation {
+                    owner_ref: 42,
+                    member_refs: vec![1],
+                }],
+                ..Default::default()
+            },
+        );
+    }
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "find F3D historical entity version slot",
+        0,
+        |decode| {
+            let mut histories = [history.clone()];
+            crate::history::discard_projection_caches(decode, &mut histories).map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "find F3D historical entity version slot"
+    ));
+}
+
 fn two_state_entity_history() -> AsmHistory {
     let make_state = |state_id| {
         let mut state = change_state(state_id);

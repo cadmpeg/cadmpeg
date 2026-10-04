@@ -67,7 +67,7 @@ fn native() -> crate::native::F3dNative {
             ),
         ],
         design_feature_timelines: vec![DesignFeatureTimeline::try_new(
-            crate::ids::native_design_feature_timeline_id(bulk, 200),
+            crate::test_support::with_decode_context(|ctx| {crate::ids::native_design_feature_timeline_id(ctx, bulk, 200).expect("test F3D native identity")}),
             DesignTimelineFrame::new(
                 crate::records::admission::RecordAdmission::Admitted,
                 200,

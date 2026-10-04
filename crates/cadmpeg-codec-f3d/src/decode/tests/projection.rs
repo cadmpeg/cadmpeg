@@ -1493,3 +1493,58 @@ fn split_body_requires_resolved_target_and_tool_selections() {
         })
     )).expect("completeness admission"));
 }
+
+#[test]
+fn mesh_feature_scope_search_and_tessellation_scan_preserve_work_refusal() {
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+    let scope_id = "f3d:Design/BulkStream.dat:design-parameter-scope#10";
+    let scope = DesignParameterScope::empty(
+        scope_id,
+        crate::records::feature::scope::DesignFeatureKind::BaseMeshFeature,
+        10,
+    );
+    let feature = Feature {
+        id: FeatureId::mint("f3d:test:feature#mesh-search").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: Some("Base Mesh Feature".into()),
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Native {
+                kind: "Base Mesh Feature".into(),
+                parameters: Default::default(),
+            }),
+        ),
+        native_ref: Some(scope_id.into()),
+    };
+    let projection = MeshProjection {
+        count: 1,
+        tessellations_by_scope: std::collections::HashMap::from([(
+            ("f3d:Design/BulkStream.dat".into(), 10),
+            vec!["tessellation:one".into()],
+        )]),
+    };
+    for operation in [
+        "find F3D mesh feature scope",
+        "compare F3D mesh feature scope identities",
+        "scan F3D mesh feature tessellations",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |ctx| bind_mesh_feature_definitions(
+                ctx,
+                &mut [feature.clone()],
+                std::slice::from_ref(&scope),
+                &projection,
+            ),
+        );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == operation));
+    }
+}

@@ -44,6 +44,34 @@ fn material_utf16_string_index_refuses_collection_limit() {
 }
 
 #[test]
+fn material_utf16_candidate_scan_refuses_work_limit() {
+    let mut bytes = Vec::new();
+    super::lp_utf16(&mut bytes, "Alpha");
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan F3D UTF-16 string candidates",
+        0,
+        |ctx| super::super::lp_utf16_strings(ctx, &bytes),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "scan F3D UTF-16 string candidates"));
+}
+
+#[test]
+fn material_utf16_prefix_refuses_work_limit() {
+    let mut bytes = Vec::new();
+    super::lp_utf16(&mut bytes, "Alpha");
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "validate F3D UTF-16 string prefix",
+        0,
+        |ctx| super::super::lp_utf16_strings(ctx, &bytes),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "validate F3D UTF-16 string prefix"));
+}
+
+#[test]
 fn material_printable_ascii_refuses_retained_limit() {
     let mut bytes = Vec::new();
     super::lp_ascii(&mut bytes, "Body");
@@ -265,16 +293,12 @@ fn schema_texture_key_refuses_retained_limit() {
     let path = "textures/a.png";
     let record = texture_record(guid, path);
 
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+    // Texture keys live in the temporary index and use scoped materialized bytes.
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
         "copy F3D texture asset key",
-        |cap| {
-            Err::<(), cadmpeg_core::CodecError>(schema_appearance_error(
-                std::slice::from_ref(&record),
-                u64::MAX,
-                cap,
-            ))
-        },
+        0,
+        |ctx| super::super::appearances_from_schema_records(ctx, std::slice::from_ref(&record)),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -546,7 +570,7 @@ fn material_assignment_id_refuses_retained_limit() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("test decode context");
-    let error = crate::ids::native_scoped_id_charged(&ctx, "BulkStream", "material-assignment", 1)
+    let error = crate::ids::native_scoped_id(&ctx, "BulkStream", "material-assignment", 1)
         .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)

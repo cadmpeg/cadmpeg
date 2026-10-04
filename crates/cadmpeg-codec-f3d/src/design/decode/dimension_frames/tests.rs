@@ -1515,7 +1515,7 @@ fn dimension_annotation_interval_refuses_collection_limit() {
 
     const STREAM: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let companion = crate::records::parameters::DesignParameterCompanion::unbound(
-        format!("{}:parameter-companion#0", crate::ids::native_scope(STREAM)),
+        format!("{}:parameter-companion#0", crate::test_support::with_decode_context(|ctx| {crate::ids::native_scope(ctx, STREAM, "retain F3D native scope").expect("test F3D native identity")})),
         0,
         crate::records::references::DesignClassTag::try_from("408".to_owned()).unwrap(),
         11,
@@ -1565,13 +1565,13 @@ fn dimension_annotation_interval_refuses_collection_limit() {
 
 #[test]
 fn dimension_annotation_stream_scan_refuses_work_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use std::io::{Cursor, Write};
     use zip::CompressionMethod;
 
     const STREAM: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let companion = crate::records::parameters::DesignParameterCompanion::unbound(
-        format!("{}:parameter-companion#0", crate::ids::native_scope(STREAM)),
+        format!("{}:parameter-companion#0", crate::test_support::with_decode_context(|ctx| {crate::ids::native_scope(ctx, STREAM, "retain F3D native scope").expect("test F3D native identity")})),
         0,
         crate::records::references::DesignClassTag::try_from("408".to_owned()).unwrap(),
         11,
@@ -1598,14 +1598,16 @@ fn dimension_annotation_stream_scan_refuses_work_limit() {
             points: &[],
             curves: &[],
         };
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_work_units = 0;
-
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        // The stream lookup precedes the repeated-companion scan.
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            "f3d dimension annotation stream scan",
+            0,
+            |ctx| super::decode_dimension_annotation_frames(ctx, &inputs, &[]),
+        );
         assert!(matches!(
-            super::decode_dimension_annotation_frames(&ctx, &inputs, &[]),
-            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(failure)
                 if failure.dimension == ResourceDimension::WorkUnits
                     && failure.operation == "f3d dimension annotation stream scan"
         ));
@@ -1645,13 +1647,13 @@ fn dimension_recipe_indexes_refuse_collection_limit() {
             4.0,
         ))
         .unwrap();
-        parameter.id = format!("{}:design-parameter#301", crate::ids::native_scope(STREAM));
+        parameter.id = format!("{}:design-parameter#301", crate::test_support::with_decode_context(|ctx| {crate::ids::native_scope(ctx, STREAM, "retain F3D native scope").expect("test F3D native identity")}));
         parameter.record_index = 301;
         let owner =
             DesignParameterOwner::try_from(crate::records::parameters::DesignParameterOwnerWire {
                 id: format!(
                     "{}:design-parameter-owner#300",
-                    crate::ids::native_scope(STREAM)
+                    crate::test_support::with_decode_context(|ctx| {crate::ids::native_scope(ctx, STREAM, "retain F3D native scope").expect("test F3D native identity")})
                 ),
                 byte_offset: 0,
                 frame_length: 104,
@@ -1669,7 +1671,7 @@ fn dimension_recipe_indexes_refuse_collection_limit() {
             })
             .unwrap();
         let recipe = crate::records::recipes::ConstructionRecipe {
-            id: format!("{}:construction-recipe#1", crate::ids::native_scope(STREAM)),
+            id: format!("{}:construction-recipe#1", crate::test_support::with_decode_context(|ctx| {crate::ids::native_scope(ctx, STREAM, "retain F3D native scope").expect("test F3D native identity")})),
             byte_offset: recipe_byte_offset,
             kind: crate::records::recipes::ConstructionRecipeKind::Edge,
             design: None,
@@ -1721,7 +1723,7 @@ fn dimension_recipe_indexes_refuse_collection_limit() {
         let companion = crate::records::parameters::DesignParameterCompanion::unbound(
             format!(
                 "{}:parameter-companion#302",
-                crate::ids::native_scope(STREAM)
+                crate::test_support::with_decode_context(|ctx| {crate::ids::native_scope(ctx, STREAM, "retain F3D native scope").expect("test F3D native identity")})
             ),
             0,
             crate::records::references::DesignClassTag::try_from("408".to_owned()).unwrap(),

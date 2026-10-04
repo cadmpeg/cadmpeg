@@ -205,8 +205,12 @@ fn parse_decal_image_frame(
                 return None;
             }
         }
+        let id = match ids::native_design_decal_image_id(ctx, stream, scope_at) {
+            Ok(id) => id,
+            Err(error) => return Some(Err(error)),
+        };
         DesignDecalImage::new(
-            ids::native_design_decal_image_id(stream, scope_at),
+            id,
             crate::records::identity::Located {
                 value: scope_record_index,
                 offset: u64::try_from(scope_at).ok()?,
@@ -575,7 +579,7 @@ mod tests {
             let after_embedded = face.as_str().len()
                 + 3
                 + "mark.png".len()
-                + crate::ids::native_scope(ENTRY).len()
+                + crate::test_support::with_decode_context(|ctx| {crate::ids::native_scope(ctx, ENTRY, "retain F3D native scope").expect("test F3D native identity")}).len()
                 + asset_id_len
                 + crate::ids::neutral_feature_id(&scope).as_str().len();
             for (retained, items, dimension, operation) in [

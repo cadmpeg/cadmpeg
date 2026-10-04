@@ -294,8 +294,12 @@ fn parse_canvas_image(
                 Err(error) => return Some(Err(error)),
             };
 
+        let id = match ids::native_design_canvas_image_id(ctx, stream, geometry_at) {
+            Ok(id) => id,
+            Err(error) => return Some(Err(error)),
+        };
         DesignCanvasImage::new(
-            ids::native_design_canvas_image_id(stream, geometry_at),
+            id,
             scope.record_index,
             u64::try_from(geometry_reference_at + 1).ok()?,
             DesignCanvasGeometry::new(
@@ -504,7 +508,7 @@ mod tests {
         let archive = zip.finish().unwrap().into_inner();
         crate::test_support::zip_test::with_scan(&archive, |scan| {
             let asset_id_len = crate::ids::neutral_asset_id(ENTRY).as_str().len();
-            let base = 3 + "a.png".len() + crate::ids::native_scope(ENTRY).len() + asset_id_len;
+            let base = 3 + "a.png".len() + crate::test_support::with_decode_context(|ctx| {crate::ids::native_scope(ctx, ENTRY, "retain F3D native scope").expect("test F3D native identity")}).len() + asset_id_len;
             for (retained, items, dimension, operation) in [
                 (
                     u64::MAX,

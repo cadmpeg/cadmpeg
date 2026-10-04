@@ -75,7 +75,10 @@ fn resolved_body_binding(
 ) -> crate::records::bodies::DesignBodyBinding {
     crate::records::bodies::DesignBodyBinding::try_from(
         crate::records::bodies::DesignBodyBindingWire::<String> {
-            id: crate::ids::native_design_body_binding_id(stream, asm_key_offset),
+            id: crate::test_support::with_decode_context(|ctx| {
+                crate::ids::native_design_body_binding_id(ctx, stream, asm_key_offset)
+                    .expect("test F3D native identity")
+            }),
             stream: stream.into(),
             pair_count: 1,
             pair_ordinal: 0,
@@ -449,7 +452,10 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
     let second_body =
         cadmpeg_ir::ids::BodyId::mint("f3d:brep/second/brep:entity#1").expect("identity grammar");
     let second = resolved_body_binding(stream, 125, 200, "BREP.second.smbh", second_body.as_str());
-    let owner = crate::ids::native_scoped_id(stream, "material-assignment", 500);
+    let owner = crate::test_support::with_decode_context(|ctx| {
+        crate::ids::native_scoped_id(ctx, stream, "material-assignment", 500)
+            .expect("test F3D native identity")
+    });
     let visual_guid = "11111111-2222-3333-4444-555555555555";
     let appearance = cadmpeg_ir::appearance::Appearance {
         id: cadmpeg_ir::ids::AppearanceId::mint("f3d:test:appearance#second")

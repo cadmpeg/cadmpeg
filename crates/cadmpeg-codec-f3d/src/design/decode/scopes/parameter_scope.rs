@@ -47,11 +47,12 @@ use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
 use crate::design::decode::assembly::exact_legacy_as_built_421_operands;
 use crate::design::decode::operands::RecordFrame;
-use crate::design::decode::sketch::{native_scope_charged, IndexedRecordOffsets};
+use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::design_record_id_charged;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
 use crate::ids;
+use crate::ids::native_scope;
 use crate::ids::native_stream;
 use crate::records::feature::assembly;
 use crate::records::feature::coil;
@@ -82,7 +83,7 @@ pub(crate) fn decode_parameter_scopes(
             continue;
         }
         let bytes = scan.entry_bytes(ctx, &entry.name)?;
-        let stream = native_scope_charged(ctx, &entry.name)?;
+        let stream = native_scope(ctx, &entry.name, "f3d native stream key")?;
         let records = IndexedRecordOffsets::build(ctx, bytes)?;
         let stream_types =
             crate::design::decode::meta::stream_types_by_entity(ctx, types, &entry.name)?;

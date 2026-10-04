@@ -12,7 +12,7 @@ fn context(arena: &DecodeArena, max_collection_items: u64) -> DecodeContext<'_> 
 fn related_record_index_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let ctx = context(&arena, 0);
-    let error = super::super::collect_related_indices(&ctx, [("f3d:Design", 1)]).unwrap_err();
+    let error = super::super::collect_related_indices(&ctx, super::super::RelatedRecordIndexSource::Explicit(&[("f3d:Design", 1)])).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D related record indices")
@@ -25,7 +25,7 @@ fn related_record_stream_refuses_retained_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::super::collect_related_indices(&ctx, [("f3d:Design", 1)]).unwrap_err();
+    let error = super::super::collect_related_indices(&ctx, super::super::RelatedRecordIndexSource::Explicit(&[("f3d:Design", 1)])).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D related record stream")
@@ -1179,27 +1179,6 @@ fn metadata_unknown_id_refuses_retained_limit() {
 }
 
 #[test]
-fn metadata_unknown_identity_scan_preserves_work_refusal() {
-    let bytes = crate::test_support::zip_test::synthetic_f3d(true);
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (scan_ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let scan = crate::container::scan(&scan_ctx, root).unwrap();
-    let brep = crate::container::select_fallback_brep(&scan_ctx, &scan).unwrap().unwrap();
-    let mut unknowns = Vec::new();
-    super::super::append_metadata_unknown(&scan_ctx, &mut unknowns, brep).unwrap();
-    assert_eq!(unknowns.len(), 1);
-    let error = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "admit F3D metadata unknown identity",
-        0,
-        |ctx| super::super::append_metadata_unknown(ctx, &mut Vec::new(), brep),
-    );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "admit F3D metadata unknown identity"));
-}
-
-#[test]
 fn archive_member_dialect_clone_refuses_collection_limit() {
     let bytes = crate::test_support::zip_test::synthetic_f3d(true);
     let arena = DecodeArena::new();
@@ -1524,3 +1503,6 @@ fn missing_geometry_loss_growth_preserves_collection_refusal() {
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D container losses"));
 }
+
+mod text_and_records;
+mod searches;

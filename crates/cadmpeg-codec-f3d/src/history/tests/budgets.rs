@@ -83,12 +83,12 @@ fn one_board_state() -> Vec<u8> {
 }
 
 fn history_id_lengths() -> (u64, u64, u64, u64) {
-    let history = crate::ids::native_scoped_id("history", "asm-history", format_args!("{:010}", 0));
+    let history = crate::test_support::with_decode_context(|ctx| {crate::ids::native_scoped_id(ctx, "history", "asm-history", format_args!("{:010}", 0)).expect("test F3D native identity")});
     let state =
-        crate::ids::native_scoped_id("history", "asm-delta-state", format_args!("{:010}", 0));
-    let board = crate::ids::native_scoped_id("history", "asm-bulletin-board", "0000000000:000000");
+        crate::test_support::with_decode_context(|ctx| {crate::ids::native_scoped_id(ctx, "history", "asm-delta-state", format_args!("{:010}", 0)).expect("test F3D native identity")});
+    let board = crate::test_support::with_decode_context(|ctx| {crate::ids::native_scoped_id(ctx, "history", "asm-bulletin-board", "0000000000:000000").expect("test F3D native identity")});
     let change =
-        crate::ids::native_scoped_id("history", "asm-entity-change", "0000000000:000000:000000");
+        crate::test_support::with_decode_context(|ctx| {crate::ids::native_scoped_id(ctx, "history", "asm-entity-change", "0000000000:000000:000000").expect("test F3D native identity")});
     (
         u64_from_index(history.len()),
         u64_from_index(state.len()),

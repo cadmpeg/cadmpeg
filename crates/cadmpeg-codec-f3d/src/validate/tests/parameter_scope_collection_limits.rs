@@ -191,3 +191,96 @@ fn edge_flange_reference_scan_preserves_work_refusal() {
         }
     });
 }
+
+#[test]
+fn edge_flange_selected_edge_count_refuses_work_limit() {
+    crate::test_support::with_decode_context(|service| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let native = crate::native::F3dNative {
+            design_parameter_scopes: vec![scope(Case::Flange)],
+            ..Default::default()
+        };
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "count F3D edge flange selected edges",
+            0,
+            |decode| {
+                let mut ctx = super::super::Ctx::new(&ir, &native, service)?;
+                ctx.decode = decode;
+                super::super::validate_parameter_scopes(&ctx, &mut Vec::new())
+            },
+        );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "count F3D edge flange selected edges"));
+    });
+}
+
+fn variable_alignment_scope() -> crate::records::feature::scope::DesignParameterScope {
+    use crate::records::{
+        feature::{
+            assembly::DesignAssemblyAlignment,
+            scope::{DesignFeatureKind, DesignParameterScope, DesignScopePayload},
+        },
+        identity::{Located, ReferenceRun},
+        references::DesignClassTag,
+    };
+
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#10",
+        DesignFeatureKind::Assemble,
+        10,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.class_tag = DesignClassTag::try_from("283".to_owned()).unwrap();
+            draft.paired_class_tag = DesignClassTag::try_from("264".to_owned()).unwrap();
+            draft.frame_length = 637;
+            draft.paired_byte_offset = 637;
+            draft.reference_members = ReferenceRun::unlocated(vec![
+                200, 201, 202, 203, 108, 109, 110, 111, 204,
+            ]);
+            draft.payload = DesignScopePayload::Assemble(Some(
+                DesignAssemblyAlignment::try_new(
+                    8.0,
+                    [9.0, 10.0, 11.0],
+                    [108, 109, 110, 111]
+                        .into_iter()
+                        .zip([1_000_u64, 1_010, 1_020, 1_030])
+                        .map(|(value, offset)| Located {
+                            value,
+                            offset,
+                        })
+                        .collect(),
+                    None,
+                )
+                .unwrap(),
+            ));
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    scope
+}
+
+#[test]
+fn variable_alignment_reference_windows_refuse_work_limit() {
+    crate::test_support::with_decode_context(|service| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let native = crate::native::F3dNative {
+            design_parameter_scopes: vec![variable_alignment_scope()],
+            ..Default::default()
+        };
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "scan F3D variable alignment reference-window starts",
+            0,
+            |decode| {
+                let mut ctx = super::super::Ctx::new(&ir, &native, service)?;
+                ctx.decode = decode;
+                super::super::validate_parameter_scopes(&ctx, &mut Vec::new())
+            },
+        );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "scan F3D variable alignment reference-window starts"));
+    });
+}

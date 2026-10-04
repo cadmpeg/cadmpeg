@@ -74,6 +74,36 @@ pub(crate) struct DesignEdgeRecipeReferenceContext {
     pub(crate) changed_reference_edge_slots: Vec<i64>,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for DesignEdgeRecipeReferenceContext {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                (
+                    &self.reference_ordinal,
+                    &self.result_faces,
+                    &self.result_face_boundaries,
+                    &self.result_shared_edge_slots,
+                    &self.preceding_faces,
+                    &self.preceding_face_boundaries,
+                ),
+                (
+                    &self.preceding_support_face_slots,
+                    &self.preceding_support_face_boundaries,
+                    &self.shared_edge_slots,
+                    &self.changed_shared_edge_slots,
+                    &self.changed_reference_edge_slots,
+                ),
+            ),
+            ctx,
+            operation,
+        )
+    }
+}
+
 /// Ordered loop topology retained for one historical face.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignHistoricalFaceBoundaryContext {
@@ -537,6 +567,41 @@ pub(crate) struct DesignHistoricalEdgeLoopContext {
     pub(crate) previous_edge_slot: i64,
     /// Stable edge slot used by the following coedge.
     pub(crate) next_edge_slot: i64,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for DesignHistoricalEdgeContext {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.edge_slot, &self.incident_loops),
+            ctx,
+            operation,
+        )
+    }
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for DesignHistoricalEdgeLoopContext {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                &self.coedge_slot,
+                &self.loop_slot,
+                &self.face_slot,
+                &self.boundary_edge_count,
+                &self.coedge_ordinal,
+                (&self.previous_edge_slot, &self.next_edge_slot),
+            ),
+            ctx,
+            operation,
+        )
+    }
 }
 
 #[cfg(test)]

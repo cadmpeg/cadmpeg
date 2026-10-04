@@ -31,6 +31,7 @@ use crate::history::selection::complete_compact_edge_treatment_deletions;
 use crate::history::selection::entity_selection_face_candidates;
 use crate::history::singleton_body_revision_across_state_chain;
 use crate::history::singleton_revised_input_body_across_state_chain;
+use crate::history::stable_ref;
 use crate::history::TopologyStableBodyRevision;
 use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmEntityVersion,
@@ -552,11 +553,59 @@ fn pattern_combine_tool_set_requires_target_membership_and_exact_cardinality() {
             None
         );
     });
-    assert_eq!(
-        historical_body_slot("f3d:history-input:body#80:escaped-feature:35:2"),
-        Some(2)
-    );
-    assert_eq!(historical_body_slot("f3d:brep:entity#2"), None);
+    with_history_decode_context(|ctx| {
+        assert_eq!(
+            historical_body_slot(ctx, "f3d:history-input:body#80:escaped-feature:35:2").unwrap(),
+            Some(2)
+        );
+        assert_eq!(historical_body_slot(ctx, "f3d:brep:entity#2").unwrap(), None);
+    });
+}
+
+#[test]
+fn historical_body_slot_text_queries_refuse_work_limits() {
+    for operation in [
+        "strip F3D historical body identity prefix",
+        "split F3D historical body slot",
+        "parse F3D historical body slot",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |ctx| {
+                historical_body_slot(
+                    ctx,
+                    "f3d:history-input:body#80:escaped-feature:35:2",
+                )
+                .map(|_| ())
+            },
+        );
+        assert!(matches!(error,
+            cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation));
+    }
+}
+
+#[test]
+fn stable_ref_text_queries_refuse_work_limits() {
+    with_history_decode_context(|ctx| {
+        assert_eq!(stable_ref(ctx, "f3d:brep:entity#7:tail").unwrap(), Some(7));
+        assert_eq!(stable_ref(ctx, "f3d:brep:entity#invalid").unwrap(), None);
+        assert_eq!(stable_ref(ctx, "f3d:brep:entity").unwrap(), None);
+    });
+    for operation in [
+        "split F3D stable entity identity",
+        "parse F3D stable entity reference",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |ctx| stable_ref(ctx, "f3d:brep:entity#7").map(|_| ()),
+        );
+        assert!(matches!(error,
+            cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation));
+    }
 }
 
 fn with_combine_collection_limit<T>(
@@ -1435,8 +1484,7 @@ fn qualified_history_marker_remains_an_archived_record() {
     assert!(record.tokens.contains(&cadmpeg_asm::sab::Token::Ref(1)));
 }
 
-#[test]
-fn reverse_history_builds_complete_entity_version_maps() {
+fn reverse_history_state_fixture() -> Vec<AsmDeltaState> {
     let state = |node_index, previous_ref, next_ref, old_ref, new_ref| {
         let board_id = format!("board-{node_index}");
         AsmDeltaState {
@@ -1497,6 +1545,19 @@ fn reverse_history_builds_complete_entity_version_maps() {
         })
         .into();
 
+    states
+}
+
+fn reverse_history_delete_fixture() -> Vec<AsmDeltaState> {
+    let mut states = reverse_history_state_fixture();
+    states[0].bulletin_boards[0].changes[0].kind = AsmEntityChangeKind::Delete { old: 4 };
+    states
+}
+
+#[test]
+fn reverse_history_builds_complete_entity_version_maps() {
+    let mut states = reverse_history_state_fixture();
+
     with_history_decode_context(|ctx| bind_historical_entity_versions(ctx, &mut states).unwrap());
 
     assert_eq!(
@@ -1524,6 +1585,78 @@ fn reverse_history_builds_complete_entity_version_maps() {
         ]
     );
     assert_eq!(states[2].entity_versions[1].record_ref, 4);
+}
+
+#[test]
+fn reverse_history_update_revision_search_propagates_work_refusal() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let operation = "find archived F3D revision for update";
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            bind_historical_entity_versions(ctx, &mut reverse_history_state_fixture())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn reverse_history_delete_revision_search_propagates_work_refusal() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let operation = "find archived F3D revision for delete";
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| bind_historical_entity_versions(ctx, &mut reverse_history_delete_fixture()),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn reverse_history_update_key_comparison_propagates_work_refusal() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let operation = "update F3D historical version";
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            bind_historical_entity_versions(ctx, &mut reverse_history_state_fixture())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn reverse_history_delete_insertion_propagates_collection_refusal() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let operation = "restore F3D historical version";
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::CollectionItems,
+        operation,
+        0,
+        |ctx| bind_historical_entity_versions(ctx, &mut reverse_history_delete_fixture()),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
 }
 
 #[test]

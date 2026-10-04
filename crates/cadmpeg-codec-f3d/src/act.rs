@@ -431,7 +431,7 @@ fn decode_table(
         ctx.push_vec(
             &mut guids,
             ActGuid::new(
-                crate::ids::native_scoped_id_charged(ctx, stream, "act-guid", byte_offset)?,
+                crate::ids::native_scoped_id(ctx, stream, "act-guid", byte_offset)?,
                 u64_from_index(byte_offset),
                 ordinal,
                 guid,
@@ -464,7 +464,7 @@ fn decode_table(
         ctx.push_vec(
             &mut table_references,
             ActTableReference::new(
-                crate::ids::native_scoped_id_charged(
+                crate::ids::native_scoped_id(
                     ctx,
                     stream,
                     "act-table-reference",
@@ -524,7 +524,7 @@ fn decode_table(
         ctx.push_vec(
             &mut registry_channels,
             ActRegistryChannel::new(
-                crate::ids::native_scoped_id_charged(
+                crate::ids::native_scoped_id(
                     ctx,
                     stream,
                     "act-registry-channel",
@@ -629,7 +629,7 @@ fn merge_entities(
         )
         .map_err(CodecError::malformed)?;
         let entity = ActEntity::try_new(
-            crate::ids::native_scoped_id_charged(ctx, stream, "act-entity", record_index)?,
+            crate::ids::native_scoped_id(ctx, stream, "act-entity", record_index)?,
             record_index,
             entity_id,
             row,
@@ -848,7 +848,7 @@ fn decode_component_link(
     .ok();
     let layout = some!(layout);
     Ok(Some(ComponentLink::Root(some!(ActRootComponent::try_new(
-        crate::ids::native_scoped_id_charged(ctx, stream, "act-root-component", frame.start)?,
+        crate::ids::native_scoped_id(ctx, stream, "act-root-component", frame.start)?,
         frame.record_index,
         frame
             .class_tag
