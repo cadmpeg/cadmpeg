@@ -1561,6 +1561,9 @@ fn canonicalize_mesh_edge_row_gauges(
         let mut new_rows = std::mem::take(&mut topology.edge_rows);
         for old_edge in 0..edge_count {
             while permuting[old_edge] != old_edge {
+                if let Err(error) = ctx.charge_work(1, "catia_mesh_gauge_iteration") {
+                    return Some(Err(error));
+                }
                 let new_edge = permuting[old_edge];
                 new_rows.swap(old_edge, new_edge);
                 permuting.swap(old_edge, new_edge);

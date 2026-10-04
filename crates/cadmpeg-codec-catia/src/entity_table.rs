@@ -1561,12 +1561,9 @@ fn identity_candidates(
     if end < start {
         return Ok(identities);
     }
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(end - start),
-        "scan CATIA 7C05 identities",
-    )?;
     let mut at = start;
     while at < end {
+        ctx.charge_work(1, "scan CATIA 7C05 identities")?;
         match data[at] {
             0xea => {
                 if at
@@ -1671,6 +1668,7 @@ pub(crate) fn parse_definition_schema_selectors(
     let mut selectors = Vec::new();
     let mut at = 0;
     while at < prefix.len() {
+        ctx.charge_work(1, "catia_entity_table_iteration")?;
         let selector = match prefix.get(at) {
             Some(0x32) => View::u32_le_at(prefix, at + 1),
             _ => None,

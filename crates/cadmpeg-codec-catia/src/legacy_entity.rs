@@ -870,9 +870,9 @@ fn parse_scalar_values(
         "catia_legacy_scalar_values",
     )?;
     for index in 1..values.len() {
-        ctx.charge_work(u64_from_index(index), "catia_legacy_scalar_sort")?;
         let mut at = index;
         while at > 0 && values[at - 1].offset > values[at].offset {
+            ctx.charge_work(1, "catia_legacy_scalar_sort")?;
             values.swap(at - 1, at);
             at -= 1;
         }
@@ -1125,6 +1125,7 @@ fn parse_relations(
     let mut relations = Vec::new();
     let mut start = 0;
     while start < fields.len() {
+        ctx.charge_work(1, "catia_legacy_entity_iteration")?;
         let entity_id = fields[start].entity_id;
         let end = fields[start..]
             .iter()
@@ -1611,9 +1612,9 @@ fn parse_role_selectors(
     ctx.reserve_vec(&mut roles, field_bound_roles.len(), "catia_legacy_roles")?;
     roles.extend(field_bound_roles);
     for index in 1..roles.len() {
-        ctx.charge_work(u64_from_index(index), "catia_legacy_role_sort")?;
         let mut at = index;
         while at > 0 && roles[at - 1].offset > roles[at].offset {
+            ctx.charge_work(1, "catia_legacy_role_sort")?;
             roles.swap(at - 1, at);
             at -= 1;
         }
