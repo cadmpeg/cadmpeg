@@ -225,7 +225,7 @@ pub(super) fn surface_prototype_frame_bounds(
         return Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(
             format_args!(
                 "creo section `{}` declares the region {}..{}, past the scanned file length {}",
-                section.name(),
+                section.name(ctx)?,
                 section.offset(),
                 section.end(),
                 scan.framing.data.len(),
@@ -263,7 +263,7 @@ fn frame_bound(
             format_args!(
             "section {} states offset {} and a surface array bound at {relative}, which do not \
              form an address",
-            section.name(),
+            section.name(ctx)?,
             section.offset()
         ),
             "creo surface prototype frame address error",
@@ -527,7 +527,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
             ctx,
             annotations,
             &id,
-            section.name(),
+            section.name(ctx)?,
             cadmpeg_core::decode::u64_from_index(record.offset),
             "first_instance_surface_prototype",
             Exactness::Derived,
@@ -543,7 +543,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: crate::identity::source_object_id_checked(
                         ctx,
-                        format_args!("{}:{}", section.name(), row.id),
+                        format_args!("{}:{}", section.name(ctx)?, row.id),
                         "creo source object identity",
                     )?,
                     name: None,
@@ -691,7 +691,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
             ctx,
             annotations,
             &id,
-            section.name(),
+            section.name(ctx)?,
             cadmpeg_core::decode::u64_from_index(parameter.body_offset),
             "positional_spline_prototype_replay",
             Exactness::Derived,
@@ -707,7 +707,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: crate::identity::source_object_id_checked(
                         ctx,
-                        format_args!("{}:{}", section.name(), row.id),
+                        format_args!("{}:{}", section.name(ctx)?, row.id),
                         "creo source object identity",
                     )?,
                     name: None,

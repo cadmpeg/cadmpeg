@@ -205,11 +205,11 @@ fn scan_enumerates_and_classifies_sections() {
 
     assert_eq!(scan.framing.version_line, "#UGC:2 P test");
     assert_eq!(scan.framing.sections.len(), 3);
-    assert_eq!(scan.framing.sections[0].name(), "VisibGeom");
-    assert_eq!(scan.framing.sections[0].role(), SectionRole::PsbGeometry);
-    assert_eq!(scan.framing.sections[1].name(), "AllFeatur");
-    assert_eq!(scan.framing.sections[1].role(), SectionRole::ModelData);
-    assert_eq!(scan.framing.sections[2].role(), SectionRole::Thumbnail);
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| scan.framing.sections[0].name(ctx)).expect("section name admitted"), "VisibGeom");
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| scan.framing.sections[0].role(ctx)).expect("section role admitted"), SectionRole::PsbGeometry);
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| scan.framing.sections[1].name(ctx)).expect("section name admitted"), "AllFeatur");
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| scan.framing.sections[1].role(ctx)).expect("section role admitted"), SectionRole::ModelData);
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| scan.framing.sections[2].role(ctx)).expect("section role admitted"), SectionRole::Thumbnail);
     assert!(
         crate::decode::with_test_decode_ctx(|ctx| container::has_thumbnail(ctx, &scan))
             .expect("thumbnail search admitted")
@@ -243,12 +243,12 @@ fn scan_enumerates_toc_backed_compound_close_section_boundaries() {
         scan.framing
             .sections
             .iter()
-            .map(super::super::Section::name)
+            .map(|section| crate::decode::with_test_decode_ctx(|ctx| section.name(ctx)).expect("section name admitted"))
             .collect::<Vec<_>>(),
         ["DEPDB_DATA", "VisibGeom", "AllFeatur"]
     );
-    assert_eq!(scan.framing.sections[1].role(), SectionRole::PsbGeometry);
-    assert_eq!(scan.framing.sections[2].role(), SectionRole::ModelData);
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| scan.framing.sections[1].role(ctx)).expect("section role admitted"), SectionRole::PsbGeometry);
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| scan.framing.sections[2].role(ctx)).expect("section role admitted"), SectionRole::ModelData);
 }
 
 #[test]
@@ -281,9 +281,9 @@ fn scan_uses_fixed_width_toc_offsets_for_adjacent_sections() {
     let scan = container::scan_bytes_ok(data);
 
     assert_eq!(scan.framing.sections.len(), 2);
-    assert_eq!(scan.framing.sections[0].name(), "SolidPrimdata");
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| scan.framing.sections[0].name(ctx)).expect("section name admitted"), "SolidPrimdata");
     assert_eq!(scan.framing.sections[0].length, first.len());
-    assert_eq!(scan.framing.sections[1].name(), "VisibGeom");
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| scan.framing.sections[1].name(ctx)).expect("section name admitted"), "VisibGeom");
     assert_eq!(scan.framing.sections[1].offset, header_base + second_offset);
 }
 
@@ -483,7 +483,7 @@ fn nd_decoration_selects_nd_layout() {
     let scan = container::scan_bytes_ok(data);
     assert_eq!(scan.framing.layout, Layout::Nd);
     // The decorated name is normalized for classification and census.
-    assert_eq!(scan.framing.sections[0].name(), "VisibGeom");
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| scan.framing.sections[0].name(ctx)).expect("section name admitted"), "VisibGeom");
     assert_eq!(scan.framing.sections[0].raw_name, "ND:0:VisibGeom:1");
     assert_eq!(scan.framing.census.srf_array_count, Some(3));
 }
@@ -657,7 +657,7 @@ fn framing_names_are_not_mistaken_for_sections() {
     let scan = container::scan_bytes_ok(data);
     // Only VisibGeom — the header/TOC framing markers are excluded.
     assert_eq!(scan.framing.sections.len(), 1);
-    assert_eq!(scan.framing.sections[0].name(), "VisibGeom");
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| scan.framing.sections[0].name(ctx)).expect("section name admitted"), "VisibGeom");
 }
 
 #[test]
@@ -724,7 +724,7 @@ fn an_in_scan_reader_reads_the_region_its_section_was_admitted_against() {
     })
     .expect("one model geometry section is admitted");
     assert_eq!(selected.len(), 1);
-    assert_eq!(selected[0].section.name(), "VisibGeom");
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| selected[0].section.name(ctx)).expect("section name admitted"), "VisibGeom");
     assert_eq!(selected[0].region, data.as_slice());
 }
 
@@ -953,7 +953,7 @@ fn a_section_region_is_exactly_the_bytes_between_the_section_offset_and_its_end(
         .framing
         .sections
         .iter()
-        .find(|section| section.name() == "Xsections")
+        .find(|section| crate::decode::with_test_decode_ctx(|ctx| section.name(ctx)).expect("section name admitted") == "Xsections")
         .expect("the scan enumerates the second section");
 
     // The region is read through the scan that proved it, so it is the file's
@@ -986,7 +986,7 @@ fn a_section_region_is_absent_from_a_slice_shorter_than_the_section() {
         .framing
         .sections
         .iter()
-        .find(|section| section.name() == "Xsections")
+        .find(|section| crate::decode::with_test_decode_ctx(|ctx| section.name(ctx)).expect("section name admitted") == "Xsections")
         .expect("the scan enumerates the second section");
 
     let truncated = &data[..section.end() - 1];

@@ -220,7 +220,7 @@ pub(in super::super) fn unresolved_saved_section_entity(
                         namespace.format(),
                         namespace.scope(),
                         namespace.kind(),
-                        sketch_identity_scope(sketch)
+                        sketch_identity_scope(ctx, sketch)?
                     ),
                     "creo unresolved saved entity identity",
                 )?;

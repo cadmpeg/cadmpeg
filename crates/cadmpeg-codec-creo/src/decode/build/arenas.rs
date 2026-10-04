@@ -937,7 +937,7 @@ pub(super) fn emit_geometry_arenas(
     // the record, so annotation zips the two before the arena is stored.
     let curve_expressions = curve_expression_records(ctx, scan)?;
     for (expression, source) in curve_expressions.iter().zip(&scan.curves.expressions) {
-        let source_section = source_section_ref(scan, source.expression_offset);
+        let source_section = source_section_ref(ctx, scan, source.expression_offset)?;
         annotate(
             ctx,
             annotations,
@@ -957,12 +957,10 @@ pub(super) fn emit_geometry_arenas(
         CreoArena::FeatureOperationStates,
         &feature_operation_states,
         |annotations, state| {
-            let section = scan
-                .framing
-                .sections
-                .iter()
-                .find(|section| section.contains(state.state_offset))
-                .map_or("MdlStatus", |section| section.name());
+            let section = match scan.framing.sections.iter().find(|section| section.contains(state.state_offset)) {
+                Some(section) => section.name(ctx)?,
+                None => "MdlStatus",
+            };
             annotate(
                 ctx,
                 annotations,

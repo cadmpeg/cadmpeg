@@ -1093,7 +1093,7 @@ pub(super) fn feature_geometry_table_records<'a>(
             declared_count: table.count,
             entity_class_id: table.entity_class,
             offset: table.offset,
-            source_section: source_section_ref(scan, table.offset),
+            source_section: source_section_ref(ctx, scan, table.offset)?,
         });
     }
     Ok(records)
@@ -1119,7 +1119,7 @@ pub(super) fn feature_loop_history_entry_records<'a>(
             boundary: &entry.boundary,
             offset: entry.offset,
             end_offset: entry.end_offset,
-            source_section: source_section_ref(scan, entry.offset),
+            source_section: source_section_ref(ctx, scan, entry.offset)?,
         });
     }
     Ok(records)
@@ -1142,7 +1142,7 @@ pub(super) fn feature_affected_id_records<'a>(
             kind: affected_kind(record.kind),
             ids: &record.ids,
             offset: record.offset,
-            source_section: source_section_ref(scan, record.offset),
+            source_section: source_section_ref(ctx, scan, record.offset)?,
         });
     }
     Ok(records)
@@ -1167,7 +1167,7 @@ pub(super) fn feature_replay_affected_id_records<'a>(
             geometry_extent: extent_source(record.geometry_extent),
             edge_extent: extent_source(record.edge_extent),
             offset: record.offset,
-            source_section: source_section_ref(scan, record.offset),
+            source_section: source_section_ref(ctx, scan, record.offset)?,
         });
     }
     Ok(records)
@@ -1201,7 +1201,7 @@ pub(super) fn surface_merge_replay_affected_id_records<'a>(
             edge_extent: extent_source(record.edge_extent),
             quilt_extent: extent_source(record.quilt_extent),
             offset: record.offset,
-            source_section: source_section_ref(scan, record.offset),
+            source_section: source_section_ref(ctx, scan, record.offset)?,
         });
     }
     Ok(records)
@@ -1231,7 +1231,7 @@ pub(super) fn feature_loop_restore_direction_records<'a>(
             },
             value: record.value,
             offset: record.offset,
-            source_section: source_section_ref(scan, record.offset),
+            source_section: source_section_ref(ctx, scan, record.offset)?,
         });
     }
     Ok(records)
@@ -1254,7 +1254,7 @@ pub(super) fn feature_revolution_extent_records<'a>(
             kind: "full_turn",
             angle_radians: std::f64::consts::TAU,
             offset: record.offset,
-            source_section: source_section_ref(scan, record.offset),
+            source_section: source_section_ref(ctx, scan, record.offset)?,
         });
     }
     Ok(records)
@@ -1279,7 +1279,7 @@ pub(super) fn feature_choice_records<'a>(
             payload: &choice.payload,
             payload_offset: choice.payload_offset,
             offset: choice.offset,
-            source_section: source_section_ref(scan, choice.offset),
+            source_section: source_section_ref(ctx, scan, choice.offset)?,
         });
     }
     Ok(records)
@@ -1305,7 +1305,7 @@ pub(super) fn feature_row_records<'a>(
             body: &row.body,
             body_offset: row.body_offset,
             offset: row.offset,
-            source_section: source_section_ref(scan, row.offset),
+            source_section: source_section_ref(ctx, scan, row.offset)?,
         });
     }
     Ok(records)
@@ -1331,7 +1331,7 @@ pub(super) fn depdb_recipe_row_records<'a>(
             body: &row.body,
             body_offset: row.body_offset,
             offset: row.offset,
-            source_section: source_section_ref(scan, row.offset),
+            source_section: source_section_ref(ctx, scan, row.offset)?,
         });
     }
     Ok(records)
@@ -1589,7 +1589,7 @@ pub(super) fn feature_choice_field_records<'a>(
                 }
             },
             offset: field.offset,
-            source_section: source_section_ref(scan, field.offset),
+            source_section: source_section_ref(ctx, scan, field.offset)?,
         });
     }
     Ok(records)
@@ -1730,7 +1730,7 @@ pub(super) fn half_edge_records<'a>(
             face_id: edge.face_id.map_or(0, std::num::NonZeroU32::get),
             next: edge.next.map(half_edge_ref),
             offset: row.offset,
-            source_section: source_section_ref(scan, row.offset),
+            source_section: source_section_ref(ctx, scan, row.offset)?,
         });
     }
     Ok(records)
@@ -1792,7 +1792,7 @@ pub(super) fn loop_array_frame_records<'a>(
             offset: frame.offset,
             prototype_end: frame.prototype_end,
             end: frame.end,
-            source_section: source_section_ref(scan, frame.offset),
+            source_section: source_section_ref(ctx, scan, frame.offset)?,
         });
     }
     Ok(records)
@@ -1822,7 +1822,7 @@ pub(super) fn loop_array_record_records<'a>(
             body: &record.body,
             offset: record.offset,
             body_offset: record.body_offset,
-            source_section: source_section_ref(scan, record.offset),
+            source_section: source_section_ref(ctx, scan, record.offset)?,
         });
     }
     Ok(records)
@@ -2092,7 +2092,7 @@ pub(super) fn fc_curve_coordinate_records<'a>(
             tokens: &record.tokens,
             opaque_spans: &record.opaque_spans,
             offset: record.offset,
-            source_section: source_section_ref(scan, record.offset),
+            source_section: source_section_ref(ctx, scan, record.offset)?,
         });
     }
     Ok(records)
@@ -2115,7 +2115,7 @@ pub(super) fn prototype_pcurve_records<'a>(
             face_0_endpoints: record.face_0_endpoints,
             face_1_endpoints: record.face_1_endpoints,
             offset: record.offset,
-            source_section: source_section_ref(scan, record.offset),
+            source_section: source_section_ref(ctx, scan, record.offset)?,
         });
     }
     Ok(records)
@@ -2142,7 +2142,7 @@ pub(super) fn curve_prototype_topology_records<'a>(
             faces: record.stored_face_ids(),
             next_edges: record.next_edges,
             offset: record.offset,
-            source_section: source_section_ref(scan, record.offset),
+            source_section: source_section_ref(ctx, scan, record.offset)?,
         });
     }
     Ok(records)
@@ -2167,7 +2167,7 @@ pub(super) fn curve_prototype_records<'a>(
             type_byte: record.type_byte,
             generating_feature_id: record.feature_id,
             offset: record.offset,
-            source_section: source_section_ref(scan, record.offset),
+            source_section: source_section_ref(ctx, scan, record.offset)?,
         });
     }
     Ok(records)
@@ -2201,7 +2201,7 @@ pub(super) fn plane_local_system_records<'a>(
             },
             row_offset: record.row_offset,
             offset: record.offset,
-            source_section: source_section_ref(scan, record.offset),
+            source_section: source_section_ref(ctx, scan, record.offset)?,
         });
     }
     Ok(records)
@@ -2243,7 +2243,7 @@ pub(super) fn plane_envelope_records<'a>(
             scalar_tokens: &record.scalar_tokens,
             row_offset: record.row_offset,
             offset: record.offset,
-            source_section: source_section_ref(scan, record.offset),
+            source_section: source_section_ref(ctx, scan, record.offset)?,
         });
     }
     Ok(records)
@@ -2269,7 +2269,7 @@ pub(super) fn outline_plane_records<'a>(
             normal: record.normal(),
             u_axis: record.u_axis(),
             offset: record.offset,
-            source_section: source_section_ref(scan, record.offset),
+            source_section: source_section_ref(ctx, scan, record.offset)?,
         });
     }
     Ok(records)
@@ -2297,7 +2297,7 @@ pub(super) fn datum_plane_records<'a>(
             plane_offset: record.plane().offset(),
             corners: record.corners(),
             offset: record.offset_in_payload,
-            source_section: source_section_ref(scan, record.offset_in_payload),
+            source_section: source_section_ref(ctx, scan, record.offset_in_payload)?,
         });
     }
     Ok(records)
@@ -2331,7 +2331,7 @@ pub(super) fn datum_cylinder_records<'a>(
                 .length()
                 .map(cadmpeg_ir::scalar::PositiveLength::get),
             offset: record.offset_in_payload,
-            source_section: source_section_ref(scan, record.offset_in_payload),
+            source_section: source_section_ref(ctx, scan, record.offset_in_payload)?,
         });
     }
     Ok(records)
@@ -2360,7 +2360,7 @@ pub(super) fn feature_section_transform_records<'a>(
             v_axis: record.v_axis(),
             normal: record.normal(),
             offset: record.offset,
-            source_section: source_section_ref(scan, record.offset),
+            source_section: source_section_ref(ctx, scan, record.offset)?,
         });
     }
     ctx.stable_sort_by(
@@ -2402,7 +2402,7 @@ pub(super) fn feature_placement_instruction_records<'a>(
                 member1: instruction.member1,
                 member2: instruction.member2,
                 offset: instruction.offset,
-                source_section: source_section_ref(scan, instruction.offset),
+                source_section: source_section_ref(ctx, scan, instruction.offset)?,
             });
         }
     }
@@ -3068,7 +3068,7 @@ pub(super) fn surface_row_records<'a>(
             boundary_type: row.boundary_type.code(),
             next_surface: row.next_surface,
             offset: row.offset,
-            source_section: source_section_ref(scan, row.offset),
+            source_section: source_section_ref(ctx, scan, row.offset)?,
         });
     }
     Ok(records)
@@ -3122,7 +3122,7 @@ pub(super) fn surface_prototype_records<'a>(
             family,
             parameters,
             offset: record.offset,
-            source_section: source_section_ref(scan, record.offset),
+            source_section: source_section_ref(ctx, scan, record.offset)?,
         });
     }
     Ok(records)
@@ -3156,7 +3156,7 @@ pub(super) fn surface_contour_records<'a>(
             offset: record.offset,
             envelope_offset: record.envelope_offset,
             surface_row_offset: record.surface_row_offset,
-            source_section: source_section_ref(scan, record.offset),
+            source_section: source_section_ref(ctx, scan, record.offset)?,
         });
     }
     Ok(records)
@@ -3438,7 +3438,7 @@ pub(super) fn curve_parameter_records<'a>(
             offset: record.offset,
             body_offset: record.body_offset,
             suffix_offset: record.suffix_offset,
-            source_section: source_section_ref(scan, record.offset),
+            source_section: source_section_ref(ctx, scan, record.offset)?,
         });
     }
     Ok(records)
@@ -3480,7 +3480,7 @@ pub(super) fn cross_section_curve_row_records<'a>(
             references: &row.references,
             opaque_spans: &row.opaque_spans,
             offset: row.offset,
-            source_section: source_section_ref(scan, row.offset),
+            source_section: source_section_ref(ctx, scan, row.offset)?,
         });
     }
     Ok(records)
@@ -3520,7 +3520,7 @@ pub(super) fn curve_topology_row_records<'a>(
             faces: row.stored_face_ids(),
             next_edges: row.next_edges,
             offset: row.offset,
-            source_section: source_section_ref(scan, row.offset),
+            source_section: source_section_ref(ctx, scan, row.offset)?,
         });
     }
     Ok(records)
@@ -3561,7 +3561,7 @@ pub(super) fn tabulated_cylinder_curve_replay_records<'a>(
             terminal_reference: record.terminal_reference,
             offset: record.offset,
             surface_row_offset: record.surface_row_offset,
-            source_section: source_section_ref(scan, record.offset),
+            source_section: source_section_ref(ctx, scan, record.offset)?,
         });
     }
     Ok(records)
@@ -3856,7 +3856,7 @@ pub(super) fn surface_parameter_records<'a>(
             extrusion_direction: record.extrusion_direction(),
             row_offset: record.offset,
             body_offset: record.body_offset,
-            source_section: source_section_ref(scan, record.body_offset),
+            source_section: source_section_ref(ctx, scan, record.body_offset)?,
         });
     }
     Ok(records)
@@ -4482,7 +4482,7 @@ pub(super) fn sketch_records<'a>(
             )?
         };
         let source_section = ctx.copy_retained_text(
-            source_section_ref(scan, definition.offset),
+            source_section_ref(ctx, scan, definition.offset)?,
             "creo sketch source section",
         )?;
         let record = CreoSketchRecord {
@@ -5283,7 +5283,7 @@ pub(super) fn feature_definition_records<'a>(
             id,
             definition_id: definition.identity.id(),
             owner_feature_id: definition.identity.owner_feature_id(),
-            source_section: source_section_ref(scan, definition.offset),
+            source_section: source_section_ref(ctx, scan, definition.offset)?,
             body: &definition.body,
             parameter_frames,
             outlines,

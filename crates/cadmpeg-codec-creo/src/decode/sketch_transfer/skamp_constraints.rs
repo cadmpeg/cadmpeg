@@ -1195,7 +1195,7 @@ mod tests {
             .expect("valid sketch identity");
         let arena = DecodeArena::new();
         let entity =
-            crate::decode::sketch_ids::sketch_entity_id(&sketch, 7).expect("valid entity identity");
+            crate::decode::with_test_decode_ctx(|ctx| crate::decode::sketch_ids::sketch_entity_id(ctx, &sketch, 7)).expect("test identity scope resources").expect("valid entity identity");
         let geometry = BTreeMap::from([(
             entity,
             SketchGeometry::try_from(SketchGeometryDefinition::Point {
@@ -1317,7 +1317,7 @@ mod tests {
         let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#1")
             .expect("valid sketch identity");
         let entity =
-            crate::decode::sketch_ids::sketch_entity_id(&sketch, 7).expect("valid entity identity");
+            crate::decode::with_test_decode_ctx(|ctx| crate::decode::sketch_ids::sketch_entity_id(ctx, &sketch, 7)).expect("test identity scope resources").expect("valid entity identity");
         let mut geometry = BTreeMap::from([(
             entity,
             SketchGeometry::try_from(SketchGeometryDefinition::Point {
@@ -1408,7 +1408,7 @@ mod tests {
                 sense: 0,
             });
         let second_entity =
-            crate::decode::sketch_ids::sketch_entity_id(&sketch, 8).expect("valid entity identity");
+            crate::decode::with_test_decode_ctx(|ctx| crate::decode::sketch_ids::sketch_entity_id(ctx, &sketch, 8)).expect("test identity scope resources").expect("valid entity identity");
         geometry.insert(
             second_entity,
             SketchGeometry::try_from(SketchGeometryDefinition::Point {
@@ -1501,7 +1501,7 @@ mod tests {
         };
         let geometry = BTreeMap::from([7, 8].map(|external_id| {
             (
-                crate::decode::sketch_ids::sketch_entity_id(&sketch, external_id).expect("entity"),
+                crate::decode::with_test_decode_ctx(|ctx| crate::decode::sketch_ids::sketch_entity_id(ctx, &sketch, external_id)).expect("test identity scope resources").expect("entity"),
                 SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(f64::from(external_id), 0.0),
                 })

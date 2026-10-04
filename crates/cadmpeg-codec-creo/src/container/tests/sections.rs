@@ -505,3 +505,31 @@ fn complete_legacy_directory_admits_more_than_4096_entries() {
         assert_eq!(sections.len(), count);
     });
 }
+
+#[test]
+fn section_name_prefix_refuses_before_unknown_decoration() {
+    let section = super::super::Section::scan("Unknown".to_string(), 0, 0, None, &[])
+        .expect("empty section extent").section;
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo section decoration prefix",
+        |ctx| section.name(ctx),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo section decoration prefix"));
+}
+
+#[test]
+fn section_role_prefix_refuses_before_unknown_decoration() {
+    let section = super::super::Section::scan("Unknown".to_string(), 0, 0, None, &[])
+        .expect("empty section extent").section;
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo section decoration prefix",
+        |ctx| section.role(ctx),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo section decoration prefix"));
+}

@@ -36,7 +36,7 @@ fn unique_model_surface_geometries(
 ) -> Result<Option<BTreeMap<u32, SurfaceGeometry>>, CodecError> {
     let mut geometries = BTreeMap::new();
     for surface in &ir.model.surfaces {
-        let Some(digits) = surface.id.as_str().strip_prefix("creo:visibgeom:surface#") else {
+        let Some(digits) = ctx.strip_prefix(surface.id.as_str(), "creo:visibgeom:surface#", "creo counterbore surface identity prefix")? else {
             continue;
         };
         let Ok(surface_id) = ctx.parse_text::<u32>(digits, "creo scalar text parsing")? else {

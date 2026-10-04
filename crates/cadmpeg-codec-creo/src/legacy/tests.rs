@@ -1522,7 +1522,7 @@ fn legacy_ascii_toc_is_authoritative_for_named_section_extents() {
 
     assert!(matches!(scan.framing.layout, Layout::LegacyAscii(_)));
     assert_eq!(scan.framing.sections.len(), 1);
-    assert_eq!(scan.framing.sections[0].name(), "BasicData");
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| scan.framing.sections[0].name(ctx)).expect("section name admitted"), "BasicData");
     assert_eq!(scan.framing.sections[0].offset(), section_offset);
     assert_eq!(scan.framing.sections[0].length(), section.len());
     let persistence = &scan
@@ -1805,4 +1805,48 @@ fn legacy_source_model_trim_refuses_work() {
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
             && resource.operation == "creo legacy source model name trim"));
+}
+
+#[test]
+fn signed_integer_sign_prefix_refuses_before_invalid_digits() {
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo signed integer sign prefix",
+        |ctx| super::signed_integer(ctx, b"-x"),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo signed integer sign prefix"));
+}
+
+#[test]
+fn legacy_declaration_prefix_refuses_before_missing_fields() {
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo legacy declaration name prefix",
+        |ctx| super::parse_declaration(ctx, b"name"),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo legacy declaration name prefix"));
+}
+
+#[test]
+fn legacy_unit_object_prefix_refuses_work() {
+
+    let factor = 0.393_700_787_401_574_8_f64;
+    let data = format!(
+        "@Solid 1 0\n@unit_arr 2 0\n@type 3 1\n@unit_type 4 1\n@factor 5 2\n@name 6 10\n0 1 ->\n1 2 [1]\n2 2 ->\n3 3 11\n3 4 0\n3 5 {factor_bits:016X}\n3 6 CM\n",
+        factor_bits = factor.to_bits()
+    );
+    let persistence = scan(data.as_bytes(), std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo legacy unit object prefix",
+        |ctx| persistence.principal_unit_system(ctx),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo legacy unit object prefix"));
 }

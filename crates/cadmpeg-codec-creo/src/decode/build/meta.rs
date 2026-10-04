@@ -102,7 +102,7 @@ pub(super) fn source_meta(
             ctx,
             &mut attributes,
             format_args!("section.{index}.name"),
-            section.name(),
+            section.name(ctx)?,
         )?;
         insert_source_attribute(
             ctx,
@@ -114,7 +114,7 @@ pub(super) fn source_meta(
             ctx,
             &mut attributes,
             format_args!("section.{index}.role"),
-            cadmpeg_core::container::ContainerRole::from(section.role()),
+            cadmpeg_core::container::ContainerRole::from(section.role(ctx)?),
         )?;
         insert_source_attribute(
             ctx,
