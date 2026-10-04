@@ -780,7 +780,8 @@ pub(super) fn relation_instances(
         Ord::cmp,
         "sort SLDPRT relation instances",
     )?;
-    for (ordinal, relation) in instances.iter_mut().enumerate() {
+    for ordinal in ctx.admit_iter(&(0..instances.len()), "number SLDPRT relation instances")? {
+        let relation = &mut instances[ordinal];
         relation.ordinal = u32::try_from(ordinal).map_err(|_| {
             ctx.refuse_codec_limit("number SLDPRT relation instances", u64::MAX - 1, u64::MAX)
         })?;
@@ -863,10 +864,16 @@ pub(super) fn bind_circle_dimension_centers(
             )
         })?;
     }
-    for relation in relations.iter_mut().filter(|relation| {
-        relation.family == FeatureInputRelationFamily::CircleDiameter
-            && relation.operands.len() == 1
-    }) {
+    for relation_index in ctx.admit_iter(
+        &(0..relations.len()),
+        "scan SLDPRT circle-diameter relations",
+    )? {
+        let relation = &mut relations[relation_index];
+        if relation.family != FeatureInputRelationFamily::CircleDiameter
+            || relation.operands.len() != 1
+        {
+            continue;
+        }
         let Some(display_id) = relation.display_scalar_ref() else {
             continue;
         };
@@ -1763,10 +1770,17 @@ fn same_relation_dimension(left: f64, right: f64) -> bool {
     (left - right).abs() <= SKETCH_POINT_TOLERANCE * left.abs().max(right.abs()).max(1.0)
 }
 
-fn clear_relation_operands(relation: &mut FeatureInputRelationInstance) {
-    for operand in &mut relation.operands {
-        operand.entity_ref = None;
+fn clear_relation_operands(
+    ctx: &DecodeContext<'_>,
+    relation: &mut FeatureInputRelationInstance,
+) -> Result<(), CodecError> {
+    for operand_index in ctx.admit_iter(
+        &(0..relation.operands.len()),
+        "clear SLDPRT relation operands",
+    )? {
+        relation.operands[operand_index].entity_ref = None;
     }
+    Ok(())
 }
 
 fn dynamic_curve_reference_is_valid(
@@ -1847,7 +1861,7 @@ fn bind_dynamic_point_relation(
         ctx.reserve_scoped(0, "SLDPRT relation_records temporary storage")?;
 
     let [first, second] = relation.operands.as_slice() else {
-        clear_relation_operands(relation);
+        clear_relation_operands(ctx, relation)?;
         return Ok(());
     };
     let first_candidates =
@@ -1935,7 +1949,7 @@ fn bind_dynamic_point_relation(
         relation.operands[0].entity_ref = Some(copy_relation_text(ctx, first)?);
         relation.operands[1].entity_ref = Some(copy_relation_text(ctx, second)?);
     } else {
-        clear_relation_operands(relation);
+        clear_relation_operands(ctx, relation)?;
     }
     Ok(())
 }
@@ -1952,7 +1966,7 @@ fn bind_dynamic_point_line_relation(
     let Ok([point_operand, line_operand]) =
         <&mut [FeatureInputOperand; 2]>::try_from(relation.operands.as_mut_slice())
     else {
-        clear_relation_operands(relation);
+        clear_relation_operands(ctx, relation)?;
         return Ok(());
     };
     if dynamic_curve_reference_is_valid(ctx, entities, line_operand.entity_ref.as_deref())? {
@@ -1963,17 +1977,17 @@ fn bind_dynamic_point_line_relation(
     let point_candidates = temporary_storage
         .with_storage(|| dynamic_point_candidates(ctx, entities, point_operand, true))?;
     let Some(line_markers) = dynamic_solver_line(ctx, entities, line_index)? else {
-        clear_relation_operands(relation);
+        clear_relation_operands(ctx, relation)?;
         return Ok(());
     };
     let [Some(first), Some(second)] = line_markers.map(|marker| marker.coordinates_m) else {
-        clear_relation_operands(relation);
+        clear_relation_operands(ctx, relation)?;
         return Ok(());
     };
     let direction = [second[0] - first[0], second[1] - first[1]];
     let length = direction[0].hypot(direction[1]);
     if length <= SKETCH_POINT_TOLERANCE {
-        clear_relation_operands(relation);
+        clear_relation_operands(ctx, relation)?;
         return Ok(());
     }
     let mut matches = Vec::new();
@@ -2015,7 +2029,7 @@ fn bind_dynamic_point_line_relation(
         relation.operands[0].entity_ref = Some(copy_relation_text(ctx, point)?);
         relation.operands[1].entity_ref = None;
     } else {
-        clear_relation_operands(relation);
+        clear_relation_operands(ctx, relation)?;
     }
     Ok(())
 }
@@ -2030,7 +2044,7 @@ fn bind_dynamic_line_relation(
     let Ok([first_operand, second_operand]) =
         <&mut [FeatureInputOperand; 2]>::try_from(relation.operands.as_mut_slice())
     else {
-        clear_relation_operands(relation);
+        clear_relation_operands(ctx, relation)?;
         return Ok(());
     };
     let first_valid =
@@ -2048,15 +2062,15 @@ fn bind_dynamic_line_relation(
     }
     let (first_index, second_index) = (first_operand.entity_index, second_operand.entity_index);
     let Some(first_markers) = dynamic_solver_line(ctx, entities, first_index)? else {
-        clear_relation_operands(relation);
+        clear_relation_operands(ctx, relation)?;
         return Ok(());
     };
     let Some(second_markers) = dynamic_solver_line(ctx, entities, second_index)? else {
-        clear_relation_operands(relation);
+        clear_relation_operands(ctx, relation)?;
         return Ok(());
     };
     if first_operand.entity_index == second_operand.entity_index {
-        clear_relation_operands(relation);
+        clear_relation_operands(ctx, relation)?;
         return Ok(());
     }
     let [Some(first_line_first), Some(first_line_second)] = first_markers.map(|marker| {
@@ -2064,7 +2078,7 @@ fn bind_dynamic_line_relation(
             .coordinates_m
             .map(cadmpeg_ir::units::FiniteVector::get)
     }) else {
-        clear_relation_operands(relation);
+        clear_relation_operands(ctx, relation)?;
         return Ok(());
     };
     let [Some(second_line_first), Some(second_line_second)] = second_markers.map(|marker| {
@@ -2072,7 +2086,7 @@ fn bind_dynamic_line_relation(
             .coordinates_m
             .map(cadmpeg_ir::units::FiniteVector::get)
     }) else {
-        clear_relation_operands(relation);
+        clear_relation_operands(ctx, relation)?;
         return Ok(());
     };
     let measured = if angle {
@@ -2090,7 +2104,7 @@ fn bind_dynamic_line_relation(
         relation.operands[0].entity_ref = None;
         relation.operands[1].entity_ref = None;
     } else {
-        clear_relation_operands(relation);
+        clear_relation_operands(ctx, relation)?;
     }
     Ok(())
 }
@@ -2103,7 +2117,11 @@ fn bind_relation_geometry_operands(
     let mut temporary_storage =
         ctx.reserve_scoped(0, "SLDPRT relation_records temporary storage")?;
 
-    for relation in relations.iter_mut() {
+    for relation_index in ctx.admit_iter(
+        &(0..relations.len()),
+        "scan SLDPRT relation geometry operands",
+    )? {
+        let relation = &mut relations[relation_index];
         let dynamic = relation_uses_dynamic_operands(relation);
         let point_operands_unbound = if !dynamic
             && matches!(
@@ -2128,7 +2146,7 @@ fn bind_relation_geometry_operands(
         }
         let Some(target) = relation_target_value(ctx, relation, lane)? else {
             if dynamic {
-                clear_relation_operands(relation);
+                clear_relation_operands(ctx, relation)?;
             }
             continue;
         };
@@ -2137,7 +2155,7 @@ fn bind_relation_geometry_operands(
         }
         if target.get() < 0.0 {
             if dynamic {
-                clear_relation_operands(relation);
+                clear_relation_operands(ctx, relation)?;
             }
             continue;
         }

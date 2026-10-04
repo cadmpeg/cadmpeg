@@ -5,7 +5,7 @@ use super::hashes::{constraint_hash, lane_hash, sketch_hash};
 use super::markers::{
     admit_sketch_input_entities, marker_spatial_coordinate_offset, reference_cells_charged,
     relation_bindings_charged, spatial_relation_marker_coordinates, spatial_sketches,
-    spatial_vertex_offsets_charged,
+    spatial_vertex_offsets_charged, standard_marker_result, StandardMarkerAdmission,
 };
 use super::names::{class_declarations, object_names};
 use super::scalars::{feature_object_name, named_scalars_charged};
@@ -197,11 +197,20 @@ fn patch_spatial_sketches(
                         .iter()
                         .find(|marker| marker.id() == native_ref)?;
                     let offset = usize::try_from(marker.offset()).ok()?;
-                    let coordinate_offset =
-                        marker_spatial_coordinate_offset(&lane.native_payload, offset);
+                    let coordinate_offset = standard_marker_result(
+                        marker_spatial_coordinate_offset(
+                            &StandardMarkerAdmission,
+                            &lane.native_payload,
+                            offset,
+                        ),
+                    );
                     if coordinate_offset.is_none()
-                        && !spatial_relation_marker_coordinates(&lane.native_payload, offset)
-                            .is_some_and(|native| native == position)
+                        && !standard_marker_result(spatial_relation_marker_coordinates(
+                            &StandardMarkerAdmission,
+                            &lane.native_payload,
+                            offset,
+                        ))
+                        .is_some_and(|native| native == position)
                     {
                         return None;
                     }
@@ -352,7 +361,12 @@ fn patch_spatial_marker_point(
     point: Point3,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let native = spatial_point_native_coordinates(point)?;
-    let coordinate_offset = marker_spatial_coordinate_offset(payload, offset).ok_or_else(|| {
+    let coordinate_offset = standard_marker_result(marker_spatial_coordinate_offset(
+        &StandardMarkerAdmission,
+        payload,
+        offset,
+    ))
+    .ok_or_else(|| {
         cadmpeg_core::CodecError::Malformed(
             "SLDPRT spatial point marker changed native storage shape".into(),
         )

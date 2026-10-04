@@ -1,6 +1,7 @@
 //! Extended and wide profile-curve endpoint tests.
 
-use super::super::super::markers::{marker_coordinates, sketch_input_entities};
+use super::marker_coordinates;
+use super::super::super::markers::sketch_input_entities;
 use super::super::super::typed_relations::{
     current_undetailed_bounded_curve_is_line, extended_direct_object_line_endpoints,
     marker_curve_endpoint_markers,

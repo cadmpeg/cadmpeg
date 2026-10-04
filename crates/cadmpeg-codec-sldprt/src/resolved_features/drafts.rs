@@ -51,7 +51,7 @@ pub(super) fn same_draft_operands(
     }
     for (left, right) in ctx
         .admit_iter(&left.faces, "compare SLDPRT draft faces")?
-        .zip(&right.faces)
+        .zip(ctx.admit_iter(&right.faces, "compare SLDPRT draft faces")?)
     {
         if !same_component_path_semantics(ctx, left, right)? {
             return Ok(false);
@@ -341,7 +341,7 @@ fn same_draft_anchor(
             }
             for (left, right) in ctx
                 .admit_iter(left, "compare SLDPRT parting tools")?
-                .zip(right)
+                .zip(ctx.admit_iter(right, "compare SLDPRT parting tools")?)
             {
                 if !same_component_path_semantics(ctx, left, right)? {
                     return Ok(false);
@@ -361,7 +361,7 @@ fn same_component_path_semantics(
     Ok(left.len() == right.len()
         && ctx
             .admit_iter(left, "compare SLDPRT draft component path")?
-            .zip(right)
+            .zip(ctx.admit_iter(right, "compare SLDPRT draft component path")?)
             .all(|(left, right)| {
                 left.type_signature[4..8] == right.type_signature[4..8]
                     && left.local_id == right.local_id

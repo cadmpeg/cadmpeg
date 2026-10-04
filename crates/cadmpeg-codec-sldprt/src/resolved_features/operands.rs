@@ -105,10 +105,12 @@ pub(crate) fn resolve_scalar_operand_markers<'a>(
             )
         })?;
     }
-    for (operand, target) in ctx
-        .admit_iter(operands, "resolve remaining SLDPRT scalar operands")?
-        .zip(&mut resolved)
-    {
+    for index in ctx.admit_iter(
+        &(0..operands.len().min(resolved.len())),
+        "resolve remaining SLDPRT scalar operands",
+    )? {
+        let operand = &operands[index];
+        let target = &mut resolved[index];
         if target.is_none() {
             *target = resolve_operand_marker_excluding(
                 ctx,

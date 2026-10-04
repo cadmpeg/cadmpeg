@@ -44,7 +44,7 @@ pub(super) fn fit_helix_polyline(
         let mut rhs = [[0.0; 3]; 4];
         for (point, distance) in ctx
             .admit_iter(points, "fit SLDPRT helix normal equations")?
-            .zip(parameters.iter().copied())
+            .zip(ctx.admit_iter(&parameters, "fit SLDPRT helix normal equations")?.copied())
         {
             let t = distance / total;
             let row = [1.0, t, (angle * t).cos(), (angle * t).sin()];
@@ -81,7 +81,7 @@ pub(super) fn fit_helix_polyline(
         let mut max_error = 0.0f64;
         for (point, distance) in ctx
             .admit_iter(points, "fit SLDPRT helix residual")?
-            .zip(parameters.iter().copied())
+            .zip(ctx.admit_iter(&parameters, "fit SLDPRT helix residual")?.copied())
         {
             let t = distance / total;
             let row = [1.0, t, (angle * t).cos(), (angle * t).sin()];
@@ -197,21 +197,15 @@ fn solve_three(
     mut matrix: [[f64; 3]; 3],
     mut rhs: [f64; 3],
 ) -> Result<Option<[f64; 3]>, CodecError> {
-    for column in 0..3 {
-        let extent = 3usize.checked_sub(column).ok_or_else(|| {
-            ctx.refuse_codec_limit("fit SLDPRT circle pivot search", u64::MAX - 1, u64::MAX)
-        })?;
-        let work = u64::try_from(extent).map_err(|_| {
-            ctx.refuse_codec_limit("fit SLDPRT circle pivot search", u64::MAX - 1, u64::MAX)
-        })?;
-        // max_by visits this fixed suffix and keeps one usize accumulator. It
-        // creates no temporary collection, so the scoped temporary byte bound is zero.
-        ctx.charge_work(work, "fit SLDPRT circle pivot search")?;
-        let Some(pivot) = (column..3).max_by(|left, right| {
-            matrix[*left][column]
-                .abs()
-                .total_cmp(&matrix[*right][column].abs())
-        }) else {
+    for column in 0usize..3 {
+        let Some(pivot) = ctx
+            .admit_iter(&(column..3), "fit SLDPRT circle pivot search")?
+            .max_by(|left, right| {
+                matrix[*left][column]
+                    .abs()
+                    .total_cmp(&matrix[*right][column].abs())
+            })
+        else {
             return Ok(None);
         };
         if matrix[pivot][column].abs() <= 1.0e-14 {
@@ -220,8 +214,11 @@ fn solve_three(
         matrix.swap(column, pivot);
         rhs.swap(column, pivot);
         let scale = matrix[column][column];
-        for value in &mut matrix[column][column..] {
-            *value /= scale;
+        for value_index in ctx.admit_iter(
+            &(column..matrix[column].len()),
+            "fit SLDPRT circle pivot row",
+        )? {
+            matrix[column][value_index] /= scale;
         }
         rhs[column] /= scale;
         for row in 0..3 {
@@ -253,21 +250,15 @@ fn solve_four(
     mut matrix: [[f64; 4]; 4],
     mut rhs: [[f64; 3]; 4],
 ) -> Result<Option<[[f64; 3]; 4]>, CodecError> {
-    for column in 0..4 {
-        let extent = 4usize.checked_sub(column).ok_or_else(|| {
-            ctx.refuse_codec_limit("fit SLDPRT helix pivot search", u64::MAX - 1, u64::MAX)
-        })?;
-        let work = u64::try_from(extent).map_err(|_| {
-            ctx.refuse_codec_limit("fit SLDPRT helix pivot search", u64::MAX - 1, u64::MAX)
-        })?;
-        // max_by visits this fixed suffix and keeps one usize accumulator. It
-        // creates no temporary collection, so the scoped temporary byte bound is zero.
-        ctx.charge_work(work, "fit SLDPRT helix pivot search")?;
-        let Some(pivot) = (column..4).max_by(|left, right| {
-            matrix[*left][column]
-                .abs()
-                .total_cmp(&matrix[*right][column].abs())
-        }) else {
+    for column in 0usize..4 {
+        let Some(pivot) = ctx
+            .admit_iter(&(column..4), "fit SLDPRT helix pivot search")?
+            .max_by(|left, right| {
+                matrix[*left][column]
+                    .abs()
+                    .total_cmp(&matrix[*right][column].abs())
+            })
+        else {
             return Ok(None);
         };
         if matrix[pivot][column].abs() <= 1.0e-14 {
@@ -276,8 +267,11 @@ fn solve_four(
         matrix.swap(column, pivot);
         rhs.swap(column, pivot);
         let scale = matrix[column][column];
-        for value in &mut matrix[column][column..] {
-            *value /= scale;
+        for value_index in ctx.admit_iter(
+            &(column..matrix[column].len()),
+            "fit SLDPRT helix pivot row",
+        )? {
+            matrix[column][value_index] /= scale;
         }
         for value in &mut rhs[column] {
             *value /= scale;

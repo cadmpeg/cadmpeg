@@ -1828,7 +1828,7 @@ fn compact_legacy_embedded_coordinate_roster<'a>(
         charge_endpoint_work(ctx, span, 1024, OPERATION)?;
     }
     for candidate in first..=last {
-        let Some(coordinates) = compact_legacy_coordinate_roster_coordinates(payload, candidate)
+        let Some(coordinates) = compact_legacy_coordinate_roster_coordinates(ctx, payload, candidate)?
         else {
             continue;
         };

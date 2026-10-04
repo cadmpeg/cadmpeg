@@ -571,79 +571,87 @@ pub(crate) fn enrich_history_extrusion_terminations(
             temporary.with_storage(|| ctx.push_vec(votes, vote, OPERATION))?;
         }
     }
-    for feature in histories
-        .iter_mut()
-        .flat_map(|history| &mut history.features)
-    {
-        if ctx.contains_key_btree_map(&feature.properties, "EndCondition", OPERATION)? {
-            continue;
-        }
-        let Some(votes) = ctx.get_hash_map(&terminations, &feature.id, OPERATION)? else {
-            continue;
-        };
-        let Some(vote) = consensus_termination_vote(ctx, votes)? else {
-            continue;
-        };
-        let condition = ctx.copy_retained_text(vote.condition(), OPERATION)?;
-        insert_termination_field(
-            ctx,
-            &mut feature.properties,
-            "EndCondition",
-            condition,
-            OPERATION,
-        )?;
-        match vote {
-            TerminationVote::ToVertex { reference } => {
-                if !ctx.contains_key_btree_map(&feature.properties, "Vertex", OPERATION)? {
+    for history_index in ctx.admit_iter(&(0..histories.len()), OPERATION)? {
+        let history = &mut histories[history_index];
+        for feature_index in ctx.admit_iter(&(0..history.features.len()), OPERATION)? {
+            let feature = &mut history.features[feature_index];
+            if ctx.contains_key_btree_map(&feature.properties, "EndCondition", OPERATION)? {
+                continue;
+            }
+            let Some(votes) = ctx.get_hash_map(&terminations, &feature.id, OPERATION)? else {
+                continue;
+            };
+            let Some(vote) = consensus_termination_vote(ctx, votes)? else {
+                continue;
+            };
+            let condition = ctx.copy_retained_text(vote.condition(), OPERATION)?;
+            insert_termination_field(
+                ctx,
+                &mut feature.properties,
+                "EndCondition",
+                condition,
+                OPERATION,
+            )?;
+            match vote {
+                TerminationVote::ToVertex { reference } => {
+                    if !ctx.contains_key_btree_map(&feature.properties, "Vertex", OPERATION)? {
+                        insert_termination_field(
+                            ctx,
+                            &mut feature.properties,
+                            "Vertex",
+                            reference,
+                            OPERATION,
+                        )?;
+                    }
+                }
+                TerminationVote::Face {
+                    reference:
+                        FaceReference::Lane { reference, .. }
+                        | FaceReference::Canonical(reference),
+                    ..
+                } => {
+                    if !ctx.contains_key_btree_map(&feature.properties, "Face", OPERATION)? {
+                        insert_termination_field(
+                            ctx,
+                            &mut feature.properties,
+                            "Face",
+                            reference,
+                            OPERATION,
+                        )?;
+                    }
+                }
+                TerminationVote::BlindSecondThroughAll => {
+                    let value = ctx.copy_retained_text("ThroughAll", OPERATION)?;
                     insert_termination_field(
                         ctx,
                         &mut feature.properties,
-                        "Vertex",
-                        reference,
+                        "EndCondition2",
+                        value,
                         OPERATION,
                     )?;
                 }
-            }
-            TerminationVote::Face {
-                reference:
-                    FaceReference::Lane { reference, .. } | FaceReference::Canonical(reference),
-                ..
-            } => {
-                if !ctx.contains_key_btree_map(&feature.properties, "Face", OPERATION)? {
-                    insert_termination_field(
-                        ctx,
-                        &mut feature.properties,
-                        "Face",
-                        reference,
-                        OPERATION,
-                    )?;
+                TerminationVote::Blind {
+                    depth_m: Some(depth_m),
+                } if !ctx.contains_key_btree_map(&feature.parameters, "D1", OPERATION)?
+                    && !ctx.contains_key_btree_map(&feature.parameters, "Depth", OPERATION)? =>
+                {
+                    if let Some(depth) = cadmpeg_ir::scalar::Length::new(depth_m * 1000.0) {
+                        ctx.charge_work(1, OPERATION)?;
+                        let value = ctx.format_retained(
+                            format_args!("{}", crate::history::literals::LengthLiteral(depth)),
+                            OPERATION,
+                        )?;
+                        insert_termination_field(
+                            ctx,
+                            &mut feature.parameters,
+                            "D1",
+                            value,
+                            OPERATION,
+                        )?;
+                    }
                 }
+                _ => {}
             }
-            TerminationVote::BlindSecondThroughAll => {
-                let value = ctx.copy_retained_text("ThroughAll", OPERATION)?;
-                insert_termination_field(
-                    ctx,
-                    &mut feature.properties,
-                    "EndCondition2",
-                    value,
-                    OPERATION,
-                )?;
-            }
-            TerminationVote::Blind {
-                depth_m: Some(depth_m),
-            } if !ctx.contains_key_btree_map(&feature.parameters, "D1", OPERATION)?
-                && !ctx.contains_key_btree_map(&feature.parameters, "Depth", OPERATION)? =>
-            {
-                if let Some(depth) = cadmpeg_ir::scalar::Length::new(depth_m * 1000.0) {
-                    ctx.charge_work(1, OPERATION)?;
-                    let value = ctx.format_retained(
-                        format_args!("{}", crate::history::literals::LengthLiteral(depth)),
-                        OPERATION,
-                    )?;
-                    insert_termination_field(ctx, &mut feature.parameters, "D1", value, OPERATION)?;
-                }
-            }
-            _ => {}
         }
     }
     Ok(())
@@ -874,50 +882,51 @@ pub(crate) fn enrich_history_combine_selections(
             temporary.with_storage(|| ctx.push_vec(votes, selection, OPERATION))?;
         }
     }
-    for feature in histories
-        .iter_mut()
-        .flat_map(|history| &mut history.features)
-    {
-        let Some(votes) = ctx.get_hash_map(&selections, &feature.id, OPERATION)? else {
-            continue;
-        };
-        let Some(Some(first)) = votes.first() else {
-            continue;
-        };
-        let mut agreement = true;
-        for vote in ctx.admit_iter(votes, OPERATION)? {
-            let agrees = if let Some(vote) = vote.as_ref() {
-                ctx.equal(&vote.target, &first.target, OPERATION)?
-                    && ctx.equal(&vote.tools, &first.tools, OPERATION)?
-                    && match (vote.operation.as_deref(), first.operation.as_deref()) {
-                        (Some(left), Some(right)) => ctx.equal(left, right, OPERATION)?,
-                        (None, None) => true,
-                        _ => false,
-                    }
-            } else {
-                false
-            };
-            if !agrees {
-                agreement = false;
-                break;
-            }
-        }
-        if !agreement {
-            continue;
-        }
-        for (key, value) in [
-            ("Target", Some(first.target.as_str())),
-            ("Tools", Some(first.tools.as_str())),
-            ("Operation", first.operation.as_deref()),
-        ] {
-            let Some(value) = value else {
+    for history_index in ctx.admit_iter(&(0..histories.len()), OPERATION)? {
+        let history = &mut histories[history_index];
+        for feature_index in ctx.admit_iter(&(0..history.features.len()), OPERATION)? {
+            let feature = &mut history.features[feature_index];
+            let Some(votes) = ctx.get_hash_map(&selections, &feature.id, OPERATION)? else {
                 continue;
             };
-            if ctx.contains_key_btree_map(&feature.properties, key, OPERATION)? {
+            let Some(Some(first)) = votes.first() else {
+                continue;
+            };
+            let mut agreement = true;
+            for vote in ctx.admit_iter(votes, OPERATION)? {
+                let agrees = if let Some(vote) = vote.as_ref() {
+                    ctx.equal(&vote.target, &first.target, OPERATION)?
+                        && ctx.equal(&vote.tools, &first.tools, OPERATION)?
+                        && match (vote.operation.as_deref(), first.operation.as_deref()) {
+                            (Some(left), Some(right)) => ctx.equal(left, right, OPERATION)?,
+                            (None, None) => true,
+                            _ => false,
+                        }
+                } else {
+                    false
+                };
+                if !agrees {
+                    agreement = false;
+                    break;
+                }
+            }
+            if !agreement {
                 continue;
             }
-            let value = ctx.copy_retained_text(value, OPERATION)?;
-            insert_termination_field(ctx, &mut feature.properties, key, value, OPERATION)?;
+            for (key, value) in [
+                ("Target", Some(first.target.as_str())),
+                ("Tools", Some(first.tools.as_str())),
+                ("Operation", first.operation.as_deref()),
+            ] {
+                let Some(value) = value else {
+                    continue;
+                };
+                if ctx.contains_key_btree_map(&feature.properties, key, OPERATION)? {
+                    continue;
+                }
+                let value = ctx.copy_retained_text(value, OPERATION)?;
+                insert_termination_field(ctx, &mut feature.properties, key, value, OPERATION)?;
+            }
         }
     }
     Ok(())
@@ -1116,38 +1125,39 @@ pub(crate) fn enrich_history_sweep_paths(
             }
         }
     }
-    for feature in histories
-        .iter_mut()
-        .flat_map(|history| &mut history.features)
-    {
-        if ctx.contains_key_btree_map(&feature.properties, "Path", OPERATION)? {
-            continue;
-        }
-        let Some(votes) = ctx.get_hash_map(&paths, &feature.id, OPERATION)? else {
-            continue;
-        };
-        let Some(Some(first)) = votes.first() else {
-            continue;
-        };
-        let mut agreement = true;
-        for vote in ctx.admit_iter(votes, OPERATION)? {
-            let agrees = match vote.as_deref() {
-                Some(value) => ctx.equal(value, first, OPERATION)?,
-                None => false,
-            };
-            if !agrees {
-                agreement = false;
-                break;
+    for history_index in ctx.admit_iter(&(0..histories.len()), OPERATION)? {
+        let history = &mut histories[history_index];
+        for feature_index in ctx.admit_iter(&(0..history.features.len()), OPERATION)? {
+            let feature = &mut history.features[feature_index];
+            if ctx.contains_key_btree_map(&feature.properties, "Path", OPERATION)? {
+                continue;
             }
-        }
-        if agreement {
-            let path = ctx.copy_retained_text(first, OPERATION)?;
-            ctx.insert_btree_map(
-                &mut feature.properties,
-                cadmpeg_core::nonblank_literal!("Path"),
-                path,
-                OPERATION,
-            )?;
+            let Some(votes) = ctx.get_hash_map(&paths, &feature.id, OPERATION)? else {
+                continue;
+            };
+            let Some(Some(first)) = votes.first() else {
+                continue;
+            };
+            let mut agreement = true;
+            for vote in ctx.admit_iter(votes, OPERATION)? {
+                let agrees = match vote.as_deref() {
+                    Some(value) => ctx.equal(value, first, OPERATION)?,
+                    None => false,
+                };
+                if !agrees {
+                    agreement = false;
+                    break;
+                }
+            }
+            if agreement {
+                let path = ctx.copy_retained_text(first, OPERATION)?;
+                ctx.insert_btree_map(
+                    &mut feature.properties,
+                    cadmpeg_core::nonblank_literal!("Path"),
+                    path,
+                    OPERATION,
+                )?;
+            }
         }
     }
     Ok(())

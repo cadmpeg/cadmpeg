@@ -971,30 +971,30 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters_without_hole_construction
             )?;
         }
     }
-    for feature in histories
-        .iter_mut()
-        .flat_map(|history| &mut history.features)
-    {
-        ctx.charge_work(1, OPERATION)?;
-        if feature.parameters.contains_key("D2") {
-            continue;
+    for history_index in ctx.admit_iter(&(0..histories.len()), OPERATION)? {
+        let history = &mut histories[history_index];
+        for feature_index in ctx.admit_iter(&(0..history.features.len()), OPERATION)? {
+            let feature = &mut history.features[feature_index];
+            if feature.parameters.contains_key("D2") {
+                continue;
+            }
+            let Some(diameter) = ctx.get_hash_map(
+                &fallback_parameters,
+                feature.id.as_str(),
+                "resolve SLDPRT holes keys",
+            )?
+            else {
+                continue;
+            };
+            ctx.charge_work(u64_from_index(diameter.len()), OPERATION)?;
+            let value = ctx.format_retained(format_args!("{diameter}"), OPERATION)?;
+            ctx.insert_btree_map(
+                &mut feature.parameters,
+                cadmpeg_core::nonblank_literal!("D2"),
+                value,
+                OPERATION,
+            )?;
         }
-        let Some(diameter) = ctx.get_hash_map(
-            &fallback_parameters,
-            feature.id.as_str(),
-            "resolve SLDPRT holes keys",
-        )?
-        else {
-            continue;
-        };
-        ctx.charge_work(u64_from_index(diameter.len()), OPERATION)?;
-        let value = ctx.format_retained(format_args!("{diameter}"), OPERATION)?;
-        ctx.insert_btree_map(
-            &mut feature.parameters,
-            cadmpeg_core::nonblank_literal!("D2"),
-            value,
-            OPERATION,
-        )?;
     }
     Ok(())
 }
@@ -1752,11 +1752,15 @@ pub(crate) fn project_profiled_hole_constructions(
         }
     }
     let mut fallback_constructions = HashMap::new();
-    for ((history, ownership_history), holes) in ctx
+    for ((history, ownership_history), hole_index) in ctx
         .admit_iter(histories, "scan SLDPRT holes records")?
-        .zip(&ownership_histories)
-        .zip(&mut unowned_incomplete_holes)
+        .zip(ctx.admit_iter(&ownership_histories, "scan SLDPRT holes records")?)
+        .zip(ctx.admit_iter(
+            &(0..unowned_incomplete_holes.len()),
+            "scan SLDPRT holes records",
+        )?)
     {
+        let holes = &mut unowned_incomplete_holes[hole_index];
         let mut claimed_profiles = HashSet::new();
         for feature in &history.features {
             ctx.charge_work(1, OPERATION)?;
@@ -2994,9 +2998,10 @@ pub(crate) fn project_generated_hole_axes(
         )?;
     }
 
-    for feature in features {
+    const OPERATION: &str = "sort SLDPRT generated hole lanes";
+    for feature_index in ctx.admit_iter(&(0..features.len()), OPERATION)? {
+        let feature = &mut features[feature_index];
         let solution = (|| -> Result<Option<Vec<HolePlacement>>, CodecError> {
-            const OPERATION: &str = "sort SLDPRT generated hole lanes";
             let FeatureDefinition::Operation(FeatureOperation::Hole {
                 placements, shape, ..
             }) = feature.evaluation.definition()
@@ -4837,7 +4842,11 @@ pub(crate) fn project_topological_hole_constructions(
     let mut bore_faces_storage = ctx.reserve_scoped(0, "collect SLDPRT hole bore spans")?;
     let bore_faces =
         bore_faces_storage.with_storage(|| cylindrical_bore_face_spans(ctx, topology))?;
-    for feature in features {
+    for feature_index in ctx.admit_iter(
+        &(0..features.len()),
+        "project SLDPRT topological hole constructions",
+    )? {
+        let feature = &mut features[feature_index];
         let mut result = Ok(());
         feature.evaluation.edit(|definition, _| {
             result = (|| -> Result<(), CodecError> {
@@ -5516,7 +5525,11 @@ fn match_marker_loci_to_bore_axes(
             if !has_unique_marker_loci_subset(ctx, marker_loci, &candidate_loci)? {
                 continue;
             }
-            if retain_bore_solution(ctx, &candidates, 0..candidates.len(), &mut solutions)? {
+            let indices = ctx.admit_iter(
+                &(0..candidates.len()),
+                "retain SLDPRT bore pattern solution",
+            )?;
+            if retain_bore_solution(ctx, &candidates, indices, &mut solutions)? {
                 return Ok(None);
             }
             continue;
@@ -5533,7 +5546,10 @@ fn match_marker_loci_to_bore_axes(
             return Ok(None);
         }
         for subset in ctx.admit_iter(&subsets, OPERATION)? {
-            if retain_bore_solution(ctx, &candidates, subset.iter().copied(), &mut solutions)? {
+            let indices = ctx
+                .admit_iter(subset, "retain SLDPRT bore pattern solution")?
+                .copied();
+            if retain_bore_solution(ctx, &candidates, indices, &mut solutions)? {
                 return Ok(None);
             }
         }
@@ -5548,7 +5564,7 @@ fn match_marker_loci_to_bore_axes(
 fn retain_bore_solution(
     ctx: &DecodeContext<'_>,
     candidates: &[([GridCoordinate; 3], FinitePoint3, FeatureDirection3)],
-    indices: impl IntoIterator<Item = usize>,
+    indices: impl Iterator<Item = usize>,
     solutions: &mut HashMap<Vec<[GridCoordinate; 6]>, Vec<HolePlacement>>,
 ) -> Result<bool, CodecError> {
     const OPERATION: &str = "retain SLDPRT bore pattern solution";
@@ -5556,7 +5572,6 @@ fn retain_bore_solution(
     let mut placements = Vec::new();
     let mut key = Vec::new();
     for index in indices {
-        ctx.charge_work(1, OPERATION)?;
         let (_, origin, axis) = candidates[index];
         ctx.reserve_vec(&mut placements, 1, OPERATION)?;
         ctx.reserve_vec(&mut key, 1, OPERATION)?;

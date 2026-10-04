@@ -624,7 +624,7 @@ impl FeatureInputLaneWire {
         let entities = ctx.try_collect_vec(
             self.sketch_entities.into_iter().map(|entity| {
                 ctx.charge_work(1, "admit SLDPRT inline sketch marker")?;
-                SketchInputEntity::try_from_wire(entity, &self.native_payload)
+                SketchInputEntity::try_from_wire(ctx, entity, &self.native_payload)?
                     .map_err(cadmpeg_core::CodecError::malformed)
             }),
             "admit SLDPRT inline sketch entities",
@@ -651,10 +651,15 @@ impl FeatureInputLaneWire {
 impl TryFrom<FeatureInputLaneWire> for FeatureInputLane {
     type Error = String;
     fn try_from(wire: FeatureInputLaneWire) -> Result<Self, Self::Error> {
+        let admission = crate::resolved_features::markers::StandardMarkerAdmission;
         let sketch_entities = wire
             .sketch_entities
             .into_iter()
-            .map(|entity| SketchInputEntity::try_from_wire(entity, &wire.native_payload))
+            .map(|entity| {
+                crate::resolved_features::markers::standard_marker_result(
+                    SketchInputEntity::try_from_wire(&admission, entity, &wire.native_payload),
+                )
+            })
             .collect::<Result<Vec<_>, _>>()?;
         let relation_instances = wire
             .relation_instances
@@ -1723,63 +1728,75 @@ impl SketchInputEntity {
         updated
     }
 
-    pub(crate) fn try_from_wire(
+    pub(crate) fn try_from_wire<A: crate::resolved_features::markers::MarkerAdmission>(
+        admission: &A,
         wire: SketchInputEntityWire,
         payload: &[u8],
-    ) -> Result<Self, String> {
-        let mut entity = Self::try_new(
+    ) -> Result<Result<Self, String>, A::Error> {
+        let mut entity = match Self::try_new(
+            admission,
             wire.id,
             wire.parent,
             wire.ordinal,
             wire.offset,
             wire.kind,
             payload,
-        )
-        .map_err(str::to_string)?;
+        )? {
+            Ok(entity) => entity,
+            Err(error) => return Ok(Err(error.to_string())),
+        };
         if wire.object_index != entity.object_index {
-            return Err(
+            return Ok(Err(
                 "SolidWorks feature-input object index does not match its native payload".into(),
-            );
+            ));
         }
         if wire.local_id != entity.local_id {
-            return Err(
+            return Ok(Err(
                 "SolidWorks feature-input local object id does not match its native payload".into(),
-            );
+            ));
         }
         entity.feature_ref = wire.feature_ref;
         entity.state_value = wire.state_value;
         entity.coordinates_m = wire.coordinates_m;
         entity.links = wire.links;
-        Ok(entity)
+        Ok(Ok(entity))
     }
 
-    pub(crate) fn try_new(
+    pub(crate) fn try_new<A: crate::resolved_features::markers::MarkerAdmission>(
+        admission: &A,
         id: String,
         parent: String,
         ordinal: u32,
         offset: u64,
         kind: SketchInputKind,
         payload: &[u8],
-    ) -> Result<Self, &'static str> {
-        let position = usize::try_from(offset).map_err(|_| "sketch entity offset exceeds usize")?;
+    ) -> Result<Result<Self, &'static str>, A::Error> {
+        let Ok(position) = usize::try_from(offset) else {
+            return Ok(Err("sketch entity offset exceeds usize"));
+        };
         if position >= payload.len()
             || !crate::resolved_features::markers::sketch_marker_at(payload, position)
         {
-            return Err("sketch entity offset is not a marker in native_payload");
+            return Ok(Err("sketch entity offset is not a marker in native_payload"));
         }
-        Ok(Self {
+        let local_id = crate::resolved_features::markers::marker_local_id(
+            admission,
+            payload,
+            position,
+        )?;
+        Ok(Ok(Self {
             id,
             parent,
             feature_ref: None,
             ordinal,
             offset,
             object_index: crate::resolved_features::markers::marker_object_index(payload, position),
-            local_id: crate::resolved_features::markers::marker_local_id(payload, position),
+            local_id,
             kind,
             state_value: None,
             coordinates_m: None,
             links: None,
-        })
+        }))
     }
 
     /// Re-admit this record against the payload it references.
@@ -1788,24 +1805,36 @@ impl SketchInputEntity {
     /// checked JSON route alone does not protect `store` or native rewrite.
     /// Keep the payload-derived marker identity tied to the record at every
     /// outbound boundary.
-    pub(crate) fn validate_against_payload(&self, payload: &[u8]) -> Result<(), &'static str> {
-        let expected = Self::try_new(
+    pub(crate) fn validate_against_payload<
+        A: crate::resolved_features::markers::MarkerAdmission,
+    >(
+        &self,
+        admission: &A,
+        payload: &[u8],
+    ) -> Result<Result<(), &'static str>, A::Error> {
+        let expected = match Self::try_new(
+            admission,
             self.id.clone(),
             self.parent.clone(),
             self.ordinal,
             self.offset,
             self.kind,
             payload,
-        )?;
+        )? {
+            Ok(expected) => expected,
+            Err(error) => return Ok(Err(error)),
+        };
         if self.object_index != expected.object_index {
-            return Err("SolidWorks feature-input object index does not match its native payload");
+            return Ok(Err(
+                "SolidWorks feature-input object index does not match its native payload",
+            ));
         }
         if self.local_id != expected.local_id {
-            return Err(
+            return Ok(Err(
                 "SolidWorks feature-input local object id does not match its native payload",
-            );
+            ));
         }
-        Ok(())
+        Ok(Ok(()))
     }
 
     #[cfg(test)]
@@ -1830,7 +1859,17 @@ impl SketchInputEntity {
         payload[position..position + 5].copy_from_slice(&[0xff, 0xff, 0x1f, 0x00, 0x03]);
         payload[position + 5..position + 13].fill(0xff);
         payload[position + 13..position + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
-        Self::try_new(id.into(), parent.into(), ordinal, offset, kind, &payload).unwrap()
+        let admission = crate::resolved_features::markers::StandardMarkerAdmission;
+        crate::resolved_features::markers::standard_marker_result(Self::try_new(
+            &admission,
+            id.into(),
+            parent.into(),
+            ordinal,
+            offset,
+            kind,
+            &payload,
+        ))
+        .unwrap()
     }
 
     #[cfg(test)]
@@ -2656,13 +2695,17 @@ mod tests {
         payload[..5].copy_from_slice(&[0xff, 0xff, 0x1f, 0x00, 0x03]);
         payload[5..13].fill(0xff);
         payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
-        let mut entity = SketchInputEntity::try_new(
-            "marker".into(),
-            "lane".into(),
-            0,
-            0,
-            SketchInputKind::Point,
-            &payload,
+        let admission = crate::resolved_features::markers::StandardMarkerAdmission;
+        let mut entity = crate::resolved_features::markers::standard_marker_result(
+            SketchInputEntity::try_new(
+                &admission,
+                "marker".into(),
+                "lane".into(),
+                0,
+                0,
+                SketchInputKind::Point,
+                &payload,
+            ),
         )
         .expect("marker fixture");
         entity.links = SketchInputLinks::new(
@@ -2742,13 +2785,17 @@ mod tests {
         payload[..5].copy_from_slice(&[0xff, 0xff, 0x1f, 0x00, 0x03]);
         payload[5..13].fill(0xff);
         payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
-        let mut entity = SketchInputEntity::try_new(
-            "marker".into(),
-            "lane".into(),
-            0,
-            0,
-            SketchInputKind::Point,
-            &payload,
+        let admission = crate::resolved_features::markers::StandardMarkerAdmission;
+        let mut entity = crate::resolved_features::markers::standard_marker_result(
+            SketchInputEntity::try_new(
+                &admission,
+                "marker".into(),
+                "lane".into(),
+                0,
+                0,
+                SketchInputKind::Point,
+                &payload,
+            ),
         )
         .expect("marker fixture");
         entity.coordinates_m = cadmpeg_ir::units::FiniteVector::new([1.25, -2.5]);

@@ -240,7 +240,8 @@ fn spatial_relation_point_line_entities(
         if !matches!(code, 2..=5) {
             continue;
         }
-        let Some(coordinates) = spatial_relation_marker_coordinates(&lane.native_payload, offset)
+        let Some(coordinates) =
+            spatial_relation_marker_coordinates(ctx, &lane.native_payload, offset)?
         else {
             continue;
         };
@@ -308,7 +309,8 @@ fn spatial_relation_point_line_entities(
         if marker_native_code(&lane.native_payload, offset) != Some(0) {
             continue;
         }
-        let Some(coordinates) = spatial_relation_marker_coordinates(&lane.native_payload, offset)
+        let Some(coordinates) =
+            spatial_relation_marker_coordinates(ctx, &lane.native_payload, offset)?
         else {
             continue;
         };
@@ -1151,10 +1153,20 @@ pub(crate) fn project_relation_point_geometry(
                             &markers_by_id,
                         )?,
                     };
-                endpoints = ctx.collect_vec(
-                    linked_endpoints.into_iter().flatten(),
-                    "collect SLDPRT linked relation-line endpoints",
-                )?;
+                endpoints = match linked_endpoints {
+                    Some(linked_endpoints) => ctx.collect_vec(
+                        ctx.admit_iter(
+                            &linked_endpoints,
+                            "scan SLDPRT linked relation-line endpoints",
+                        )?
+                        .copied(),
+                        "collect SLDPRT linked relation-line endpoints",
+                    )?,
+                    None => ctx.collect_vec(
+                        std::iter::empty(),
+                        "collect SLDPRT linked relation-line endpoints",
+                    )?,
+                };
             }
             if endpoints.len() != 2 {
                 endpoints.clear();
@@ -1518,7 +1530,10 @@ pub(crate) fn project_relation_solved_line_geometry(
             lane.sketch_entities.len(),
             "collect SLDPRT solved-line marker roster",
         )?;
-        marker_roster.extend(lane.sketch_entities.iter());
+        marker_roster.extend(ctx.admit_iter(
+            &lane.sketch_entities,
+            "scan SLDPRT solved-line marker roster",
+        )?);
         for relation in ctx.admit_iter(
             &lane.relation_instances,
             "scan SLDPRT solved-line relations",

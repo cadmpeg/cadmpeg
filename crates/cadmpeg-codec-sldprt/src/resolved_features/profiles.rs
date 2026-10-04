@@ -2855,7 +2855,10 @@ pub(crate) fn project_marker_backed_sketches(
                             Err(_) => continue,
                         };
                 }
-                for entity in &mut projected {
+                for entity_index in
+                    ctx.admit_iter(&(0..projected.len()), "scan SLDPRT projected profile markers")?
+                {
+                    let entity = &mut projected[entity_index];
                     let SketchGeometryDefinition::Native { .. } = *entity.geometry.definition()
                     else {
                         continue;
@@ -4162,7 +4165,8 @@ fn project_detached_legacy_config_sketches(
             };
             *frame
         };
-        for feature in features.iter_mut() {
+        for feature_index in ctx.admit_iter(&(0..features.len()), OPERATION)? {
+            let feature = &mut features[feature_index];
             'feature_edit: {
                 let Some(native_ref) = feature.native_ref.as_deref() else {
                     break 'feature_edit;
