@@ -586,10 +586,10 @@ pub(crate) fn reference_list(
     field: &str,
 ) -> Result<PmDcReferenceList, CodecError> {
     let (count, metadata) =
-        list_preamble(ctx, cursor, marker, field, "admit Inventor PmDc references")?;
+        list_preamble(cursor, marker, field)?;
     let mut references = ctx.vector_storage(count, "admit Inventor PmDc references")?;
     for _ in ctx.admit_iter(&(0..count), "visit Inventor PmDc list entries")? {
-        references.push(cursor.reference("reference-list entry")?);
+        ctx.push_vec(&mut references, cursor.reference("reference-list entry")?, "admit Inventor PmDc references")?;
     }
     PmDcReferenceList::new(marker, metadata, references).ok_or_else(|| {
         CodecError::Malformed("Inventor PmDc reference list metadata disagrees with length".into())
@@ -597,11 +597,9 @@ pub(crate) fn reference_list(
 }
 
 fn list_preamble(
-    ctx: &DecodeContext<'_>,
     cursor: &mut Cursor<'_>,
     marker: u16,
     field: &str,
-    admission: &'static str,
 ) -> Result<(usize, Option<PmDcListMetadata>), CodecError> {
     let actual = [cursor.u16("list marker 0")?, cursor.u16("list marker 1")?];
     if actual != [marker, 0x3000] {
@@ -630,7 +628,6 @@ fn list_preamble(
         .ok_or_else(|| {
             CodecError::malformed("Inventor PmDc list count exceeds remaining payload")
         })?;
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), admission)?;
     Ok((count, metadata))
 }
 
@@ -641,10 +638,10 @@ pub(crate) fn u32_list(
     field: &str,
 ) -> Result<PmDcU32List, CodecError> {
     let (count, metadata) =
-        list_preamble(ctx, cursor, marker, field, "admit Inventor PmDc integers")?;
+        list_preamble(cursor, marker, field)?;
     let mut values = ctx.vector_storage(count, "admit Inventor PmDc integers")?;
     for _ in ctx.admit_iter(&(0..count), "visit Inventor PmDc list entries")? {
-        values.push(cursor.u32("integer-list value")?);
+        ctx.push_vec(&mut values, cursor.u32("integer-list value")?, "admit Inventor PmDc integers")?;
     }
     PmDcU32List::new(marker, metadata, values).ok_or_else(|| {
         CodecError::Malformed("Inventor PmDc integer list metadata disagrees with length".into())
