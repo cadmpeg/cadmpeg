@@ -316,7 +316,7 @@ fn feature_timeline_item_limit_refuses_before_counted_vector_allocation() {
         &bulk,
         "Design/BulkStream.dat",
         frame.clone(),
-        ("256", 35),
+        (256, 35),
         0,
         &HashMap::new(),
     )
@@ -335,7 +335,7 @@ fn feature_timeline_item_limit_refuses_before_counted_vector_allocation() {
         &bulk,
         "Design/BulkStream.dat",
         frame,
-        ("256", 35),
+        (256, 35),
         0,
         &HashMap::new(),
     )
@@ -381,7 +381,7 @@ fn feature_timeline_id_refuses_prefix_and_suffix_limits() {
             &bulk,
             stream,
             0..bulk.len(),
-            ("256", 35),
+            (256, 35),
             0,
             &HashMap::new(),
         )
@@ -399,7 +399,7 @@ fn feature_timeline_id_refuses_prefix_and_suffix_limits() {
         &bulk,
         stream,
         0..bulk.len(),
-        ("256", 35),
+        (256, 35),
         0,
         &HashMap::new(),
     )
@@ -451,17 +451,17 @@ fn timeline_collection_growth_refuses_at_map_child_and_output() {
     zip.write_all(&meta).unwrap();
     let archive = zip.finish().unwrap().into_inner();
     let arena = DecodeArena::new();
-    for (allowance, operation) in [
-        (5, "index F3D timeline entity"),
-        (6, "index F3D timeline type GUID"),
-        (9, "retain F3D feature timeline"),
+    for operation in [
+        "index F3D timeline entity",
+        "index F3D timeline type GUID",
+        "retain F3D feature timeline",
     ] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = allowance;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = with_scan(&archive, |scan| super::decode_feature_timelines(&ctx, scan))
-            .err()
-            .unwrap();
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            0,
+            |ctx| with_scan(&archive, |scan| super::decode_feature_timelines(ctx, scan)),
+        );
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
@@ -714,7 +714,7 @@ fn component_naming_uuid_refuses_retained_limit_in_both_reference_forms() {
         let arena = DecodeArena::new();
         let error = cadmpeg_test_support::refusal::resource_limit_at(
             ResourceDimension::RetainedBytes,
-            "f3d Design UTF-16 text",
+            "retain F3D component context UUID",
             |cap| {
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_retained_bytes = cap;
@@ -727,7 +727,7 @@ fn component_naming_uuid_refuses_retained_limit_in_both_reference_forms() {
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "f3d Design UTF-16 text")
+                && refusal.operation == "retain F3D component context UUID")
         );
     }
 }
