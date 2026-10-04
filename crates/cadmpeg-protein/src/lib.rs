@@ -430,18 +430,9 @@ fn decode_frames(
 
 /// Whether the Protein archive packages schema XML documents.
 pub fn has_schemas(ctx: &DecodeContext<'_>, protein: &[u8]) -> Result<bool, CodecError> {
-    let Ok(mut archive) = zip::ZipArchive::new(Cursor::new(protein)) else {
-        return Ok(false);
-    };
-    for index in ctx.admit_iter(&(0..archive.len()), "Protein schema entry scan")? {
-        let Ok(entry) = archive.by_index(index) else {
-            continue;
-        };
-        if is_schema_entry(ctx, entry.name())? {
-            return Ok(true);
-        }
-    }
-    Ok(false)
+    cadmpeg_container::ArchiveSnapshot::probe_readable_names(ctx, protein, |name| {
+        is_schema_entry(ctx, name)
+    })
 }
 
 fn is_schema_entry(ctx: &DecodeContext<'_>, name: &str) -> Result<bool, CodecError> {
