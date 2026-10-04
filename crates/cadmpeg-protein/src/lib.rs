@@ -396,7 +396,7 @@ pub fn has_schemas(ctx: &DecodeContext<'_>, protein: &[u8]) -> Result<bool, Code
     let Ok(mut archive) = zip::ZipArchive::new(Cursor::new(protein)) else {
         return Ok(false);
     };
-    for index in 0..archive.len() {
+    for index in ctx.admit_iter(&(0..archive.len()), "Protein schema entry scan")? {
         let Ok(entry) = archive.by_index(index) else {
             continue;
         };
@@ -463,22 +463,36 @@ fn parse_schema_document(
             ))
         })?;
     let document = admitted_document.document();
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(document.descendants().len()), "Protein schema root search")?;
-    let root = document.root_element();
-    let uid_node = root.children().find(|node| node.has_tag_name("UID"))
-        .ok_or_else(|| CodecError::malformed(format_args!("Protein schema {name} has no UID")))?;
-    let uid_work = cadmpeg_core::decode::u64_from_index(uid_node.attributes().len()).checked_mul(4)
-        .ok_or_else(|| ctx.refuse_codec_limit("Protein schema UID search", u64::MAX, u64::MAX))?;
-    ctx.charge_work(uid_work, "Protein schema UID search")?;
-    let uid = uid_node.attribute("val")
+    let node_count = document.descendants().len();
+    let mut root = None;
+    let mut descendants = document.descendants();
+    for _ in ctx.admit_iter(&(0..node_count), "Protein schema root search")? {
+        let Some(node) = descendants.next() else { break; };
+        if node.is_element() {
+            root = Some(node);
+            break;
+        }
+    }
+    let root = root.ok_or_else(|| CodecError::malformed(format_args!("Protein schema {name} has no root")))?;
+    let mut uid_node = None;
+    let mut children = root.children();
+    for _ in ctx.admit_iter(&(0..node_count), "Protein schema UID node search")? {
+        let Some(node) = children.next() else { break; };
+        if node.has_tag_name("UID") {
+            uid_node = Some(node);
+            break;
+        }
+    }
+    let uid_node = uid_node.ok_or_else(|| CodecError::malformed(format_args!("Protein schema {name} has no UID")))?;
+    let uid = schema_attribute(ctx, uid_node, "val", "Protein schema UID search")?
         .ok_or_else(|| CodecError::malformed(format_args!("Protein schema {name} has no UID")))?;
     let mut schema = Schema::default();
-    for node in root.children().filter(roxmltree::Node::is_element) {
+    let mut children = root.children();
+    for _ in ctx.admit_iter(&(0..node_count), "Protein schema child scan")? {
+        let Some(node) = children.next() else { break; };
+        if !node.is_element() { continue; }
         if node.has_tag_name("Base") {
-            let work = cadmpeg_core::decode::u64_from_index(node.attributes().len()).checked_mul(4)
-                .ok_or_else(|| ctx.refuse_codec_limit("Protein schema base search", u64::MAX, u64::MAX))?;
-            ctx.charge_work(work, "Protein schema base search")?;
-            if let Some(value) = node.attribute("val") {
+            if let Some(value) = schema_attribute(ctx, node, "val", "Protein schema base search")? {
                 ctx.charge_retained(
                     cadmpeg_core::decode::u64_from_index(value.len()),
                     "Protein schema base name",
@@ -490,22 +504,12 @@ fn parse_schema_document(
         if node.has_tag_name("PropertyAlias") {
             continue;
         }
-        let attribute_count = cadmpeg_core::decode::u64_from_index(node.attributes().len());
-        let readonly_work = attribute_count.checked_mul(9)
-            .ok_or_else(|| ctx.refuse_codec_limit("Protein readonly attribute search", u64::MAX, u64::MAX))?;
-        ctx.charge_work(readonly_work, "Protein readonly attribute search")?;
-        if node.attribute("readonly") == Some("true") { continue; }
-        let definition_work = attribute_count.checked_mul(23)
-            .ok_or_else(|| ctx.refuse_codec_limit("Protein definition attribute search", u64::MAX, u64::MAX))?;
-        ctx.charge_work(definition_work, "Protein definition attribute search")?;
-        if node.attribute("definitionIteratorData") == Some("true") { continue; }
+        if schema_attribute(ctx, node, "readonly", "Protein readonly attribute search")? == Some("true") { continue; }
+        if schema_attribute(ctx, node, "definitionIteratorData", "Protein definition attribute search")? == Some("true") { continue; }
         let Some(property) = schema_property(ctx, node)? else {
             continue;
         };
-        let id_work = attribute_count.checked_mul(3)
-            .ok_or_else(|| ctx.refuse_codec_limit("Protein property id search", u64::MAX, u64::MAX))?;
-        ctx.charge_work(id_work, "Protein property id search")?;
-        let Some(id) = node.attribute("id") else {
+        let Some(id) = schema_attribute(ctx, node, "id", "Protein property id search")? else {
             continue;
         };
         if ctx.contains_key_btree_map(&schema.properties, id, "Protein local property uniqueness")? {
@@ -537,16 +541,26 @@ fn parse_schema_document(
     Ok(())
 }
 
+fn schema_attribute<'node>(
+    ctx: &DecodeContext<'_>,
+    node: roxmltree::Node<'node, '_>,
+    name: &str,
+    operation: &'static str,
+) -> Result<Option<&'node str>, CodecError> {
+    let mut attributes = node.attributes();
+    let count = attributes.len();
+    for _ in ctx.admit_iter(&(0..count), operation)? {
+        let Some(attribute) = attributes.next() else { break; };
+        if ctx.equal(attribute.name(), name, operation)? {
+            return Ok(Some(attribute.value()));
+        }
+    }
+    Ok(None)
+}
+
 fn schema_property(ctx: &DecodeContext<'_>, node: roxmltree::Node<'_, '_>) -> Result<Option<Property>, CodecError> {
-    let attribute_count = cadmpeg_core::decode::u64_from_index(node.attributes().len());
-    let multiple_work = attribute_count.checked_mul(20)
-        .ok_or_else(|| ctx.refuse_codec_limit("Protein multiple-values attribute search", u64::MAX, u64::MAX))?;
-    ctx.charge_work(multiple_work, "Protein multiple-values attribute search")?;
-    let multiple = node.attribute("allowmultiplevalues") == Some("true");
-    let connected_work = attribute_count.checked_mul(21)
-        .ok_or_else(|| ctx.refuse_codec_limit("Protein connected-assets attribute search", u64::MAX, u64::MAX))?;
-    ctx.charge_work(connected_work, "Protein connected-assets attribute search")?;
-    let connectable = node.attribute("allowconnectedassets").is_some();
+    let multiple = schema_attribute(ctx, node, "allowmultiplevalues", "Protein multiple-values attribute search")? == Some("true");
+    let connectable = schema_attribute(ctx, node, "allowconnectedassets", "Protein connected-assets attribute search")?.is_some();
     let carrier = match node.tag_name().name() {
         "Reference" => return Ok(Some(Property::Reference { multiple })),
         "TextureURI" => {
@@ -558,10 +572,7 @@ fn schema_property(ctx: &DecodeContext<'_>, node: roxmltree::Node<'_, '_>) -> Re
         "Boolean" => ValueCarrier::Boolean,
         "Integer" | "Choice" => ValueCarrier::Integer,
         "Float" => {
-            let work = attribute_count.checked_mul(5)
-                .ok_or_else(|| ctx.refuse_codec_limit("Protein unit attribute search", u64::MAX, u64::MAX))?;
-            ctx.charge_work(work, "Protein unit attribute search")?;
-            if node.attribute("unit").is_some() { ValueCarrier::UnitFloat } else { ValueCarrier::Float }
+            if schema_attribute(ctx, node, "unit", "Protein unit attribute search")?.is_some() { ValueCarrier::UnitFloat } else { ValueCarrier::Float }
         },
         "Distance" => ValueCarrier::Distance,
         "String" | "Uuid" | "URL" => ValueCarrier::String,
@@ -735,10 +746,9 @@ fn read_property(
         ValueLayout::TextureUri => read_texture_uri(ctx, bytes, at, id),
         ValueLayout::Multiple(carrier) => {
             let count = read_count(ctx, bytes, at, id)?;
-            let mut values = ctx.collection_vec(count, "Protein multiple property members")?;
-            for _ in 0..count {
-                values.push(read_value(ctx, bytes, at, carrier, id)?);
-            }
+            let values = ctx.collect_indexed_vec(count, "Protein multiple property members", |_| {
+                read_value(ctx, bytes, at, carrier, id)
+            })?;
             ctx.charge_work(
                 cadmpeg_core::decode::u64_from_index(values.len()),
                 "Protein repeated carrier validation",
@@ -774,7 +784,7 @@ fn read_texture_uri(
     }
     let count = read_count(ctx, bytes, at, id)?;
     let mut paths = ctx.collection_vec(count, "Protein texture URI paths")?;
-    for _ in 0..count {
+    for _ in ctx.admit_iter(&(0..count), "Protein texture URI scan")? {
         paths.push(take_lp_utf8_capped(ctx, bytes, at, 1_048_576)?.ok_or_else(malformed)?);
     }
     Ok(PropertyValue::TextureUri(paths))
@@ -894,7 +904,7 @@ fn read_connections(
     }
     let count = read_count(ctx, bytes, at, "connection")?;
     let mut connections = ctx.collection_vec(count, "Protein connected asset GUIDs")?;
-    for _ in 0..count {
+    for _ in ctx.admit_iter(&(0..count), "Protein connected asset scan")? {
         connections.push(
             take_lp_utf8_capped(ctx, bytes, at, 1_048_576)?.ok_or_else(|| {
                 CodecError::Malformed("Protein property connection GUID is truncated".into())
@@ -947,6 +957,27 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
             .expect("fixture fits service profile");
         use_context(&ctx)
+    }
+
+    #[test]
+    fn schema_attribute_preserves_first_local_name_match() {
+        let document = roxmltree::Document::parse(r#"<UID xmlns:p="urn:test" p:val="first" val="second"/>"#).unwrap();
+        with_service_context(&[], |ctx| {
+            assert_eq!(super::schema_attribute(ctx, document.root_element(), "val", "attribute test").unwrap(), Some("first"));
+            assert_eq!(super::schema_attribute(ctx, document.root_element(), "missing", "attribute test").unwrap(), None);
+        });
+    }
+
+    #[test]
+    fn schema_attribute_propagates_work_refusal() {
+        let document = roxmltree::Document::parse(r#"<UID val="value"/>"#).unwrap();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::schema_attribute(&ctx, document.root_element(), "val", "attribute test").unwrap_err();
+        let CodecError::ResourceLimit(ref refusal) = error else { panic!("expected work refusal") };
+        assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
     }
 
     #[test]
