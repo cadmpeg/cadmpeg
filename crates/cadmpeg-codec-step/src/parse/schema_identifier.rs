@@ -282,7 +282,7 @@ fn schema_oid_component_form<'a>(ctx: &DecodeContext<'_>, component: &'a str) ->
     if valid_schema_oid_name(ctx, component)? {
         return Ok(ComponentForm::Unnumbered);
     }
-    let Some((name, number)) = component.split_once('(') else {
+    let Some((name, number)) = ctx.split_once(component, "(", "STEP schema object identifier number split")? else {
         return schema_oid_number_form(ctx, component);
     };
     let Some(number) = number.strip_suffix(')') else {
