@@ -2,6 +2,7 @@
 //! Intersection declaration forms and derived state-reference sequences.
 
 use crate::framing::xmt_reference::NonNullXmt;
+use cadmpeg_core::decode::cost::DecodeCost;
 use cadmpeg_ir::units::FiniteVector;
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
@@ -61,6 +62,15 @@ enum Lanes {
         start: NonNullXmt,
     },
 }
+impl DecodeCost for Lanes {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::Descending { linked, numeric } => (1_u8, (*linked).map(u32::from), numeric.as_ref().map(FiniteVector::as_raw)).decode_cost(ctx, operation),
+            Self::Prior { linked } | Self::Anchor { linked } => (1_u8, (*linked).map(u32::from)).decode_cost(ctx, operation),
+            Self::One { linked, first, start } => (1_u8, u32::from(*linked), u32::from(*first), u32::from(*start)).decode_cost(ctx, operation),
+        }
+    }
+}
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(try_from = "StateWire")]
 pub(crate) struct Type38State {
@@ -69,6 +79,11 @@ pub(crate) struct Type38State {
     leading_references: [u32; 5],
     marker: IntersectionMarker,
     lanes: Lanes,
+}
+impl DecodeCost for Type38State {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        (u32::from(self.xmt), self.node_id, &self.leading_references, u8::from(self.marker), &self.lanes).decode_cost(ctx, operation)
+    }
 }
 impl Serialize for Type38State {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {

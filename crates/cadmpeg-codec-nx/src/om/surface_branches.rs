@@ -267,7 +267,7 @@ fn surface_feature_branch_paths(
         let next = cursor + suffix_len;
         let continuations = if remaining == 1 {
             let mut continuations = Vec::new();
-            if payload.get(next..next + terminator.len()) == Some(terminator) {
+            if ctx.equal(&(payload.get(next..next + terminator.len())), &(Some(terminator)), "NX surface feature branch paths equality")? {
                 ctx.reserve_vec(&mut continuations, 1, "NX surface terminal paths")?;
                 continuations.push(Vec::new());
             }

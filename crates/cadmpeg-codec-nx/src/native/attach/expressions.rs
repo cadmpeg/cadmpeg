@@ -459,8 +459,8 @@ fn order_expression_dependencies(
                 let mut ambiguous = false;
                 for (candidate_index, candidate) in expressions.iter().enumerate() {
                     ctx.charge_work(1, "NX expression dependency lookup")?;
-                    if candidate.name.as_str() == name
-                        && candidate.unit == expression.unit
+                    if ctx.equal(&(candidate.name.as_str()), &(name), "NX order expression dependencies equality")?
+                        && ctx.equal(&(candidate.unit), &(expression.unit), "NX order expression dependencies equality")?
                         && dependency.replace(candidate_index).is_some()
                     {
                         ambiguous = true;
@@ -520,11 +520,7 @@ pub(super) fn attach_block_dimension_parameter_consumers(
             let Some(parameter_id) = expression_parameter_id(&dimension.expression) else {
                 continue;
             };
-            let Some((parameter_index, _)) = ctx.admit_iter(&ir.model.parameters, "NX block dimension parameter lookup")?
-                .enumerate()
-                .rev()
-                .find(|(_, parameter)| parameter.id == parameter_id)
-            else {
+            let Some(parameter_index) = ctx.rposition_by(&ir.model.parameters, |parameter| Ok(ctx.equal(&parameter.id, &parameter_id, "NX attach block dimension parameter consumers equality")?), "NX block dimension parameter lookup")? else {
                 continue;
             };
             let parameter = &mut ir.model.parameters[parameter_index];
@@ -537,9 +533,14 @@ pub(super) fn attach_block_dimension_parameter_consumers(
                     "NX feature projection text",
                 )?,
             )?;
-            if !ctx.admit_iter(&parameter.properties, "NX block parameter property traversal")?
-                .any(|(_, value)| value == &consumer)
-            {
+            let mut has_consumer = false;
+            for (_, value) in ctx.admit_iter(&parameter.properties, "NX block parameter property traversal")? {
+                if ctx.equal(value, &consumer, "NX attach block dimension parameter consumers equality")? {
+                    has_consumer = true;
+                    break;
+                }
+            }
+            if !has_consumer {
                 // One more candidate than the map holds entries, so one of
                 // them is free; the `else` states that rather than asserting it.
                 let mut consumer_ordinal = None;

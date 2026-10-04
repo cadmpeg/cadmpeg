@@ -2,6 +2,7 @@
 //! Type-101 bound state with derived form words.
 
 use crate::framing::xmt_reference::NonNullXmt;
+use cadmpeg_core::decode::cost::DecodeCost;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -18,6 +19,11 @@ pub(crate) struct Type101State {
     form: Form,
     last_word: u32,
     terminal_value: u64,
+}
+impl DecodeCost for Type101State {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        (&self.references, self.anchor_reference.map(u32::from), 1_u8, self.last_word, self.terminal_value).decode_cost(ctx, operation)
+    }
 }
 impl Type101State {
     pub(super) fn new(

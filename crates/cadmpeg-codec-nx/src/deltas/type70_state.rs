@@ -2,6 +2,7 @@
 //! Type-70 declaration payload and physical tail multiplicity.
 
 use crate::framing::xmt_reference::NonNullXmt;
+use cadmpeg_core::decode::cost::DecodeCost;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU16;
 
@@ -19,6 +20,11 @@ pub(crate) struct Type70State {
     references: [u32; 4],
     count: NonZeroU16,
     trailing_reference: NonNullXmt,
+}
+impl DecodeCost for Type70State {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        (u32::from(self.xmt), self.node_id, &self.references, self.count, u32::from(self.trailing_reference)).decode_cost(ctx, operation)
+    }
 }
 impl Type70State {
     pub(super) fn new(

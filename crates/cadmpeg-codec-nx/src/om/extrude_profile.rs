@@ -128,7 +128,7 @@ fn extrude_profile_reference_shape(
     for (witness_offset, candidate) in propagate_resource!(ctx.admit_iter(record.payload(), "NX extrusion witness windows").map_err(CodecError::from))
         .windows(width).enumerate() {
         if candidate.starts_with(&[0x01, count])
-            && candidate.get(2..2 + encoded_references.len()) == Some(encoded_references)
+            && propagate_resource!(ctx.equal(&(candidate.get(2..2 + encoded_references.len())), &(Some(encoded_references)), "NX extrude profile reference shape equality"))
             && candidate.ends_with(&[0x00, 0x00]) {
             if witness_start.is_some() {
                 return Some(Ok(Some((start, count, references_start, None))));

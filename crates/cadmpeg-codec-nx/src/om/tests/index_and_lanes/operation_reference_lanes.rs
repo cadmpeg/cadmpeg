@@ -634,3 +634,12 @@ fn projected_reference_candidate_range_refusal_precedes_rejection() {
         }
     });
 }
+
+#[test]
+fn pattern_transform_equality_refusal_propagates() {
+    let bytes = b"\x01\x03\x60\x01\x00\x00\x50\x54\x00\x00\x00\x01\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x02\x01\x01\x00\x00\xff\x00\x00\x60\x01\x00\x00\xd0\x54\x00\x00\x00\x01\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x9f\xfe\x01\x02\x00\x00\xff\x00\x00\x5f\x00\x00\x01";
+
+    let record = crate::om::operation_record::OperationPayload::new(bytes, 0, "Pattern Feature").unwrap();
+    let error = crate::test_support::resource_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "NX pattern transform framing equality", |ctx| crate::om::pattern_payload_transform_lane(ctx, record));
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == 4));
+}

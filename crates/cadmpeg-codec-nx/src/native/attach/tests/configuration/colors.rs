@@ -394,6 +394,9 @@ fn rm_source_color_bindings_require_one_palette_per_source_identity() {
             },
         ]
     );
+    let error = crate::test_support::resource_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "NX observe equality", |ctx| resolve_rm_source_color_bindings(ctx, &assignments));
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == 7));
+
 }
 
 fn source_color_binding_result(

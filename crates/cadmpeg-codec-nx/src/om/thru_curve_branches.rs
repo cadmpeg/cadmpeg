@@ -245,12 +245,7 @@ pub(crate) fn thru_curve_payload_branch_group(
         branches.push(branch);
         at = next;
     }
-    let Some(terminator) = ThruCurveGroupTerminator::ALL
-        .into_iter()
-        .find(|terminator| {
-            record.payload().get(at..at + terminator.bytes().len()) == Some(terminator.bytes())
-        })
-    else {
+    let Some(terminator) = ctx.find_by(&ThruCurveGroupTerminator::ALL, |terminator| Ok(ctx.equal(&record.payload().get(at..at + terminator.bytes().len()), &Some(terminator.bytes()), "NX thru curve payload branch group equality")?), "NX thru curve group terminator lookup")?.copied() else {
         return Ok(None);
     };
     let Some(offset) = record.payload_offset().checked_add(group_offset) else {

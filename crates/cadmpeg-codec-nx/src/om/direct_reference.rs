@@ -124,7 +124,7 @@ pub(crate) fn operation_reference_fields(
         let Some(suffix_end) = end.checked_add(kind.suffix().len()) else {
             continue;
         };
-        if record.payload().get(end..suffix_end) != Some(kind.suffix()) {
+        if !ctx.equal(&(record.payload().get(end..suffix_end)), &(Some(kind.suffix())), "NX operation reference fields equality")? {
             continue;
         }
         let Some(frame) = record

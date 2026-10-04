@@ -3,6 +3,7 @@
 
 use crate::framing::xmt_reference::NonNullXmt;
 use crate::iter_wire::IterWire;
+use cadmpeg_core::decode::cost::DecodeCost;
 use serde::ser::SerializeStruct;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -32,6 +33,16 @@ pub(crate) struct AttdefSlots {
     references: Vec<u32>,
     active_count: u32,
     slot_count: u32,
+}
+impl DecodeCost for AttdefState {
+    fn decode_cost(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<u64, CodecError> {
+        (u32::from(self.xmt), &self.slots).decode_cost(ctx, operation)
+    }
+}
+impl DecodeCost for AttdefSlots {
+    fn decode_cost(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<u64, CodecError> {
+        (&self.references, self.active_count, self.slot_count).decode_cost(ctx, operation)
+    }
 }
 impl AttdefState {
     pub(super) fn new(

@@ -2,6 +2,7 @@
 //! Type-100 identity, derived references, and translation-only state.
 
 use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_core::decode::cost::DecodeCost;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -9,6 +10,11 @@ use serde::{Deserialize, Serialize};
 pub(crate) struct PrecisionState {
     xmt: u32,
     translation: [FiniteReal; 3],
+}
+impl DecodeCost for PrecisionState {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        (self.xmt, self.translation.map(FiniteReal::get)).decode_cost(ctx, operation)
+    }
 }
 impl PrecisionState {
     pub(super) fn new(

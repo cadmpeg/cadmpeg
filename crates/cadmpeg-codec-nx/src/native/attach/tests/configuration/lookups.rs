@@ -127,3 +127,17 @@ fn hole_output_relation_membership_refusal_propagates() {
         if limit.dimension == ResourceDimension::WorkUnits
         && limit.operation == "NX admitted map membership"));
 }
+
+#[test]
+fn result_group_equality_cost_counts_member_text() {
+    use cadmpeg_core::decode::cost::DecodeCost;
+    let group = crate::native::attach::FeatureResultGroupMembers {
+        faces: vec![cadmpeg_core::text::NonBlankString::try_from("face-μ".to_owned()).unwrap()],
+        edges: vec![cadmpeg_core::text::NonBlankString::try_from("edge".to_owned()).unwrap()],
+        vertices: Vec::new(),
+    };
+    // Member text costs seven UTF-8 face bytes and four edge bytes.
+    crate::test_support::with_decode_context(|ctx| assert_eq!(group.decode_cost(ctx, "NX group member equality cost").unwrap(), 7 + 4));
+    let error = crate::test_support::resource_refusal_at(&[], ResourceDimension::WorkUnits, "NX group member equality cost", |ctx| ctx.equal(&group, &group, "NX group member equality cost"));
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "NX group member equality cost"));
+}
