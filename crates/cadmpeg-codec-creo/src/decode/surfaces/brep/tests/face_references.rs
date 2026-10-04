@@ -177,3 +177,28 @@ fn brep_face_references_preserve_service_loop_order() {
         ["creo:visibgeom:loop#5", "creo:visibgeom:loop#5:1"]
     );
 }
+
+#[test]
+fn brep_face_loop_index_traversal_refuses_work_and_preserves_service_order() {
+    let shell_id = ShellId::compose(&crate::identity::VISIBGEOM_SHELL, 1);
+    let references = crate::test_support::assert_work_boundaries(
+        &["creo B-rep face loop index traversal"],
+        |ctx| BrepFaceReferences::from_loops(ctx, 5, &shell_id, 2),
+    );
+    assert_eq!(
+        references
+            .loop_ids
+            .iter()
+            .map(LoopId::as_str)
+            .collect::<Vec<_>>(),
+        ["creo:visibgeom:loop#5", "creo:visibgeom:loop#5:1"]
+    );
+    assert_eq!(
+        references
+            .face_loops
+            .iter()
+            .map(LoopId::as_str)
+            .collect::<Vec<_>>(),
+        ["creo:visibgeom:loop#5", "creo:visibgeom:loop#5:1"]
+    );
+}

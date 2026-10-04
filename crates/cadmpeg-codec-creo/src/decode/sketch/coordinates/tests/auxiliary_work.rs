@@ -61,3 +61,43 @@ fn auxiliary_equation_dedup_and_tail_shift_refuse_before_each_pass() {
     assert_eq!(equations[0].rhs, 4.0);
     assert_eq!(equations[1].rhs, 6.0);
 }
+
+#[test]
+fn coordinate_solver_pass_range_refuses_work_and_preserves_service_result() {
+    let definition = crate::feature::definitions::FeatureDefinition {
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(1),
+            owner_feature_id: None,
+        },
+        body: Vec::new(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: None,
+        segments: None,
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: None,
+        dimensions: None,
+        relations: None,
+        saved_section: None,
+        offset: 0,
+    };
+    let coordinates = crate::test_support::assert_work_boundaries(
+        &["creo section solver pass scan"],
+        |ctx| {
+            let mut equations = Vec::new();
+            let mut scalar_values = BTreeMap::new();
+            super::super::solve_section_coordinates_with_derived_constraints(
+                ctx,
+                &definition,
+                &mut equations,
+                &BTreeMap::new(),
+                (&[], &[]),
+                &SectionEquationAuxiliaryConstraints::default(),
+                &mut scalar_values,
+            )
+        },
+    );
+    assert!(coordinates.is_empty());
+}

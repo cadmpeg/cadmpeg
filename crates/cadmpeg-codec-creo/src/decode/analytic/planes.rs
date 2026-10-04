@@ -714,7 +714,11 @@ fn stored_parameter_origin_sign_candidates(
     }
     let mut count = 0;
     let mask_count = 1usize << axis_count;
-    for mask in 0..mask_count {
+    let mask_range = 0..mask_count;
+    for mask in ctx.admit_iter(
+        &mask_range,
+        "creo stored plane origin sign mask traversal",
+    )? {
         let mut candidate = base;
         for (bit, axis) in ctx
             .admit_iter(&nonzero_axes[..axis_count], "creo stored plane axes")?

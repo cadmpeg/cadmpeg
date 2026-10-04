@@ -1074,3 +1074,33 @@ fn plane_candidates_refuse_surface_identity_child_scan() {
         if resource.dimension == ResourceDimension::WorkUnits
             && resource.operation == "creo plane candidate surface identity count"));
 }
+
+#[test]
+fn stored_plane_origin_sign_mask_traversal_refuses_work_and_preserves_candidates() {
+    let base = PlaneCandidate {
+        equation: PlaneEquation {
+            origin: [1.0, 2.0, 0.0],
+            normal: [1.0, 1.0, 0.0],
+        },
+        chart: None,
+        offset: 0,
+    };
+    let (candidates, count) = crate::test_support::assert_work_boundaries(
+        &["creo stored plane origin sign mask traversal"],
+        |ctx| super::super::stored_parameter_origin_sign_candidates(ctx, base),
+    );
+    assert_eq!(count, 4);
+    let origins = candidates[..count]
+        .iter()
+        .map(|candidate| candidate.equation.origin)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        origins,
+        vec![
+            [1.0, 2.0, 0.0],
+            [-1.0, 2.0, 0.0],
+            [1.0, -2.0, 0.0],
+            [-1.0, -2.0, 0.0],
+        ]
+    );
+}

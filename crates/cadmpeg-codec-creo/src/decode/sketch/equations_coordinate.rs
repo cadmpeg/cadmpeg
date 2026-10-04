@@ -821,7 +821,7 @@ fn section_remaining_variables(
     count: usize,
 ) -> Result<BTreeSet<usize>, CodecError> {
     let mut remaining = BTreeSet::new();
-    for index in 0..count {
+    for index in ctx.admit_iter(&(0..count), "creo section remaining variable scan")? {
         ctx.insert_btree_set(&mut remaining, index, "creo section remaining variables")?;
     }
     Ok(remaining)
@@ -1432,7 +1432,7 @@ fn uniquely_solved_linear_variables(
     let residual_tolerance = EPS_SOLUTION_AGREEMENT * rhs_scale;
     let mut pivot_rows = BTreeMap::new();
     let mut pivot_row = 0;
-    for column in 0..variable_count {
+    for column in ctx.admit_iter(&(0..variable_count), "creo section pivot column scan")? {
         let mut pivot_candidate_rows = ctx
             .admit_iter(
                 &matrix[pivot_row..],
@@ -1541,7 +1541,7 @@ fn uniquely_solved_linear_variables(
         return Ok(None);
     }
     let mut free_columns = Vec::new();
-    for column in 0..variable_count {
+    for column in ctx.admit_iter(&(0..variable_count), "creo section free column scan")? {
         if !pivot_rows.contains_key(&column) {
             ctx.reserve_vec(&mut free_columns, 1, "creo section free columns")?;
             free_columns.push(column);

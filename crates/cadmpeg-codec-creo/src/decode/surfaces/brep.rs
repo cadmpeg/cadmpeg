@@ -1919,7 +1919,11 @@ impl BrepFaceReferences {
             "creo B-rep face shell identity copy",
         )?;
         let mut loop_ids = Vec::new();
-        for index in 0..loop_count {
+        let loop_range = 0..loop_count;
+        for index in ctx.admit_iter(
+            &loop_range,
+            "creo B-rep face loop index traversal",
+        )? {
             ctx.reserve_vec(&mut loop_ids, 1, "creo B-rep face loop IDs")?;
             let id: LoopId = if index == 0 {
                 crate::identity::compose_checked(
