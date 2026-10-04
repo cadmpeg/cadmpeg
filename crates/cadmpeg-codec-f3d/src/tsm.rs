@@ -792,6 +792,14 @@ fn build_fan(
 
         ctx.reserve_vec(&mut fan, phantom_count, "complete T-spline fan gaps")?;
         for _ in 0..phantom_count {
+            let moved_slots = cadmpeg_core::decode::u64_from_index(fan.len() - gap - 1);
+            let move_work = moved_slots
+                .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FanSlot>()))
+                .and_then(|bytes| bytes.checked_add(moved_slots))
+                .ok_or_else(|| ctx.refuse_codec_limit(
+                    "move T-spline fan slots", u64::MAX - 1, u64::MAX,
+                ))?;
+            ctx.charge_work(move_work, "move T-spline fan slots")?;
             fan.insert(gap + 1, FanSlot::Phantom);
         }
     }
@@ -2605,6 +2613,31 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "complete T-spline fan gaps")
         );
+    }
+
+    #[test]
+    fn tsm_fan_phantom_moves_preserve_work_refusal() {
+        let half_edges = [super::HalfEdge {
+            next: super::HalfEdgeId(0),
+            previous: super::HalfEdgeId(0),
+            mate: super::HalfEdgeId(0),
+            vertex: 0,
+            face: None,
+        }];
+        crate::test_support::with_decode_context(|ctx| {
+            let fan = super::build_fan(ctx, "synthetic.tsm", 0, 0, &half_edges, &[]).unwrap();
+            assert_eq!(fan.len(), 4);
+            assert!(matches!(fan[0], super::FanSlot::Slot { half_edge: 0, face: None }));
+            assert!(fan[1..].iter().all(|slot| matches!(slot, super::FanSlot::Phantom)));
+        });
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "move T-spline fan slots",
+            0,
+            |ctx| super::build_fan(ctx, "synthetic.tsm", 0, 0, &half_edges, &[]).map(|_| ()),
+        );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "move T-spline fan slots"));
     }
 
     #[test]

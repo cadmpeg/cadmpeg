@@ -466,6 +466,19 @@ pub(crate) enum DesignBaseFeatureResults {
     },
 }
 
+/// Actual backing sources for the passive body-reference values in a Base Feature.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum DesignBaseFeatureBodyReferenceSource<'a> {
+    ResultRows(&'a [DesignBaseFeatureResultBody]),
+    RepeatedResultRows {
+        first: &'a DesignBaseFeatureResultBody,
+        rest: &'a [(DesignBaseFeatureResultBody, [u8; 6])],
+    },
+    LegacyRows(&'a [DesignLegacyBaseFeatureBody]),
+    SingleBody(&'a u32),
+    Empty,
+}
+
 impl DesignBaseFeatureResults {
     pub(crate) fn iter(&self) -> impl ExactSizeIterator<Item = &DesignBaseFeatureResultBody> {
         let count = match self {
@@ -1083,20 +1096,28 @@ impl DesignBaseFeatureConstruction {
         })
     }
 
-    /// Return passive body-reference records for forms that carry them.
-    pub(crate) fn body_reference_records(&self) -> impl Iterator<Item = u32> + '_ {
-        let (results, legacy, single) = match self {
-            Self::ResultBodies { bodies, .. } => (Some(bodies), &[][..], None),
-            Self::LegacyBodyBasedOnFaces { form, .. } => (None, form.bodies(), None),
-            Self::BodyBasedOnFaces { body, .. } => (None, &[][..], Some(body.value)),
-            Self::BodySnapshot { .. } => (None, &[][..], None),
-        };
-        results
-            .into_iter()
-            .flat_map(DesignBaseFeatureResults::iter)
-            .map(|body| body.reference.value)
-            .chain(legacy.iter().map(|body| body.entity.value))
-            .chain(single)
+    /// Return the actual backing sources for passive body-reference records.
+    pub(crate) fn body_reference_records(&self) -> DesignBaseFeatureBodyReferenceSource<'_> {
+        match self {
+            Self::ResultBodies { bodies, .. } => match bodies {
+                DesignBaseFeatureResults::WithoutRepeatedFields(rows) => {
+                    DesignBaseFeatureBodyReferenceSource::ResultRows(rows)
+                }
+                DesignBaseFeatureResults::WithRepeatedFields { first, rest } => {
+                    DesignBaseFeatureBodyReferenceSource::RepeatedResultRows {
+                        first: &first.0,
+                        rest,
+                    }
+                }
+            },
+            Self::LegacyBodyBasedOnFaces { form, .. } => {
+                DesignBaseFeatureBodyReferenceSource::LegacyRows(form.bodies())
+            }
+            Self::BodyBasedOnFaces { body, .. } => {
+                DesignBaseFeatureBodyReferenceSource::SingleBody(&body.value)
+            }
+            Self::BodySnapshot { .. } => DesignBaseFeatureBodyReferenceSource::Empty,
+        }
     }
 }
 

@@ -848,7 +848,8 @@ fn mesh_texture_table_copy_refuses_collection_limit() {
 #[test]
 fn mesh_texture_table_index_refuses_collection_limit() {
     let arena = DecodeArena::new();
-    let ctx = context(&arena, 0);
+    // One copied texture row precedes the texture-table map slot.
+    let ctx = context(&arena, 1);
     let mut tables = std::collections::HashMap::new();
     let error = super::super::insert_mesh_texture_table(
         &ctx,
@@ -941,7 +942,8 @@ fn mesh_scope_tessellation_index_refuses_collection_limit() {
         &mut index,
         "f3d:Design/BulkStream.dat",
         10,
-        ["tessellation:one"],
+        ctx.admit_iter(&["tessellation:one"], "scan F3D mesh scope body bindings").unwrap(),
+        |id| Some(*id),
     )
     .unwrap_err();
     assert!(
@@ -961,7 +963,8 @@ fn mesh_feature_scope_index_refuses_collection_limit() {
         &mut index,
         "f3d:Design/BulkStream.dat",
         10,
-        ["tessellation:one"],
+        ctx.admit_iter(&["tessellation:one"], "scan F3D mesh scope body bindings").unwrap(),
+        |id| Some(*id),
     )
     .unwrap_err();
     assert!(
@@ -1173,6 +1176,27 @@ fn metadata_unknown_id_refuses_retained_limit() {
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D native record ID")
     );
+}
+
+#[test]
+fn metadata_unknown_identity_scan_preserves_work_refusal() {
+    let bytes = crate::test_support::zip_test::synthetic_f3d(true);
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (scan_ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let scan = crate::container::scan(&scan_ctx, root).unwrap();
+    let brep = crate::container::select_fallback_brep(&scan_ctx, &scan).unwrap().unwrap();
+    let mut unknowns = Vec::new();
+    super::super::append_metadata_unknown(&scan_ctx, &mut unknowns, brep).unwrap();
+    assert_eq!(unknowns.len(), 1);
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "admit F3D metadata unknown identity",
+        0,
+        |ctx| super::super::append_metadata_unknown(ctx, &mut Vec::new(), brep),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "admit F3D metadata unknown identity"));
 }
 
 #[test]

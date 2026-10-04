@@ -21,6 +21,7 @@ use crate::history_records::{
     AsmHistoricalRelation, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
     AsmHistoricalTransition, AsmHistory, AsmHistoryRecord, AsmPreamble,
 };
+use crate::records::feature::base_feature::DesignBaseFeatureBodyReferenceSource;
 use crate::records::topology::{
     body_recipe::AsmHistoricalEntityKind, extrude_selection::DesignOperandRole,
 };
@@ -1706,7 +1707,7 @@ pub(crate) fn bind_feature_body_selections(
                             admitted!(ctx.reserve_vec(&mut native_tools, 1, "collect F3D Combine tool identities"));
                             native_tools.push(native);
                         }
-                        let current_history_source = historical_brep_source(&state.id);
+                        let current_history_source = admitted!(historical_brep_source(ctx, &state.id));
                         let mut historical_tool_rows = Vec::new();
                         let mut direct_tool_rows = Vec::new();
                         for (record_index, native) in operation.tools.iter()
@@ -3611,7 +3612,7 @@ fn bind_entity_face_groups(
             }
             let local = candidate.history_id == operation_history_id
                 && candidate.historical.state_ids.contains(&previous_state_id);
-            let Some(source) = historical_brep_source(&candidate.history_id) else {
+            let Some(source) = historical_brep_source(ctx, &candidate.history_id)? else {
                 return Ok(());
             };
             if !selected.contains(&(source, candidate.face_slot, local)) {
@@ -3698,7 +3699,7 @@ fn bind_hole_face_selection(
     };
     let local = candidate.history_id == operation_history_id
         && candidate.historical.state_ids.contains(&previous_state_id);
-    let Some(source) = historical_brep_source(&candidate.history_id) else {
+    let Some(source) = historical_brep_source(ctx, &candidate.history_id)? else {
         return Ok(());
     };
     let state_id = crate::ids::history_input_state_id_charged(ctx, feature_id, previous_state_id)?;
@@ -5142,14 +5143,40 @@ pub(crate) fn bind_scope_histories(
                 .is_none()
             {
                 let binding = &body_bindings[binding_index];
-                let mut matching = candidates.iter().filter(|history| {
-                    historical_brep_source(&history.id).is_some_and(|source| {
-                        binding.blob_name().strip_prefix("BREP.") == Some(source)
-                    })
-                });
-                if let Some(history) = matching.next().filter(|_| matching.next().is_none()) {
-                    insert_scope_history_binding(decode, &mut resolved, &scope.id, &history.id)?;
-                    continue;
+                let mut matches_binding_source = |history: &&AsmHistory| {
+                    let Some(source) = historical_brep_source(decode, &history.id)? else {
+                        return Ok(false);
+                    };
+                    let Some(blob_source) = decode.strip_prefix(
+                        binding.blob_name(),
+                        "BREP.",
+                        "strip F3D output BREP prefix",
+                    )? else {
+                        return Ok(false);
+                    };
+                    decode.equal(
+                        blob_source,
+                        source,
+                        "compare F3D output BREP source",
+                    )
+                };
+                if let Some(history_index) = decode.position_by(
+                    candidates.as_slice(),
+                    &mut matches_binding_source,
+                    "find F3D output BREP history",
+                )? {
+                    if decode
+                        .position_by(
+                            &candidates.as_slice()[history_index + 1..],
+                            &mut matches_binding_source,
+                            "find F3D output BREP history",
+                        )?
+                        .is_none()
+                    {
+                        let history = candidates[history_index];
+                        insert_scope_history_binding(decode, &mut resolved, &scope.id, &history.id)?;
+                        continue;
+                    }
                 }
             }
         }
@@ -5175,7 +5202,9 @@ pub(crate) fn bind_scope_histories(
                         "scan F3D body recipe candidate faces",
                     )? {
                         let matches_source = match source {
-                            Some(source) => active_brep_face_matches_source(face, source),
+                            Some(source) => {
+                                active_brep_face_matches_source(decode, face, source)?
+                            }
                             None => true,
                         };
                         if matches_source {
@@ -5193,7 +5222,7 @@ pub(crate) fn bind_scope_histories(
                 candidates.as_slice(),
                 "scan F3D candidate face histories",
             )? {
-                let Some(source) = historical_brep_source(&history.id) else {
+                let Some(source) = historical_brep_source(decode, &history.id)? else {
                     continue;
                 };
                 if candidate_has_face(Some(source))? {
@@ -5216,64 +5245,135 @@ pub(crate) fn bind_scope_histories(
         };
         let mut referenced_history_id = None;
         let mut ambiguous_referenced_history = false;
-        for suffix in construction.body_reference_records() {
-            let mut binding_matches_reference =
-                |binding: &crate::records::bodies::DesignBodyBinding| {
-                    Ok(crate::ids::same_native_occurrence(decode, binding.id(), &scope.id)?
-                        && binding.entity_suffix == u64::from(suffix))
+        {
+            let mut resolve_body_reference =
+                |suffix: u32| -> Result<bool, cadmpeg_core::CodecError> {
+                    if ambiguous_referenced_history {
+                        return Ok(true);
+                    }
+                    let mut binding_matches_reference =
+                        |binding: &crate::records::bodies::DesignBodyBinding| {
+                            Ok(crate::ids::same_native_occurrence(
+                                decode,
+                                binding.id(),
+                                &scope.id,
+                            )? && binding.entity_suffix == u64::from(suffix))
+                        };
+                    let Some(binding_index) = decode.position_by(
+                        body_bindings,
+                        &mut binding_matches_reference,
+                        "find F3D referenced body binding",
+                    )? else {
+                        return Ok(false);
+                    };
+                    if decode
+                        .position_by(
+                            &body_bindings[binding_index + 1..],
+                            &mut binding_matches_reference,
+                            "find F3D referenced body binding",
+                        )?
+                        .is_some()
+                    {
+                        return Ok(false);
+                    }
+                    let binding = &body_bindings[binding_index];
+                    let mut history_matches_binding = |history: &&AsmHistory| {
+                        let Some(source) = historical_brep_source(decode, &history.id)? else {
+                            return Ok(false);
+                        };
+                        let Some(blob_source) = decode.strip_prefix(
+                            binding.blob_name(),
+                            "BREP.",
+                            "strip F3D referenced BREP prefix",
+                        )? else {
+                            return Ok(false);
+                        };
+                        decode.equal(
+                            blob_source,
+                            source,
+                            "compare F3D referenced BREP source",
+                        )
+                    };
+                    let Some(history_index) = decode.position_by(
+                        candidates.as_slice(),
+                        &mut history_matches_binding,
+                        "find F3D referenced BREP history",
+                    )? else {
+                        return Ok(false);
+                    };
+                    if decode
+                        .position_by(
+                            &candidates.as_slice()[history_index + 1..],
+                            &mut history_matches_binding,
+                            "find F3D referenced BREP history",
+                        )?
+                        .is_some()
+                    {
+                        return Ok(false);
+                    }
+                    let history_id = candidates[history_index].id.as_str();
+                    if let Some(previous_history_id) = referenced_history_id {
+                        if !decode.equal(
+                            previous_history_id,
+                            history_id,
+                            "compare F3D referenced history IDs",
+                        )? {
+                            ambiguous_referenced_history = true;
+                            return Ok(true);
+                        }
+                    } else {
+                        referenced_history_id = Some(history_id);
+                    }
+                    Ok(false)
                 };
-            let Some(binding_index) = decode.position_by(
-                body_bindings,
-                &mut binding_matches_reference,
-                "find F3D referenced body binding",
-            )? else {
-                continue;
-            };
-            if decode
-                .position_by(
-                    &body_bindings[binding_index + 1..],
-                    &mut binding_matches_reference,
-                    "find F3D referenced body binding",
-                )?
-                .is_some()
-            {
-                continue;
-            }
-            let binding = &body_bindings[binding_index];
-            let mut history_matches_binding = |history: &&AsmHistory| {
-                let Some(source) = historical_brep_source(&history.id) else {
-                    return Ok(false);
-                };
-                let Some(blob_source) = binding.blob_name().strip_prefix("BREP.") else {
-                    return Ok(false);
-                };
-                Ok(blob_source == source)
-            };
-            let Some(history_index) = decode.position_by(
-                candidates.as_slice(),
-                &mut history_matches_binding,
-                "find F3D referenced BREP history",
-            )? else {
-                continue;
-            };
-            if decode
-                .position_by(
-                    &candidates.as_slice()[history_index + 1..],
-                    &mut history_matches_binding,
-                    "find F3D referenced BREP history",
-                )?
-                .is_some()
-            {
-                continue;
-            }
-            let history_id = candidates[history_index].id.as_str();
-            if let Some(previous_history_id) = referenced_history_id {
-                if previous_history_id != history_id {
-                    ambiguous_referenced_history = true;
-                    break;
+            match construction.body_reference_records() {
+                DesignBaseFeatureBodyReferenceSource::ResultRows(
+                    rows,
+                ) => {
+                    for row in decode.admit_iter(rows, "scan F3D body reference rows")? {
+                        if resolve_body_reference(row.reference.value)? {
+                            break;
+                        }
+                    }
                 }
-            } else {
-                referenced_history_id = Some(history_id);
+                DesignBaseFeatureBodyReferenceSource::RepeatedResultRows {
+                    first,
+                    rest,
+                } => {
+                    let first_rows = decode.admit_iter(
+                        std::slice::from_ref(first),
+                        "scan F3D first body reference row",
+                    )?;
+                    let repeated_rows =
+                        decode.admit_iter(rest, "scan F3D repeated body reference rows")?;
+                    for row in first_rows.chain(repeated_rows.map(|(row, _)| row)) {
+                        if resolve_body_reference(row.reference.value)? {
+                            break;
+                        }
+                    }
+                }
+                DesignBaseFeatureBodyReferenceSource::LegacyRows(
+                    rows,
+                ) => {
+                    for row in decode.admit_iter(rows, "scan F3D legacy body reference rows")? {
+                        if resolve_body_reference(row.entity.value)? {
+                            break;
+                        }
+                    }
+                }
+                DesignBaseFeatureBodyReferenceSource::SingleBody(
+                    suffix,
+                ) => {
+                    for suffix in decode.admit_iter(
+                        std::slice::from_ref(suffix),
+                        "scan F3D single body reference",
+                    )? {
+                        if resolve_body_reference(*suffix)? {
+                            break;
+                        }
+                    }
+                }
+                DesignBaseFeatureBodyReferenceSource::Empty => {}
             }
         }
         if !ambiguous_referenced_history {
@@ -5993,21 +6093,21 @@ pub(crate) fn bind_face_operand_history_candidates(
         if let Some(candidates) = &thread_face_candidates {
             // Thread's first prefix reference is its exclusive selection lane.
             // An unresolved lane must not fall back to construction context.
-            operand.resolved_face_slots =
+            let resolved = match
                 crate::design::face_resolve::resolve_face_operand_history_candidate_from(
                     operand, candidates,
-                )
-                .or_else(|| {
-                    resolve_thread_face_by_transition(
-                        scope,
-                        candidates,
-                        history,
-                        topology,
-                        &changed_faces,
-                    )
-                })
-                .into_iter()
-                .collect();
+                ) {
+                Some(face) => Some(face),
+                None => resolve_thread_face_by_transition(
+                    decode,
+                    scope,
+                    candidates,
+                    history,
+                    topology,
+                    &changed_faces,
+                )?,
+            };
+            operand.resolved_face_slots = resolved.into_iter().collect();
         }
         if let Some(candidates) = &grouped_reference_face_candidates {
             // A grouped frame's unique changed topology-face reference is its
@@ -6056,12 +6156,14 @@ pub(crate) fn bind_face_operand_history_candidates(
         }
         if operand.resolved_face_slots.is_empty() {
             if let Some(candidates) = legacy_face_candidates {
+                let history_source = historical_brep_source(decode, &history.id)?;
                 match select_legacy_extrude_face_candidate(
+                    decode,
                     candidates,
                     topology,
                     &changed_faces,
-                    historical_brep_source(&history.id),
-                ) {
+                    history_source,
+                )? {
                     Some(LegacyFaceResolution::Historical(slot)) => {
                         operand.resolved_face_slots = vec![slot];
                     }
@@ -6368,25 +6470,43 @@ fn effective_faces(
 }
 
 fn resolve_thread_face_by_transition(
+    decode: &cadmpeg_core::decode::DecodeContext<'_>,
     scope: &crate::records::feature::scope::DesignParameterScope,
     candidates: &[cadmpeg_ir::ids::FaceId],
     history: &AsmHistory,
     topology: &AsmHistoricalTopology,
     changed_faces: &HashSet<i64>,
-) -> Option<i64> {
-    let construction = scope.thread_construction()?;
-    let source = historical_brep_source(&history.id)?;
-    let mut source_candidates = candidates
-        .iter()
-        .filter(|face| active_brep_face_matches_source(face, source));
-    source_candidates.next()?;
-    if source_candidates.next().is_some() {
-        return None;
+) -> Result<Option<i64>, cadmpeg_core::CodecError> {
+    let Some(construction) = scope.thread_construction() else {
+        return Ok(None);
+    };
+    let Some(source) = historical_brep_source(decode, &history.id)? else {
+        return Ok(None);
+    };
+    let mut is_source_face = |face: &cadmpeg_ir::ids::FaceId| {
+        active_brep_face_matches_source(decode, face, source)
+    };
+    let Some(source_face_index) = decode.position_by(
+        candidates,
+        &mut is_source_face,
+        "find F3D Thread source face candidate",
+    )? else {
+        return Ok(None);
+    };
+    if decode
+        .position_by(
+            &candidates[source_face_index + 1..],
+            &mut is_source_face,
+            "find additional F3D Thread source face candidate",
+        )?
+        .is_some()
+    {
+        return Ok(None);
     }
     let minimum_radius = construction.diameters.minor() * 5.0;
     let maximum_radius = construction.diameters.major() * 5.0;
     if !minimum_radius.is_finite() || !maximum_radius.is_finite() {
-        return None;
+        return Ok(None);
     }
     let tolerance = EPS_HISTORY_RESOLVE_THREAD_FACE_BY_TRANSITION_E9 * (1.0 + maximum_radius.abs());
     let mut matching_faces = topology
@@ -6413,10 +6533,12 @@ fn resolve_thread_face_by_transition(
                 && cylinder.radius <= maximum_radius + tolerance)
                 .then_some(face)
         });
-    let face = matching_faces.next()?;
-    matching_faces
+    let Some(face) = matching_faces.next() else {
+        return Ok(None);
+    };
+    Ok(matching_faces
         .all(|candidate| candidate == face)
-        .then_some(face)
+        .then_some(face))
 }
 
 fn grouped_reference_face_candidate(
@@ -6713,18 +6835,49 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
         if face_changes_across_state_chain(decode, state, previous.state_id, &states)?.is_none() {
             continue;
         }
-        let Some(source) = historical_brep_source(&previous.id) else {
+        let Some(source) = historical_brep_source(decode, &previous.id)? else {
             continue;
         };
         for reference in operand.reference_bindings_mut() {
-            *reference.preceding_candidate_faces = selection::faces_in_topology(
-                decode,
-                reference
-                    .candidate_faces
-                    .iter()
-                    .filter(|face| active_brep_face_matches_source(face, source)),
-                topology,
-            )?;
+            let mut topology_faces_storage =
+                decode.reserve_scoped(0, "index F3D topology faces")?;
+            let mut topology_faces = HashSet::new();
+            topology_faces_storage.with_storage(|| {
+                for face_slot in
+                    decode.admit_iter(&topology.faces, "scan F3D topology faces")?
+                {
+                    decode.insert_hash_set(
+                        &mut topology_faces,
+                        *face_slot,
+                        "index F3D topology faces",
+                    )?;
+                }
+                Ok::<(), cadmpeg_core::CodecError>(())
+            })?;
+            let mut preceding_candidate_faces = Vec::new();
+            for face in decode.admit_iter(
+                reference.candidate_faces.as_slice(),
+                "scan F3D body recipe candidate faces",
+            )? {
+                if !active_brep_face_matches_source(decode, face, source)? {
+                    continue;
+                }
+                let Some(face_slot) = stable_ref(face.as_str()) else {
+                    continue;
+                };
+                if topology_faces.contains(&face_slot) {
+                    let face = face.try_clone_for_decode(
+                        decode,
+                        "copy F3D historical face identity",
+                    )?;
+                    decode.push_vec(
+                        &mut preceding_candidate_faces,
+                        face,
+                        "collect F3D faces in topology",
+                    )?;
+                }
+            }
+            *reference.preceding_candidate_faces = preceding_candidate_faces;
             let mut face_slots = BTreeSet::new();
             for face in reference
                 .preceding_candidate_faces
@@ -7078,14 +7231,38 @@ fn complete_body_face_slots(
     Ok((!faces.is_empty()).then_some(faces))
 }
 
-fn active_brep_face_matches_source(face: &cadmpeg_ir::ids::FaceId, source: &str) -> bool {
-    face.as_str().starts_with("f3d:brep:entity#") || face_in_brep_source(face.as_str(), source)
+fn active_brep_face_matches_source(
+    decode: &cadmpeg_core::decode::DecodeContext<'_>,
+    face: &cadmpeg_ir::ids::FaceId,
+    source: &str,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    if decode.starts_with(
+        face.as_str(),
+        "f3d:brep:entity#",
+        "match F3D default BREP face prefix",
+    )? {
+        Ok(true)
+    } else {
+        face_in_brep_source(decode, face.as_str(), source)
+    }
 }
 
-fn face_in_brep_source(id: &str, source: &str) -> bool {
-    id.strip_prefix("f3d:brep/")
-        .and_then(|tail| tail.strip_prefix(source))
-        .is_some_and(|tail| tail.starts_with('/'))
+fn face_in_brep_source(
+    decode: &cadmpeg_core::decode::DecodeContext<'_>,
+    id: &str,
+    source: &str,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    let Some(tail) = decode.strip_prefix(
+        id,
+        "f3d:brep/",
+        "strip F3D BREP face prefix",
+    )? else {
+        return Ok(false);
+    };
+    let Some(tail) = decode.strip_prefix(tail, source, "strip F3D BREP source")? else {
+        return Ok(false);
+    };
+    decode.starts_with(tail, "/", "match F3D BREP source separator")
 }
 
 #[derive(Debug, PartialEq)]
@@ -7095,44 +7272,80 @@ enum LegacyFaceResolution {
 }
 
 fn select_legacy_extrude_face_candidate(
+    decode: &cadmpeg_core::decode::DecodeContext<'_>,
     mut candidates: Vec<cadmpeg_ir::ids::FaceId>,
     topology: &AsmHistoricalTopology,
     changed_faces: &HashSet<i64>,
     history_source: Option<&str>,
-) -> Option<LegacyFaceResolution> {
+) -> Result<Option<LegacyFaceResolution>, cadmpeg_core::CodecError> {
     for changed_only in [true, false] {
-        let mut faces = candidates.iter().filter(|face| {
-            stable_ref(face.as_str()).is_some_and(|slot| {
-                topology.faces.contains(&slot) && (!changed_only || changed_faces.contains(&slot))
-            })
-        });
-        let face = faces.next();
-        if faces.next().is_none() {
-            let Some(face) = face else {
-                continue;
+        let mut matches_historical_face = |face: &cadmpeg_ir::ids::FaceId| {
+            let Some(slot) = stable_ref(face.as_str()) else {
+                return Ok(false);
             };
-            if let Some(slot) = stable_ref(face.as_str()) {
-                return Some(LegacyFaceResolution::Historical(slot));
+            if !decode.contains(
+                &topology.faces,
+                &slot,
+                "find F3D legacy Extrude topology face",
+            )? {
+                return Ok(false);
+            }
+            if changed_only
+                && !decode.contains_hash_set(
+                    changed_faces,
+                    &slot,
+                    "find F3D legacy Extrude changed face",
+                )?
+            {
+                return Ok(false);
+            }
+            Ok(true)
+        };
+        let Some(face_index) = decode.position_by(
+            &candidates,
+            &mut matches_historical_face,
+            "find F3D legacy Extrude history face",
+        )? else {
+            continue;
+        };
+        if decode
+            .position_by(
+                &candidates[face_index + 1..],
+                &mut matches_historical_face,
+                "find additional F3D legacy Extrude history face",
+            )?
+            .is_none()
+        {
+            if let Some(slot) = stable_ref(candidates[face_index].as_str()) {
+                return Ok(Some(LegacyFaceResolution::Historical(slot)));
             }
         }
     }
     if let Some(source) = history_source {
-        let unique_index = {
-            let mut matches = candidates
-                .iter()
-                .enumerate()
-                .filter(|(_, face)| face_in_brep_source(face.as_str(), source));
-            let first = matches.next().map(|(index, _)| index);
-            first.filter(|_| matches.next().is_none())
+        let mut matches_source_face = |face: &cadmpeg_ir::ids::FaceId| {
+            face_in_brep_source(decode, face.as_str(), source)
         };
-        if let Some(index) = unique_index {
-            return Some(LegacyFaceResolution::Active(candidates.swap_remove(index)));
+        if let Some(index) = decode.position_by(
+            &candidates,
+            &mut matches_source_face,
+            "find F3D legacy Extrude source face",
+        )? {
+            if decode
+                .position_by(
+                    &candidates[index + 1..],
+                    &mut matches_source_face,
+                    "find additional F3D legacy Extrude source face",
+                )?
+                .is_none()
+            {
+                return Ok(Some(LegacyFaceResolution::Active(candidates.swap_remove(index))));
+            }
         }
     }
     if candidates.len() == 1 {
-        candidates.pop().map(LegacyFaceResolution::Active)
+        Ok(candidates.pop().map(LegacyFaceResolution::Active))
     } else {
-        None
+        Ok(None)
     }
 }
 
@@ -7152,13 +7365,34 @@ fn body_member<B>(
     )
 }
 
-fn historical_brep_source(state_id: &str) -> Option<&str> {
-    state_id
-        .rsplit_once("/BREP.")
-        .or_else(|| state_id.rsplit_once("BREP."))?
-        .1
-        .split_once(":asm-")
-        .map(|(source, _)| source)
+fn historical_brep_source<'text>(
+    decode: &cadmpeg_core::decode::DecodeContext<'_>,
+    state_id: &'text str,
+) -> Result<Option<&'text str>, cadmpeg_core::CodecError> {
+    let brep_suffix = match decode.rsplit_once(
+        state_id,
+        "/BREP.",
+        "find F3D historical BREP source",
+    )? {
+        Some((_, suffix)) => suffix,
+        None => {
+            let Some((_, suffix)) = decode.rsplit_once(
+                state_id,
+                "BREP.",
+                "find F3D historical BREP source",
+            )? else {
+                return Ok(None);
+            };
+            suffix
+        }
+    };
+    Ok(decode
+        .split_once(
+            brep_suffix,
+            ":asm-",
+            "find F3D BREP assembly delimiter",
+        )?
+        .map(|(source, _)| source))
 }
 
 fn resolve_direct_face_recipe_clauses(

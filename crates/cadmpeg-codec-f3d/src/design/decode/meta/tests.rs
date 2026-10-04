@@ -216,8 +216,9 @@ fn design_primary_frames_charge_registration_and_frame_storage() {
     };
     let arena = DecodeArena::new();
     for (allowance, operation) in [
-        (0, "frame F3D primary records"),
-        (1, "index F3D primary entities"),
+        // Primary-index entries precede retained frame slots.
+        (0, "index F3D primary entities"),
+        (1, "frame F3D primary records"),
         (2, "f3d registered primary entities"),
         (3, "f3d design primary frames"),
     ] {
@@ -262,8 +263,9 @@ fn typed_primary_frames_charge_all_collections() {
     let arena = DecodeArena::new();
     for (allowance, operation) in [
         (0, "f3d typed primary entities"),
-        (1, "frame F3D primary records"),
-        (2, "index F3D primary entities"),
+        // One typed-entity slot precedes primary-index and frame slots.
+        (1, "index F3D primary entities"),
+        (2, "frame F3D primary records"),
         (3, "f3d registered primary entities"),
         (4, "f3d design primary frames"),
         (5, "f3d resolved primary entities"),

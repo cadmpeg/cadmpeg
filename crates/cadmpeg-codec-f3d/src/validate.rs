@@ -85,6 +85,23 @@ fn body_recipe_reference_table_is_admitted(
         || decode.any_by(&operation.tools.additional, |tool| Ok(tool.record_index == operand.record_index()), "find F3D body recipe Combine tool")?)
 }
 
+fn reference_member_at<'values, T, O>(
+    decode: &DecodeContext<'_>,
+    references: &'values crate::records::identity::ReferenceRun<T, O>,
+    ordinal: usize,
+    operation: &'static str,
+) -> Result<Option<&'values T>, CodecError> {
+    let (plain, located) = references.storage_slices();
+    Ok(decode
+        .admit_iter(plain, operation)?
+        .chain(
+            decode
+                .admit_iter(located, operation)?
+                .map(|reference| &reference.value),
+        )
+        .nth(ordinal))
+}
+
 fn valid_assembly_operand_path_link(
     scope: &records::feature::scope::DesignParameterScope,
     path: &records::feature::assembly::DesignAssemblyOperandPath,
@@ -5923,19 +5940,30 @@ fn validate_construction_operand_identities<'a>(
                 });
         let persistent_shape = match identity.persistent_identity() { None => true, Some(persistent) => {
             (match selected_profile { None => true, Some(profile) => ctx.decode.equal(&profile.asset_id, &persistent.asset_id, "compare F3D construction persistent asset identities")? })
-                && (persistent.next_record_index != 0
-                    || (identity
-                        .following_byte_offset()
-                        .checked_add(190)
-                        .is_some_and(|expected_offset| {
-                            persistent.next_byte_offset() == expected_offset
-                        })
-                        && !ctx.decode.admit_iter(records_by_index, "find F3D construction persistent terminal header")?
-                            .try_fold(false, |found, (_, header)| -> Result<bool, CodecError> {
-                                if found { return Ok(true); }
-                                Ok(ctx.decode.equal(design_stream(&header.id), native_stream, "compare F3D construction terminal streams")?
-                                    && header.byte_offset == persistent.next_byte_offset())
-                            })?))
+                && (if persistent.next_record_index != 0 {
+                    true
+                } else if identity.following_byte_offset().checked_add(190)
+                    != Some(persistent.next_byte_offset())
+                {
+                    false
+                } else {
+                    let mut terminal_header_found = false;
+                    for (_, header) in ctx.decode.admit_iter(
+                        records_by_index,
+                        "find F3D construction persistent terminal header",
+                    )? {
+                        if ctx.decode.equal(
+                            design_stream(&header.id),
+                            native_stream,
+                            "compare F3D construction terminal streams",
+                        )? && header.byte_offset == persistent.next_byte_offset()
+                        {
+                            terminal_header_found = true;
+                            break;
+                        }
+                    }
+                    !terminal_header_found
+                })
                 && ctx.decode.get_hash_map(records_by_index, &(native_stream, persistent.next_record_index), "find F3D construction persistent next record")?
                     // The header arena indexes records named by Design entity
                     // reference lists. A nested identity can terminate at a
@@ -6393,49 +6421,102 @@ fn validate_extrude_selection_members(
         let selected_profile = selected_scope.and_then(|scope| scope.extrude_profile());
         let selected_sketch =
             selected_profile.and_then(|profile| u32::try_from(profile.entity_id.suffix()).ok());
-        let point_targets = native.sketch_points.iter().filter_map(|point| {
-            (selected_sketch.is_some()
-                && design_stream(&point.id) == native_stream
-                && point.owner_reference == selected_sketch
-                && point.persistent_id() == Some(member.local_id))
-            .then_some(records::sketch_relations::SketchRelationOperand::Point {
-                record_index: point.record_index,
-                persistent_id: point.persistent_id(),
-            })
-        });
-        let curve_targets = native.sketch_curve_identities.iter().filter_map(|curve| {
-            (selected_sketch.is_some()
-                && design_stream(&curve.id) == native_stream
-                && curve.owner_reference == selected_sketch
-                && (curve.primary_id.get() == member.local_id
-                    || curve.secondary_id != 0 && curve.secondary_id == member.local_id))
-                .then_some(records::sketch_relations::SketchRelationOperand::Curve {
-                    record_index: curve.record_index,
-                    primary_id: curve.primary_id.get(),
-                    secondary_id: curve.secondary_id,
-                })
-        });
-        let mut targets = point_targets.chain(curve_targets);
-        let first_target = targets.next();
-        let expected_target = if targets.next().is_none() {
-            first_target
-        } else {
-            None
-        };
-        let mut expected_identities = ctx.decode.collect_vec(
-            ctx.decode.admit_iter(&native.design_construction_operand_identities, "admit source for collect F3D Extrude selection identities")?
-                .filter(|identity| {
-                    design_stream(&identity.id) == native_stream
-                        && identity.following_record_index() == member.record_index()
-                        && identity.following_byte_offset() == member.byte_offset()
-                        && identity.persistent_identity().is_some_and(|persistent| {
-                            persistent.local_id == member.local_id
-                                && persistent.asset_id == member.asset_id
-                                && persistent.context_id == member.context_id
-                        })
-                }),
-            "collect F3D Extrude selection identities",
-        )?;
+        let mut first_target = None;
+        let mut multiple_targets = false;
+        for point in ctx.decode.admit_iter(
+            &native.sketch_points,
+            "scan F3D Extrude selection point targets",
+        )? {
+            if let Some(selected_sketch) = selected_sketch {
+                if ctx.decode.equal(
+                    design_stream(&point.id),
+                    native_stream,
+                    "compare F3D Extrude point target streams",
+                )? && point.owner_reference == Some(selected_sketch)
+                    && point.persistent_id() == Some(member.local_id)
+                {
+                    let target = records::sketch_relations::SketchRelationOperand::Point {
+                        record_index: point.record_index,
+                        persistent_id: point.persistent_id(),
+                    };
+                    if first_target.is_some() {
+                        multiple_targets = true;
+                        break;
+                    }
+                    first_target = Some(target);
+                }
+            }
+        }
+        if !multiple_targets {
+            for curve in ctx.decode.admit_iter(
+                &native.sketch_curve_identities,
+                "scan F3D Extrude selection curve targets",
+            )? {
+                if let Some(selected_sketch) = selected_sketch {
+                    if ctx.decode.equal(
+                        design_stream(&curve.id),
+                        native_stream,
+                        "compare F3D Extrude curve target streams",
+                    )? && curve.owner_reference == Some(selected_sketch)
+                        && (curve.primary_id.get() == member.local_id
+                            || curve.secondary_id != 0
+                                && curve.secondary_id == member.local_id)
+                    {
+                        let target = records::sketch_relations::SketchRelationOperand::Curve {
+                            record_index: curve.record_index,
+                            primary_id: curve.primary_id.get(),
+                            secondary_id: curve.secondary_id,
+                        };
+                        if first_target.is_some() {
+                            multiple_targets = true;
+                            break;
+                        }
+                        first_target = Some(target);
+                    }
+                }
+            }
+        }
+        let expected_target = if multiple_targets { None } else { first_target };
+        let mut expected_identities_storage =
+            ctx.decode.reserve_scoped(0, "collect F3D Extrude selection identities")?;
+        let mut expected_identities = Vec::new();
+        for identity in ctx.decode.admit_iter(
+            &native.design_construction_operand_identities,
+            "scan F3D Extrude selection identities",
+        )? {
+            if !ctx.decode.equal(
+                design_stream(&identity.id),
+                native_stream,
+                "compare F3D Extrude selection identity streams",
+            )? || identity.following_record_index() != member.record_index()
+                || identity.following_byte_offset() != member.byte_offset()
+            {
+                continue;
+            }
+            let Some(persistent) = identity.persistent_identity() else {
+                continue;
+            };
+            if persistent.local_id != member.local_id
+                || !ctx.decode.equal(
+                    &persistent.asset_id,
+                    &member.asset_id,
+                    "compare F3D Extrude selection asset identities",
+                )?
+                || !ctx.decode.equal(
+                    &persistent.context_id,
+                    &member.context_id,
+                    "compare F3D Extrude selection context identities",
+                )?
+            {
+                continue;
+            }
+            ctx.decode.push_scoped_vec(
+                &mut expected_identities_storage,
+                &mut expected_identities,
+                identity,
+                "collect F3D Extrude selection identities",
+            )?;
+        }
         ctx.decode.stable_sort_by_key(
             &mut expected_identities,
             |value| value.wrappers().first().map(|wrapper| wrapper.byte_offset),
@@ -6458,43 +6539,85 @@ fn validate_extrude_selection_members(
                     )?
                     .len()
                     == binding.state_ids.len()
-                    && binding.state_ids.iter().all(|state_id| {
-                        native
-                            .asm_histories
-                            .iter()
-                            .flat_map(|history| &history.states)
-                            .any(|state| state.state_id == *state_id)
-                    })
+                    && ctx.decode.all_by(
+                        &binding.state_ids,
+                        |state_id| {
+                            ctx.decode.any_by(
+                                &native.asm_histories,
+                                |history| {
+                                    ctx.decode.any_by(
+                                        &history.states,
+                                        |state| Ok(state.state_id == *state_id),
+                                        "find F3D Extrude selection history state",
+                                    )
+                                },
+                                "find F3D Extrude selection history state",
+                            )
+                        },
+                        "validate F3D Extrude selection history states",
+                    )?
             } else {
                 true
             }
         } else {
-            expected_history
-                .as_ref()
-                .map(|(kind, entity_ref, states)| (*kind, *entity_ref, states.as_slice()))
-                == member.historical.as_ref().map(|binding| {
+            ctx.decode.equal(
+                &expected_history
+                    .as_ref()
+                    .map(|(kind, entity_ref, states)| (*kind, *entity_ref, states.as_slice())),
+                &member.historical.as_ref().map(|binding| {
                     (
                         binding.kind,
                         binding.entity_ref,
                         binding.state_ids.as_slice(),
                     )
-                })
+                }),
+                "compare F3D Extrude selection history identities",
+            )?
         };
-        let terminal_next = member.next_record_index == 0
-            && !records_by_index.values().any(|header| {
-                design_stream(&header.id) == native_stream
-                    && header.byte_offset == member.next_byte_offset()
-            });
+        let terminal_next = if member.next_record_index != 0 {
+            false
+        } else {
+            let mut next_header_found = false;
+            for (_, header) in ctx.decode.admit_iter(
+                records_by_index,
+                "find F3D Extrude selection next header",
+            )? {
+                if ctx.decode.equal(
+                    design_stream(&header.id),
+                    native_stream,
+                    "compare F3D Extrude selection next header streams",
+                )? && header.byte_offset == member.next_byte_offset()
+                {
+                    next_header_found = true;
+                    break;
+                }
+            }
+            !next_header_found
+        };
         let valid = group.is_some_and(|group| {
             usize::try_from(member.group_member_ordinal)
                 .ok()
                 .and_then(|ordinal| group.members().get(ordinal))
                 .map(|reference| reference.value)
                 == Some(member.record_index())
-        }) && header.is_some_and(|header| {
-            header.byte_offset == member.byte_offset() && header.class_tag == member.class_tag
-        }) && selected_profile
-            .is_none_or(|profile| profile.asset_id == member.asset_id)
+        }) && (match header {
+            Some(header) => {
+                header.byte_offset == member.byte_offset()
+                    && ctx.decode.equal(
+                        &header.class_tag,
+                        &member.class_tag,
+                        "compare F3D Extrude selection member class tags",
+                    )?
+            }
+            None => false,
+        }) && (match selected_profile {
+            Some(profile) => ctx.decode.equal(
+                &profile.asset_id,
+                &member.asset_id,
+                "compare F3D Extrude selection profile assets",
+            )?,
+            None => true,
+        })
             && member.resolved_geometry == expected_target
             && member
                 .operand_identity_ids
@@ -6553,8 +6676,16 @@ fn validate_entity_selection_operands(
                     .ok()
                     .and_then(|ordinal| group.members().get(ordinal).map(|member| &member.value))
                     == Some(&operand.record_index())
-        }) && header.is_some_and(|header| {
-            header.byte_offset == operand.byte_offset() && header.class_tag == *operand.class_tag()
+        }) && (match header {
+            Some(header) => {
+                header.byte_offset == operand.byte_offset()
+                    && ctx.decode.equal(
+                        &header.class_tag,
+                        operand.class_tag(),
+                        "compare F3D entity selection class tags",
+                    )?
+            }
+            None => false,
         }) && ctx.decode.insert_hash_set(
             &mut entity_selection_slots,
             (
@@ -6588,42 +6719,92 @@ fn validate_extrude_selection_group_members(
     let members_by_slot = &ctx.members_by_slot;
     for group in ctx.decode.admit_iter(&native.design_extrude_selection_groups, "scan F3D design extrude selection groups")? {
         let native_stream = design_stream(&group.id);
-        let complete = (0..group.members().len()).all(|ordinal| {
-            let Ok(ordinal) = u32::try_from(ordinal) else {
-                return false;
+        let mut complete = true;
+        for (index, _) in ctx
+            .decode
+            .admit_iter(group.members(), "validate F3D Extrude selection member frames")?
+            .enumerate()
+        {
+            let Ok(ordinal) = u32::try_from(index) else {
+                complete = false;
+                break;
             };
-            let Some(member) = members_by_slot.get(&(native_stream, group.record_index, ordinal))
-            else {
-                return false;
+            let Some(member) = ctx.decode.get_hash_map(
+                members_by_slot,
+                &(native_stream, group.record_index, ordinal),
+                "find F3D Extrude selection member",
+            )? else {
+                complete = false;
+                break;
             };
             let next = usize::try_from(ordinal)
                 .ok()
-                .and_then(|ordinal| group.members().get(ordinal + 1));
-            next.is_none_or(|next_record_index| {
+                .and_then(|ordinal| ordinal.checked_add(1))
+                .and_then(|next_index| group.members().get(next_index));
+            if let Some(next_record_index) = next {
                 let Some(next_ordinal) = ordinal.checked_add(1) else {
-                    return false;
+                    complete = false;
+                    break;
                 };
-                let next_member =
-                    members_by_slot.get(&(native_stream, group.record_index, next_ordinal));
-                member.next_record_index == next_record_index.value
-                    && next_member.is_some_and(|next_member| {
+                let next_member = ctx.decode.get_hash_map(
+                    members_by_slot,
+                    &(native_stream, group.record_index, next_ordinal),
+                    "find F3D next Extrude selection member",
+                )?;
+                if member.next_record_index != next_record_index.value
+                    || !next_member.is_some_and(|next_member| {
                         member.next_byte_offset() == next_member.byte_offset()
                     })
-            })
-        });
-        let context_id = ctx.decode.get_hash_map(members_by_slot,
-            &(native_stream, group.record_index, 0), "find F3D first group member")?
+                {
+                    complete = false;
+                    break;
+                }
+            }
+        }
+        let context_id = ctx
+            .decode
+            .get_hash_map(
+                members_by_slot,
+                &(native_stream, group.record_index, 0),
+                "find F3D first group member",
+            )?
             .map(|member| member.context_id.as_str());
-        let context_consistent = context_id.is_some_and(|context_id| {
-            (0..group.members().len()).all(|ordinal| {
-                u32::try_from(ordinal)
-                    .ok()
-                    .and_then(|ordinal| {
-                        members_by_slot.get(&(native_stream, group.record_index, ordinal))
-                    })
-                    .is_some_and(|member| member.context_id.as_str() == context_id)
-            })
-        });
+        let context_consistent = if let Some(context_id) = context_id {
+            let mut consistent = true;
+            for (index, _) in ctx
+                .decode
+                .admit_iter(
+                    group.members(),
+                    "validate F3D Extrude selection member contexts",
+                )?
+                .enumerate()
+            {
+                let Ok(ordinal) = u32::try_from(index) else {
+                    consistent = false;
+                    break;
+                };
+                let member = ctx.decode.get_hash_map(
+                    members_by_slot,
+                    &(native_stream, group.record_index, ordinal),
+                    "find F3D Extrude selection context",
+                )?;
+                let Some(member) = member else {
+                    consistent = false;
+                    break;
+                };
+                if !ctx.decode.equal(
+                    member.context_id.as_str(),
+                    context_id,
+                    "compare F3D Extrude selection contexts",
+                )? {
+                    consistent = false;
+                    break;
+                }
+            }
+            consistent
+        } else {
+            false
+        };
         if !(complete && context_consistent) {
             ctx.push_constant_finding(
                 findings,
@@ -6751,37 +6932,63 @@ fn validate_edge_operands<'a>(
                 )?;
             }
         }
-        let expected_surface_patch_recipe_structure = scope
-            .filter(|scope| {
-                scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfacePatch
-            })
-            .map(|_| {
-                design::decode::operands::surface_patch_recipe_structure_with_context(
+        let expected_surface_patch_recipe_structure = match scope {
+            Some(scope)
+                if ctx.decode.equal(
+                    &scope.kind(),
+                    &crate::records::feature::scope::DesignFeatureKind::SurfacePatch,
+                    "compare F3D SurfacePatch scope kind",
+                )? => design::decode::operands::surface_patch_recipe_structure_with_context(
                     ctx.decode,
                     &operand.recipe_program,
                     operand.recipe_references.len(),
-                )
-            })
-            .transpose()?
-            .flatten();
-        let terminal_group_member = native
-            .design_construction_operand_groups
-            .iter()
-            .any(|group| {
-                design_stream(&group.id) == native_stream
-                    && group.scope_record_index == operand.scope_record_index
-                    && group.members().last().map(|member| &member.value)
-                        == Some(&operand.record_index())
-            });
-        let valid = scope.is_some_and(|scope| {
-            design::decode::operands::has_edge_recipe_operands(&scope.kind())
-                && usize::try_from(operand.scope_reference_ordinal)
-                    .ok()
-                    .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
+                )?,
+            _ => None,
+        };
+        let mut terminal_group_member = false;
+        for group in ctx.decode.admit_iter(
+            &native.design_construction_operand_groups,
+            "find F3D terminal edge operand group",
+        )? {
+            if ctx.decode.equal(
+                design_stream(&group.id),
+                native_stream,
+                "compare F3D terminal edge group streams",
+            )? && group.scope_record_index == operand.scope_record_index
+                && group.members().last().map(|member| &member.value)
                     == Some(&operand.record_index())
-        }) && header.is_some_and(|header| {
-            header.byte_offset == operand.byte_offset() && header.class_tag == operand.class_tag
-        }) && (operand
+            {
+                terminal_group_member = true;
+                break;
+            }
+        }
+        let valid = match scope {
+            Some(scope) => {
+                design::decode::operands::has_edge_recipe_operands(&scope.kind())
+                    && match usize::try_from(operand.scope_reference_ordinal) {
+                        Ok(ordinal) => {
+                            reference_member_at(
+                                ctx.decode,
+                                scope.reference_members(),
+                                ordinal,
+                                "find F3D edge operand scope reference",
+                            )? == Some(&operand.record_index())
+                        }
+                        Err(_) => false,
+                    }
+            }
+            None => false,
+        } && match header {
+            Some(header) => {
+                header.byte_offset == operand.byte_offset()
+                    && ctx.decode.equal(
+                        &header.class_tag,
+                        &operand.class_tag,
+                        "compare F3D edge operand class tags",
+                    )?
+            }
+            None => false,
+        } && (operand
             .record_index()
             .checked_add(scope.map_or(4, |scope| {
                 design::decode::operands::edge_recipe_terminal_delta(&scope.kind())
@@ -6799,18 +7006,40 @@ fn validate_edge_operands<'a>(
                 &expected_references,
                 historical_candidates_retained,
             )?
-            && recipe.is_some_and(|recipe| {
-                design_stream(&recipe.id) == native_stream
-                    && recipe.kind == crate::records::recipes::ConstructionRecipeKind::Edge
-                    && recipe.byte_offset > operand.recipe_record_byte_offset()
-                    && recipe.byte_offset < operand.next_byte_offset()
-            })
-            && design::decode::operands::edge_recipe_structure_with_context(
-                ctx.decode,
-                &operand.recipe_program,
-            )? == operand.recipe_structure
-            && expected_surface_patch_recipe_structure == operand.surface_patch_recipe_structure
-            && (historical_candidates_retained || expected_faces == operand.candidate_faces)
+            && match recipe {
+                Some(recipe) => {
+                    ctx.decode.equal(
+                        design_stream(&recipe.id),
+                        native_stream,
+                        "compare F3D edge recipe streams",
+                    )? && ctx.decode.equal(
+                        &recipe.kind,
+                        &records::recipes::ConstructionRecipeKind::Edge,
+                        "compare F3D edge recipe kinds",
+                    )? && recipe.byte_offset > operand.recipe_record_byte_offset()
+                        && recipe.byte_offset < operand.next_byte_offset()
+                }
+                None => false,
+            }
+            && ctx.decode.equal(
+                &design::decode::operands::edge_recipe_structure_with_context(
+                    ctx.decode,
+                    &operand.recipe_program,
+                )?,
+                &operand.recipe_structure,
+                "compare F3D edge recipe structures",
+            )?
+            && ctx.decode.equal(
+                &expected_surface_patch_recipe_structure,
+                &operand.surface_patch_recipe_structure,
+                "compare F3D SurfacePatch recipe structures",
+            )?
+            && (historical_candidates_retained
+                || ctx.decode.equal(
+                    &expected_faces,
+                    &operand.candidate_faces,
+                    "compare F3D edge operand candidate faces",
+                )?)
             && ctx.decode.get_hash_map(&expected_edge_operands, operand.id.as_str(), "find F3D expected operand")? == Some(&operand);
         let valid = valid
             && ctx.decode.insert_hash_set(
@@ -6888,36 +7117,89 @@ fn validate_edge_treatment_vertex_operands<'a>(
     for operand in ctx.decode.admit_iter(&native.design_edge_treatment_vertex_operands, "scan F3D design edge treatment vertex operands")? {
         let stream = design_stream(&operand.id);
         let scope = ctx.decode.get_hash_map(&ctx.scopes_by_index, &(stream, operand.scope_record_index), "find F3D validation linked record")?;
-        let mut groups = native
-            .design_construction_operand_groups
-            .iter()
-            .filter(|group| {
-                design_stream(&group.id) == stream
-                    && group.scope_record_index == operand.scope_record_index
-                    && group.record_index == operand.group_record_index
-            });
-        let group = groups.next();
+        let mut groups = ctx.decode.admit_iter(
+            &native.design_construction_operand_groups,
+            "find F3D edge-treatment vertex groups",
+        )?;
+        let group = loop {
+            let Some(group) = groups.next() else {
+                break None;
+            };
+            if ctx.decode.equal(
+                design_stream(&group.id),
+                stream,
+                "compare F3D edge-treatment vertex group streams",
+            )? && group.scope_record_index == operand.scope_record_index
+                && group.record_index == operand.group_record_index
+            {
+                break Some(group);
+            }
+        };
         let expected_id = crate::ids::native_scoped_id_charged(
             decode,
             stream,
             "edge-treatment-vertex-operand",
             operand.recipe.byte_offset(),
         )?;
-        let valid = operand.id == expected_id
-            && scope.is_some_and(|scope| {
-                design::decode::operands::has_edge_recipe_operands(&scope.kind())
-                    && usize::try_from(operand.scope_reference_ordinal)
-                        .ok()
-                        .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
-                        == Some(&operand.recipe.record_index())
-            })
-            && group.is_some_and(|group| {
-                usize::try_from(operand.group_member_ordinal)
+        let id_valid = ctx.decode.equal(
+            &operand.id,
+            &expected_id,
+            "compare F3D edge-treatment vertex operand ids",
+        )?;
+        let scope_valid = if id_valid {
+            match scope {
+                Some(scope) => {
+                    design::decode::operands::has_edge_recipe_operands(&scope.kind())
+                        && match usize::try_from(operand.scope_reference_ordinal) {
+                            Ok(ordinal) => {
+                                reference_member_at(
+                                    ctx.decode,
+                                    scope.reference_members(),
+                                    ordinal,
+                                    "find F3D edge-treatment vertex scope reference",
+                                )? == Some(&operand.recipe.record_index())
+                            }
+                            Err(_) => false,
+                        }
+                }
+                None => false,
+            }
+        } else {
+            false
+        };
+        let group_member_valid = if id_valid && scope_valid {
+            match group {
+                Some(group) => usize::try_from(operand.group_member_ordinal)
                     .ok()
                     .and_then(|ordinal| group.members().get(ordinal).map(|member| &member.value))
-                    == Some(&operand.recipe.record_index())
-            })
-            && groups.next().is_none()
+                    == Some(&operand.recipe.record_index()),
+                None => false,
+            }
+        } else {
+            false
+        };
+        let unique_group = if id_valid && scope_valid && group_member_valid {
+            let mut found_duplicate = false;
+            for group in groups {
+                if ctx.decode.equal(
+                    design_stream(&group.id),
+                    stream,
+                    "compare F3D edge-treatment vertex group streams",
+                )? && group.scope_record_index == operand.scope_record_index
+                    && group.record_index == operand.group_record_index
+                {
+                    found_duplicate = true;
+                    break;
+                }
+            }
+            !found_duplicate
+        } else {
+            false
+        };
+        let valid = id_valid
+            && scope_valid
+            && group_member_valid
+            && unique_group
             && ctx.decode.get_hash_map(&expected, operand.id.as_str(), "find F3D expected operand")? == Some(&operand);
         let valid = valid
             && ctx.decode.insert_hash_set(
@@ -6957,32 +7239,53 @@ fn validate_edge_treatment_groups<'a>(
         )
     }) {
         let native_stream = design_stream(&scope.id);
-        let mut groups = native
-            .design_construction_operand_groups
-            .iter()
-            .filter(|group| {
-                design_stream(&group.id) == native_stream
-                    && group.scope_record_index == scope.record_index
-            })
-            .peekable();
-        let complete = groups.peek().is_some()
-            && groups.all(|group| {
-                let recipe_backed =
-                    group
-                        .members()
-                        .iter()
-                        .map(|member| &member.value)
-                        .all(|member| {
-                            edge_operand_records.contains(&(native_stream, *member))
-                                || edge_treatment_vertex_records.contains(&(native_stream, *member))
-                        });
-                let identity_backed = group
-                    .members()
-                    .iter()
-                    .map(|member| &member.value)
-                    .all(|member| edge_identity_records.contains(&(native_stream, *member)));
-                recipe_backed || identity_backed
-            });
+        let mut has_groups = false;
+        let mut complete = true;
+        for group in ctx.decode.admit_iter(
+            &native.design_construction_operand_groups,
+            "scan F3D edge-treatment groups",
+        )? {
+            if !ctx.decode.equal(
+                design_stream(&group.id),
+                native_stream,
+                "compare F3D edge-treatment group streams",
+            )? || group.scope_record_index != scope.record_index
+            {
+                continue;
+            }
+            has_groups = true;
+            let recipe_backed = ctx.decode.all_by(
+                group.members(),
+                |member| {
+                    Ok(ctx.decode.contains_hash_set(
+                        edge_operand_records,
+                        &(native_stream, member.value),
+                        "find F3D edge-treatment recipe member",
+                    )? || ctx.decode.contains_hash_set(
+                        edge_treatment_vertex_records,
+                        &(native_stream, member.value),
+                        "find F3D edge-treatment vertex member",
+                    )?)
+                },
+                "validate F3D edge-treatment recipe members",
+            )?;
+            let identity_backed = ctx.decode.all_by(
+                group.members(),
+                |member| {
+                    ctx.decode.contains_hash_set(
+                        edge_identity_records,
+                        &(native_stream, member.value),
+                        "find F3D edge-treatment identity member",
+                    )
+                },
+                "validate F3D edge-treatment identity members",
+            )?;
+            if !recipe_backed && !identity_backed {
+                complete = false;
+                break;
+            }
+        }
+        complete = has_groups && complete;
         if !complete {
             ctx.push_constant_finding(
                 findings,
@@ -7065,7 +7368,8 @@ fn validate_face_operands<'a>(
             Ord::cmp,
             "f3d face operand expected faces sort",
         )?;
-        expected_faces.dedup();
+        ctx.decode
+            .dedup_vec(&mut expected_faces, "deduplicate F3D expected operand faces")?;
         let mut expected_references =
             design::decode::dimension_frames::decode_recipe_references_charged(
                 ctx.decode,
@@ -7118,7 +7422,10 @@ fn validate_face_operands<'a>(
             Ord::cmp,
             "f3d face operand alternate selector faces sort",
         )?;
-        expected_alternate_selector_faces.dedup();
+        ctx.decode.dedup_vec(
+            &mut expected_alternate_selector_faces,
+            "deduplicate F3D alternate selector operand faces",
+        )?;
         let Some(recipe_window) = std::num::NonZeroUsize::new(3) else {
             return Err(CodecError::Malformed("F3D face recipe window is empty".into()));
         };
@@ -7150,37 +7457,79 @@ fn validate_face_operands<'a>(
                 }
                 Some(design::decode::operands::FaceRecipeProgramKind::Counted { .. }) => {
                     operand.recipe_nodes.len() == expected_nodes.len()
-                        && operand.recipe_nodes.iter().zip(expected_nodes).try_fold(true,
+                    && ctx.decode.admit_iter(
+                        &operand.recipe_nodes,
+                        "scan F3D face recipe nodes",
+                    )?.zip(ctx.decode.admit_iter(
+                        &expected_nodes,
+                        "scan F3D expected face recipe nodes",
+                    )?).try_fold(true,
                             |valid, (node, (start, end))| -> Result<bool, CodecError> {
  if !valid { return Ok(false); }
  Ok(
-                                node.byte_offset == start
-                                    && node.end_byte_offset == end
+                                node.byte_offset == *start
+                                    && node.end_byte_offset == *end
                                     && node.program.get(0..3) == Some(&[-1, -1, 2])
-                                    && node.recipe_structure
-                                        == node.program.get(3..).map(
+                                    && ctx.decode.equal(
+                                        &node.recipe_structure,
+                                        &node.program.get(3..).map(
                                             |program| design::decode::operands::face_recipe_structure_with_context(ctx.decode, program),
-                                        ).transpose()?.flatten()
-                                    && u64_from_index(node.program.len()).checked_mul(4).and_then(|delta| start.checked_add(delta)).is_some_and(|expected_offset| expected_offset == end)
+                                        ).transpose()?.flatten(),
+                                        "compare F3D face recipe structures",
+                                    )?
+                                    && u64_from_index(node.program.len()).checked_mul(4).and_then(|delta| (*start).checked_add(delta)).is_some_and(|expected_offset| expected_offset == *end)
                             )},
                         )?
-                        && operand.recipe_nodes.first().is_none_or(|first_node| {
-                            first_node
+                        && match operand.recipe_nodes.first() {
+                            None => true,
+                            Some(first_node) => match first_node
                                 .byte_offset
                                 .checked_sub(operand.recipe_program_offset)
                                 .and_then(|byte_offset| usize::try_from(byte_offset / 4).ok())
-                                .is_some_and(|first_node_index| {
-                                    operand
-                                        .recipe_nodes
-                                        .iter()
-                                        .flat_map(|node| node.program.iter().copied())
-                                        .eq(operand
-                                            .recipe_program
-                                            .iter()
-                                            .copied()
-                                            .skip(first_node_index))
-                                })
-                        })
+                            {
+                                None => false,
+                                Some(first_node_index) => {
+                                    if first_node_index > operand.recipe_program.len() {
+                                        false
+                                    } else {
+                                        let mut program_offset = first_node_index;
+                                        let mut programs_match = true;
+                                        for node in ctx.decode.admit_iter(
+                                            &operand.recipe_nodes,
+                                            "scan F3D face recipe node programs",
+                                        )? {
+                                            let Some(end_offset) =
+                                                program_offset.checked_add(node.program.len())
+                                            else {
+                                                return Err(ctx.decode.refuse_codec_limit(
+                                                    "compare F3D face recipe node programs",
+                                                    u64::MAX,
+                                                    u64::MAX,
+                                                ));
+                                            };
+                                            let Some(expected_program) = operand
+                                                .recipe_program
+                                                .get(program_offset..end_offset)
+                                            else {
+                                                programs_match = false;
+                                                break;
+                                            };
+                                            if !ctx.decode.equal(
+                                                node.program.as_slice(),
+                                                expected_program,
+                                                "compare F3D face recipe node programs",
+                                            )? {
+                                                programs_match = false;
+                                                break;
+                                            }
+                                            program_offset = end_offset;
+                                        }
+                                        programs_match
+                                            && program_offset == operand.recipe_program.len()
+                                    }
+                                }
+                            },
+                        }
                 }
                 None => false,
             };
@@ -7194,19 +7543,27 @@ fn validate_face_operands<'a>(
                     let group = ctx.decode.get_hash_map(&face_groups_by_index,
                         &(native_stream, group_record_index), "find F3D face operand group")?
                         .copied();
-                    let exact_group_member = group.is_some_and(|group| {
-                        group.scope_record_index == operand.scope_record_index
-                            && usize::try_from(operand.scope_reference_ordinal)
-                                .ok()
-                                .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
-                                == Some(&group_record_index)
-                            && usize::try_from(group_member_ordinal)
-                                .ok()
-                                .and_then(|ordinal| {
-                                    group.members().get(ordinal).map(|member| &member.value)
-                                })
-                                == Some(&operand.record_index())
-                    });
+                    let exact_group_member = match group {
+                        Some(group) => {
+                            group.scope_record_index == operand.scope_record_index
+                                && match usize::try_from(operand.scope_reference_ordinal) {
+                                    Ok(ordinal) => reference_member_at(
+                                        ctx.decode,
+                                        scope.reference_members(),
+                                        ordinal,
+                                        "find F3D face operand scope reference",
+                                    )? == Some(&group_record_index),
+                                    Err(_) => false,
+                                }
+                                && usize::try_from(group_member_ordinal)
+                                    .ok()
+                                    .and_then(|ordinal| {
+                                        group.members().get(ordinal).map(|member| &member.value)
+                                    })
+                                    == Some(&operand.record_index())
+                        }
+                        None => false,
+                    };
                     exact_group_member
                         && match family {
                             Some(
@@ -7290,18 +7647,32 @@ fn validate_face_operands<'a>(
                             ) => {
                                 operand.recipe_kind
                                     == records::recipes::ConstructionRecipeKind::BoundedFace
-                                    && native.design_edge_identity_operands.iter().any(|identity| {
-                                        design_stream(&identity.id) == native_stream
-                                            && identity.scope_record_index
+                                    && ctx.decode.any_by(
+                                        &native.design_edge_identity_operands,
+                                        |identity| {
+                                            Ok(ctx.decode.equal(
+                                                design_stream(&identity.id),
+                                                native_stream,
+                                                "compare F3D face identity streams",
+                                            )? && identity.scope_record_index
                                                 == operand.scope_record_index
-                                            && identity.group_record_index == group_record_index
-                                            && identity.group_member_ordinal == group_member_ordinal
-                                            && identity.record_index() == operand.record_index()
-                                            && identity.class_tag == operand.class_tag
-                                    })
+                                                && identity.group_record_index == group_record_index
+                                                && identity.group_member_ordinal == group_member_ordinal
+                                                && identity.record_index() == operand.record_index()
+                                                && ctx.decode.equal(
+                                                    &identity.class_tag,
+                                                    &operand.class_tag,
+                                                    "compare F3D face identity class tags",
+                                                )?)
+                                        },
+                                        "find F3D face edge identity",
+                                    )?
                             }
-                            None if scope.kind()
-                                == crate::records::feature::scope::DesignFeatureKind::SplitFace =>
+                            None if ctx.decode.equal(
+                                &scope.kind(),
+                                &crate::records::feature::scope::DesignFeatureKind::SplitFace,
+                                "compare F3D SplitFace scope kind",
+                            )? =>
                             {
                                 group.is_some_and(|group| {
                                     group.role() == DesignOperandRole::ROLE_0X10
@@ -7323,10 +7694,15 @@ fn validate_face_operands<'a>(
                         }
                 }
                 (None, None) => {
-                    let direct_member = usize::try_from(operand.scope_reference_ordinal)
-                        .ok()
-                        .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
-                        == Some(&operand.record_index());
+                    let direct_member = match usize::try_from(operand.scope_reference_ordinal) {
+                        Ok(ordinal) => reference_member_at(
+                            ctx.decode,
+                            scope.reference_members(),
+                            ordinal,
+                            "find F3D direct face operand scope reference",
+                        )? == Some(&operand.record_index()),
+                        Err(_) => false,
+                    };
                     direct_member
                         && match family {
                             Some(
@@ -7342,8 +7718,11 @@ fn validate_face_operands<'a>(
                                     == records::recipes::ConstructionRecipeKind::BoundedFace
                             }
                             Some(design::DesignFeatureFamily::Assemble)
-                                if scope.kind()
-                                    == crate::records::feature::scope::DesignFeatureKind::AsBuilt
+                                if ctx.decode.equal(
+                                    &scope.kind(),
+                                    &crate::records::feature::scope::DesignFeatureKind::AsBuilt,
+                                    "compare F3D AsBuilt scope kind",
+                                )?
                                     && design::assembly::legacy_as_built_421_generation(
                                         scope.frame_length(),
                                         scope.class_tag.as_str(),
@@ -7362,9 +7741,17 @@ fn validate_face_operands<'a>(
                 }
                 _ => false,
             }
-        }}) && header.is_some_and(|header| {
-            header.byte_offset == operand.byte_offset() && header.class_tag == operand.class_tag
-        }) && operand
+        }}) && match header {
+            Some(header) => {
+                header.byte_offset == operand.byte_offset()
+                    && ctx.decode.equal(
+                        &header.class_tag,
+                        &operand.class_tag,
+                        "compare F3D face operand class tags",
+                    )?
+            }
+            None => false,
+        } && operand
             .recipe_prefix_offset().checked_add(u64_from_index(operand.recipe_prefix_bytes.len())).zip(recipe.and_then(|recipe| recipe.byte_offset.checked_sub(4))).is_some_and(|(prefix_end, recipe_prefix_end)| prefix_end == recipe_prefix_end)
             && recipe_reference_frames_match(
                 ctx.decode,
@@ -7386,17 +7773,36 @@ fn validate_face_operands<'a>(
                 || face_ids_match_refs(ctx.decode, &operand.unreferenced_candidate_faces, &expected_unreferenced_faces)?)
             && (historical_candidates_retained
                 || face_ids_match_refs(ctx.decode, &operand.alternate_selector_candidate_faces, &expected_alternate_selector_faces)?)
-            && expected_history.is_some_and(|expected| {
-                operand.preceding_candidate_faces == expected.preceding_candidate_faces
-                    && operand.changed_candidate_faces == expected.changed_candidate_faces
-                    && operand.historical_support_contexts == expected.historical_support_contexts
-            })
-            && recipe.is_some_and(|recipe| {
-                design_stream(&recipe.id) == native_stream
-                    && recipe.kind == operand.recipe_kind
-                    && recipe.byte_offset > operand.recipe_record_byte_offset()
-                    && recipe.byte_offset < operand.next_byte_offset()
-            });
+            && match expected_history {
+                Some(expected) => {
+                    ctx.decode.equal(
+                        &operand.preceding_candidate_faces,
+                        &expected.preceding_candidate_faces,
+                        "compare F3D preceding face candidates",
+                    )? && ctx.decode.equal(
+                        &operand.changed_candidate_faces,
+                        &expected.changed_candidate_faces,
+                        "compare F3D changed face candidates",
+                    )? && ctx.decode.equal(
+                        &operand.historical_support_contexts,
+                        &expected.historical_support_contexts,
+                        "compare F3D historical face support contexts",
+                    )?
+                }
+                None => false,
+            }
+            && match recipe {
+                Some(recipe) => {
+                    ctx.decode.equal(
+                        design_stream(&recipe.id),
+                        native_stream,
+                        "compare F3D face recipe streams",
+                    )? && recipe.kind == operand.recipe_kind
+                        && recipe.byte_offset > operand.recipe_record_byte_offset()
+                        && recipe.byte_offset < operand.next_byte_offset()
+                }
+                None => false,
+            };
         let valid = valid
             && ctx.decode.insert_hash_set(
                 &mut face_operand_records,
@@ -7495,43 +7901,91 @@ fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result
             group.carrier_class_tag.as_str(),
             group.paired_class_tag.as_str(),
         );
-        let scope_links_valid = scope.is_some_and(|scope| {
-            scope.kind() == crate::records::feature::scope::DesignFeatureKind::Face
-                && carrier_ordinal
-                    .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
-                    == Some(&group.carrier_record_index)
-                && carrier_ordinal
-                    .and_then(|ordinal| ordinal.checked_add(1))
-                    .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
-                    == Some(&group.paired_record_index)
-        });
-        let headers_valid = carrier_header.is_some_and(|header| {
-            header.byte_offset == group.carrier_span.start()
-                && header.class_tag == group.carrier_class_tag
-        }) && paired_header.is_some_and(|header| {
-            header.byte_offset == group.carrier_span.end()
-                && header.class_tag == group.paired_class_tag
-        });
-        let source_offsets_valid = source_spec.is_some_and(|layout| {
-            let Ok(source_reference_offset) = u64::try_from(layout.source_reference_offset) else {
-                return false;
-            };
-            group
-                .source_members
-                .iter()
-                .enumerate()
-                .all(|(ordinal, member)| {
-                    let Ok(ordinal) = u64::try_from(ordinal) else {
-                        return false;
-                    };
-                    group
-                        .carrier_span
-                        .start()
-                        .checked_add(source_reference_offset)
-                        .and_then(|offset| offset.checked_add(ordinal.checked_mul(11)?))
-                        == Some(member.offset)
-                })
-        });
+        let scope_links_valid = match scope {
+            Some(scope)
+                if ctx.decode.equal(
+                    &scope.kind(),
+                    &crate::records::feature::scope::DesignFeatureKind::Face,
+                    "compare F3D face-source scope kind",
+                )? =>
+            {
+                match carrier_ordinal {
+                    Some(ordinal) => {
+                        reference_member_at(
+                            ctx.decode,
+                            scope.reference_members(),
+                            ordinal,
+                            "find F3D face-source carrier reference",
+                        )? == Some(&group.carrier_record_index)
+                            && match ordinal.checked_add(1) {
+                                Some(ordinal) => reference_member_at(
+                                    ctx.decode,
+                                    scope.reference_members(),
+                                    ordinal,
+                                    "find F3D face-source paired reference",
+                                )? == Some(&group.paired_record_index),
+                                None => false,
+                            }
+                    }
+                    None => false,
+                }
+            }
+            _ => false,
+        };
+        let headers_valid = match carrier_header {
+            Some(header) => {
+                header.byte_offset == group.carrier_span.start()
+                    && ctx.decode.equal(
+                        &header.class_tag,
+                        &group.carrier_class_tag,
+                        "compare F3D face-source carrier class tags",
+                    )?
+            }
+            None => false,
+        } && match paired_header {
+            Some(header) => {
+                header.byte_offset == group.carrier_span.end()
+                    && ctx.decode.equal(
+                        &header.class_tag,
+                        &group.paired_class_tag,
+                        "compare F3D face-source paired class tags",
+                    )?
+            }
+            None => false,
+        };
+        let source_offsets_valid = match source_spec {
+            Some(layout) => match u64::try_from(layout.source_reference_offset) {
+                Err(_) => false,
+                Ok(source_reference_offset) => {
+                    let mut valid = true;
+                    for (ordinal, member) in ctx
+                        .decode
+                        .admit_iter(
+                            &group.source_members,
+                            "validate F3D face-source member offsets",
+                        )?
+                        .enumerate()
+                    {
+                        let Ok(ordinal) = u64::try_from(ordinal) else {
+                            valid = false;
+                            break;
+                        };
+                        if group
+                            .carrier_span
+                            .start()
+                            .checked_add(source_reference_offset)
+                            .and_then(|offset| offset.checked_add(ordinal.checked_mul(11)?))
+                            != Some(member.offset)
+                        {
+                            valid = false;
+                            break;
+                        }
+                    }
+                    valid
+                }
+            },
+            None => false,
+        };
         let mut source_records = HashSet::new();
         let source_members_valid = if let Some(layout) = source_spec {
             if group.source_members.len() == layout.source_count {
@@ -7620,8 +8074,12 @@ fn validate_sketch_placements(
         };
         let visibility_valid = if let Some(visibility) = placement.visibility.as_ref() {
             let header_valid = ctx
-                .entities_by_suffix
-                .get(&(native_stream, placement.entity_id.suffix()))
+                .decode
+                .get_hash_map(
+                    &ctx.entities_by_suffix,
+                    &(native_stream, placement.entity_id.suffix()),
+                    "find F3D sketch visibility header",
+                )?
                 .is_some_and(|entity| visibility.stream_ordinal_offset() > entity.byte_offset);
             if header_valid
                 && ctx.decode.insert_hash_set(
@@ -7647,13 +8105,22 @@ fn validate_sketch_placements(
                     == Some(design::DesignFeatureFamily::Sketch)
             })
         } else {
-            scope.is_some_and(|scope| {
-                design::design_feature_family(&scope.kind())
-                    == Some(design::DesignFeatureFamily::Sketch)
-                    && scope
-                        .sketch_entity()
-                        .is_some_and(|binding| binding.entity_id == placement.entity_id)
-            })
+            match scope {
+                Some(scope)
+                    if design::design_feature_family(&scope.kind())
+                        == Some(design::DesignFeatureFamily::Sketch) =>
+                {
+                    match scope.sketch_entity() {
+                        Some(binding) => ctx.decode.equal(
+                            &binding.entity_id,
+                            &placement.entity_id,
+                            "compare F3D sketch placement entity identities",
+                        )?,
+                        None => false,
+                    }
+                }
+                _ => false,
+            }
         };
         let valid = scope_valid && unique_record && unique_scope && visibility_valid;
         if !valid {
@@ -7672,7 +8139,7 @@ fn validate_sketch_placements(
     let mut visibility_ordinal_ranges = HashMap::<&str, (usize, u32)>::new();
     for (stream, ordinal) in ctx.decode.admit_iter(&visibility_ordinals, "scan F3D visibility ordinals")?.copied() {
         if !ctx.decode.contains_key_hash_map(&visibility_ordinal_ranges, stream, "index F3D visibility stream ordinals")? {
-            visibility_ranges_storage.with_storage(|| ctx.decode.insert_hash_map(&mut visibility_ordinal_ranges, stream, Default::default(), "index F3D visibility stream ordinals"))?;
+            visibility_ranges_storage.with_storage(|| ctx.decode.insert_hash_map(&mut visibility_ordinal_ranges, stream, Default::default(), "index F3D sketch visibility ordinal ranges"))?;
         }
         let (count, maximum) = ctx.decode.get_mut_hash_map(&mut visibility_ordinal_ranges, stream, "index F3D visibility stream ordinals")?
             .ok_or_else(|| CodecError::malformed("F3D validation default index missing"))?;
@@ -7720,7 +8187,11 @@ fn validate_parameter_owners(
                 owner.evaluated_value_offset() == parameter.evaluated_value_offset()
             });
         let scope_resolves = legacy_68_frame
-            || records_by_index.contains_key(&(native_stream, owner.scope_record_index()));
+            || ctx.decode.contains_key_hash_map(
+                records_by_index,
+                &(native_stream, owner.scope_record_index()),
+                "find F3D parameter owner scope",
+            )?;
         let unique_local_ordinal = if legacy_68_frame {
             true
         } else {
@@ -7736,10 +8207,23 @@ fn validate_parameter_owners(
         };
         let valid = frame_layout
             && scope_resolves
-            && records_by_index.contains_key(&(native_stream, owner.parameter_record_index()))
-            && records_by_index.contains_key(&(native_stream, owner.companion_record_index()))
-            && companions_by_index
-                .get(&(native_stream, owner.companion_record_index()))
+            && ctx.decode.contains_key_hash_map(
+                records_by_index,
+                &(native_stream, owner.parameter_record_index()),
+                "find F3D parameter owner record",
+            )?
+            && ctx.decode.contains_key_hash_map(
+                records_by_index,
+                &(native_stream, owner.companion_record_index()),
+                "find F3D parameter companion record",
+            )?
+            && ctx
+                .decode
+                .get_hash_map(
+                    companions_by_index,
+                    &(native_stream, owner.companion_record_index()),
+                    "find F3D parameter companion owner",
+                )?
                 .is_some_and(|companion| companion.owner_record_index() == owner.record_index())
             && parameter.is_some_and(|parameter| {
                 parameter.owner_record_index() == Some(owner.record_index())
@@ -7778,17 +8262,30 @@ fn validate_parameter_companions(
         let payload = companion.payload();
         let payload_end =
             payload.and_then(|payload| payload.byte_offset().checked_add(payload.byte_length()));
-        let mut expected_recipes = ctx.decode.collect_vec(
-            ctx.decode.admit_iter(&native.construction_recipes, "admit source for collect F3D companion expected recipes")?.filter(|recipe| {
-                design_stream(&recipe.id) == native_stream
-                    && payload.is_some_and(|payload| {
-                        payload_end.is_some_and(|end| {
-                            recipe.byte_offset >= payload.byte_offset() && recipe.byte_offset < end
-                        })
-                    })
-            }),
-            "collect F3D companion expected recipes",
-        )?;
+        let mut expected_recipes_storage =
+            ctx.decode.reserve_scoped(0, "collect F3D companion expected recipes")?;
+        let mut expected_recipes = Vec::new();
+        for recipe in ctx.decode.admit_iter(
+            &native.construction_recipes,
+            "scan F3D companion expected recipes",
+        )? {
+            if ctx.decode.equal(
+                design_stream(&recipe.id),
+                native_stream,
+                "compare F3D companion recipe streams",
+            )? && payload.is_some_and(|payload| {
+                payload_end.is_some_and(|end| {
+                    recipe.byte_offset >= payload.byte_offset() && recipe.byte_offset < end
+                })
+            }) {
+                ctx.decode.push_scoped_vec(
+                    &mut expected_recipes_storage,
+                    &mut expected_recipes,
+                    recipe,
+                    "collect F3D companion expected recipes",
+                )?;
+            }
+        }
         ctx.decode.stable_sort_by(
             &mut expected_recipes,
             |value| &value.byte_offset,
@@ -8572,9 +9069,20 @@ fn validate_entity_headers(
     let mut entity_suffixes = HashSet::new();
     for header in ctx.decode.admit_iter(&native.design_entity_headers, "scan F3D design entity headers")? {
         let native_stream = design_stream(&header.id);
-        let references_resolve = header
-            .reference_values()
-            .all(|index| records_by_index.contains_key(&(native_stream, *index)));
+        let references_resolve = match header.sketch_references() {
+            Some(references) => ctx.decode.all_by(
+                &references.references,
+                |reference| {
+                    ctx.decode.contains_key_hash_map(
+                        records_by_index,
+                        &(native_stream, reference.value),
+                        "find F3D entity reference target",
+                    )
+                },
+                "validate F3D entity reference run",
+            )?,
+            None => true,
+        };
         if !references_resolve {
             ctx.push_constant_finding(
                 findings,
@@ -8616,7 +9124,7 @@ fn validate_sketch_relations(
                 ctx.decode.get_hash_map(sketch_owner_ids, &(native_stream, relation.owner_reference), "find F3D sketch relation owner")?,
                 relation.owner_entity_id.as_ref().map(cadmpeg_core::text::NonBlankString::as_str),
             ),
-            (Some(expected), Some(actual)) if *expected == actual
+            (Some(expected), Some(actual)) if ctx.decode.equal(*expected, actual, "compare F3D sketch relation owner identities")?
         );
         if !owner_matches {
             ctx.push_constant_finding(
@@ -8639,6 +9147,10 @@ fn validate_sketch_geometry_identities(
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let native = ctx.native;
+    let mut sketch_point_storage =
+        ctx.decode.reserve_scoped(0, "index F3D sketch point identities")?;
+    let mut sketch_geometry_storage =
+        ctx.decode.reserve_scoped(0, "index F3D sketch geometry records")?;
     let mut sketch_point_identities = HashSet::new();
     let mut sketch_geometry_records = HashSet::new();
     // An unresolved owner is not one shared sketch. Enforce uniqueness only
@@ -8647,11 +9159,13 @@ fn validate_sketch_geometry_identities(
         let duplicate = if let (Some(persistent_id), Some(owner_reference)) =
             (point.persistent_id(), point.owner_reference)
         {
-            !ctx.decode.insert_hash_set(
-                &mut sketch_point_identities,
-                (design_stream(&point.id), owner_reference, persistent_id),
-                "index F3D sketch point identities",
-            )?
+            !sketch_point_storage.with_storage(|| {
+                ctx.decode.insert_hash_set(
+                    &mut sketch_point_identities,
+                    (design_stream(&point.id), owner_reference, persistent_id),
+                    "index F3D sketch point identities",
+                )
+            })?
         } else {
             false
         };
@@ -8666,11 +9180,13 @@ fn validate_sketch_geometry_identities(
                 ),
             )?;
         }
-        if !ctx.decode.insert_hash_set(
-            &mut sketch_geometry_records,
-            (design_stream(&point.id), point.record_index),
-            "index F3D sketch geometry records",
-        )? {
+        if !sketch_geometry_storage.with_storage(|| {
+            ctx.decode.insert_hash_set(
+                &mut sketch_geometry_records,
+                (design_stream(&point.id), point.record_index),
+                "index F3D sketch geometry records",
+            )
+        })? {
             ctx.push_constant_finding(
                 findings,
                 Check::NativeLinks,
@@ -8682,19 +9198,23 @@ fn validate_sketch_geometry_identities(
             )?;
         }
     }
+    let mut sketch_curve_storage =
+        ctx.decode.reserve_scoped(0, "index F3D sketch curve identities")?;
     let mut sketch_curve_identities = HashSet::new();
     for curve in ctx.decode.admit_iter(&native.sketch_curve_identities, "scan F3D sketch curve identities")? {
         let duplicate = if let Some(owner_reference) = curve.owner_reference {
-            !ctx.decode.insert_hash_set(
-                &mut sketch_curve_identities,
-                (
-                    design_stream(&curve.id),
-                    owner_reference,
-                    curve.primary_id.get(),
-                    curve.secondary_id,
-                ),
-                "index F3D sketch curve identities",
-            )?
+            !sketch_curve_storage.with_storage(|| {
+                ctx.decode.insert_hash_set(
+                    &mut sketch_curve_identities,
+                    (
+                        design_stream(&curve.id),
+                        owner_reference,
+                        curve.primary_id.get(),
+                        curve.secondary_id,
+                    ),
+                    "index F3D sketch curve identities",
+                )
+            })?
         } else {
             false
         };
@@ -8709,11 +9229,13 @@ fn validate_sketch_geometry_identities(
                 ),
             )?;
         }
-        if !ctx.decode.insert_hash_set(
-            &mut sketch_geometry_records,
-            (design_stream(&curve.id), curve.record_index),
-            "index F3D sketch geometry records",
-        )? {
+        if !sketch_geometry_storage.with_storage(|| {
+            ctx.decode.insert_hash_set(
+                &mut sketch_geometry_records,
+                (design_stream(&curve.id), curve.record_index),
+                "index F3D sketch geometry records",
+            )
+        })? {
             ctx.push_constant_finding(
                 findings,
                 Check::NativeLinks,
@@ -8725,18 +9247,22 @@ fn validate_sketch_geometry_identities(
             )?;
         }
     }
+    let mut sketch_surface_storage =
+        ctx.decode.reserve_scoped(0, "index F3D sketch surface identities")?;
     let mut sketch_surface_identities = HashSet::new();
     for surface in ctx.decode.admit_iter(&native.sketch_surfaces, "scan F3D sketch surfaces")? {
         let duplicate = if let Some(owner_reference) = surface.owner_reference {
-            !ctx.decode.insert_hash_set(
-                &mut sketch_surface_identities,
-                (
-                    design_stream(&surface.id),
-                    owner_reference,
-                    surface.persistent_id.get(),
-                ),
-                "index F3D sketch surface identities",
-            )?
+            !sketch_surface_storage.with_storage(|| {
+                ctx.decode.insert_hash_set(
+                    &mut sketch_surface_identities,
+                    (
+                        design_stream(&surface.id),
+                        owner_reference,
+                        surface.persistent_id.get(),
+                    ),
+                    "index F3D sketch surface identities",
+                )
+            })?
         } else {
             false
         };
@@ -8751,11 +9277,13 @@ fn validate_sketch_geometry_identities(
                 ),
             )?;
         }
-        if !ctx.decode.insert_hash_set(
-            &mut sketch_geometry_records,
-            (design_stream(&surface.id), surface.record_index),
-            "index F3D sketch geometry records",
-        )? {
+        if !sketch_geometry_storage.with_storage(|| {
+            ctx.decode.insert_hash_set(
+                &mut sketch_geometry_records,
+                (design_stream(&surface.id), surface.record_index),
+                "index F3D sketch geometry records",
+            )
+        })? {
             ctx.push_constant_finding(
                 findings,
                 Check::NativeLinks,
