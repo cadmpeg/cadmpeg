@@ -100,7 +100,7 @@ pub(crate) const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
 /// number.
 const DECLARED_SW_VERSION: &str = "sw_version";
 
-/// One row of `docs/dialects.toml` under the `sldprt` namespace.
+/// One row of `crates/cadmpeg-registry/docs/dialects.toml` under the `sldprt` namespace.
 ///
 /// Three rows, and the classification is total over them: the two grammar
 /// classes selected by the padding boundary, plus the mandatory `unknown` row that

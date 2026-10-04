@@ -26,7 +26,7 @@ impl Representation {
         }
     }
 
-    /// The discriminant value `docs/dialects.toml` states for this
+    /// The discriminant value `crates/cadmpeg-registry/docs/dialects.toml` states for this
     /// representation, and the value the `representation` source attribute and
     /// the non-Fixed-ASCII container kind carry.
     pub(crate) const fn as_str(self) -> &'static str {
