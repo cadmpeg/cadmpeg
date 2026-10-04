@@ -83,7 +83,7 @@ pub(super) fn decode(
         let Some(name) = name else {
             continue;
         };
-        if name.eq_ignore_ascii_case("geometric validation property") {
+        if ctx.eq_ignore_ascii_case(name.as_str(), "geometric validation property", "STEP validation property name case equality")? {
             let description = property
                 .parameters
                 .get(1)
