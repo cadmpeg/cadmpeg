@@ -3553,7 +3553,7 @@ pub(super) fn associate_pcurve_supports(
 
     for (pcurve_id, record) in exchange.entities(ctx, "PCURVE")? {
         let pcurve_identity = ids::data(kind!("pcurve"), pcurve_id);
-        if !owned_pcurves.contains(pcurve_identity.as_str()) {
+        if !ctx.contains_btree_set(&owned_pcurves, pcurve_identity.as_str(), "STEP owned pcurves membership")? {
             continue;
         }
         let Some(surface_id) = named_parameter(ctx, record, "PCURVE", 1)?.and_then(Value::reference)
@@ -5714,7 +5714,7 @@ fn procedural_surface_parameter_scales(
     let mut surface_id = surface_id;
     let mut geometry = geometry;
     loop {
-        if active.contains(surface_id) {
+        if ctx.contains_btree_set(&active, surface_id, "STEP active membership")? {
             return Ok(None);
         }
         let key = active_storage.with_storage(|| {
@@ -5919,7 +5919,7 @@ fn directrix_parameter_scale_inner(
     active: &mut BTreeSet<CurveId>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<f64>, CodecError> {
-    if active.contains(curve_id) {
+    if ctx.contains_btree_set(active, curve_id, "STEP active membership")? {
         return Ok(None);
     }
     let _depth = ctx.enter_nested("step_directrix_scale_walk")?;

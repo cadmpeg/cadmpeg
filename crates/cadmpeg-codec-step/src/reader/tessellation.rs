@@ -1083,7 +1083,7 @@ fn associate_bodies(
     }
     let associated = associations.entry(item).or_default();
     for body in ctx.admit_iter(bodies, "STEP associate bodies traversal").map_err(cadmpeg_core::CodecError::from)? {
-        if !associated.contains(body) {
+        if !ctx.contains_btree_set(associated, body, "STEP associated membership")? {
             let copy = bytes.with_storage(|| {
                 body.try_clone_for_decode(ctx, "step_tessellation_item_body_links")
             })?;

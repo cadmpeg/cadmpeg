@@ -759,7 +759,7 @@ fn insert_retained_identity(
     identity: &str,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    if !identities.contains(identity) {
+    if !ctx.contains_btree_set(identities, identity, "STEP identities membership")? {
         let copy = ctx.format_retained(format_args!("{identity}"), "step_owned_pcurve_identity")?;
         ctx.insert_btree_set(identities, copy, "step_owned_pcurve_ids")?;
     }
@@ -808,7 +808,7 @@ fn retain_unowned_carriers(
         if ctx.admit_iter(&(record
             .partials)[..], "STEP retain unowned carriers traversal").map_err(cadmpeg_core::CodecError::from)?
             .any(|partial| partial.name == "PCURVE")
-            && !owned.contains(ids::data(kind!("pcurve"), id).as_str())
+            && !ctx.contains_btree_set(&owned, ids::data(kind!("pcurve"), id).as_str(), "STEP owned pcurve identity lookup")?
         {
             ctx.insert_btree_set(&mut unowned_pcurves, id, "step_unowned_pcurves")?;
         }
@@ -852,63 +852,67 @@ fn retain_unowned_carriers(
     for identity in ctx.admit_iter(&(ir
         .model
         .vertices)[..], "STEP retain unowned carriers traversal").map_err(cadmpeg_core::CodecError::from)?
-        .map(|vertex| vertex.point.as_str())
+        .map(|vertex| Ok(vertex.point.as_str()))
         .chain(
             ctx.admit_iter(&(ir.model
                 .edges
                 )[..], "STEP retain unowned carriers chain traversal")?
-                .filter_map(|edge| edge.curve().map(cadmpeg_ir::ids::CurveId::as_str)),
+                .filter_map(|edge| edge.curve().map(cadmpeg_ir::ids::CurveId::as_str)).map(Ok),
         )
-        .chain(ctx.admit_iter(&(ir.model.faces)[..], "STEP retain unowned carriers chain traversal")?.map(|face| face.surface.as_str()))
+        .chain(ctx.admit_iter(&(ir.model.faces)[..], "STEP retain unowned carriers chain traversal")?.map(|face| Ok(face.surface.as_str())))
         .chain(
             ctx.admit_iter(&(ir.model
                 .coedges
                 )[..], "STEP retain unowned carriers chain traversal")?
-                .filter_map(|coedge| coedge.use_curve.as_ref().map(|use_| use_.curve.as_str())),
+                .filter_map(|coedge| coedge.use_curve.as_ref().map(|use_| use_.curve.as_str())).map(Ok),
         )
         .chain(
             ctx.admit_iter(&(ir.model
                 .pcurves
                 )[..], "STEP retain unowned carriers chain traversal")?
-                .filter(|pcurve| owned.contains(pcurve.id.as_str()))
-                .map(|pcurve| pcurve.id.as_str()),
+                .map(|pcurve| {
+                    ctx.contains_btree_set(&owned, pcurve.id.as_str(), "STEP protected pcurve root lookup")
+                        .map(|owned| owned.then_some(pcurve.id.as_str()))
+                })
+                .filter_map(Result::transpose),
         )
         .chain(
             ctx.admit_iter(&(ir.model
                 .points
                 )[..], "STEP retain unowned carriers chain traversal")?
                 .filter(|point| point.source_object.is_some())
-                .map(|point| point.id.as_str()),
+                .map(|point| Ok(point.id.as_str())),
         )
         .chain(
             ctx.admit_iter(&(ir.model
                 .curves
                 )[..], "STEP retain unowned carriers chain traversal")?
                 .filter(|curve| curve.source_object.is_some())
-                .map(|curve| curve.id.as_str()),
+                .map(|curve| Ok(curve.id.as_str())),
         )
         .chain(
             ctx.admit_iter(&(ir.model
                 .surfaces
                 )[..], "STEP retain unowned carriers chain traversal")?
                 .filter(|surface| surface.source_object.is_some())
-                .map(|surface| surface.id.as_str()),
+                .map(|surface| Ok(surface.id.as_str())),
         )
         .chain(
             ctx.admit_iter(&(ir.model
                 .procedural_curves
                 )[..], "STEP retain unowned carriers chain traversal")?
-                .map(|curve| curve.id.as_str()),
+                .map(|curve| Ok(curve.id.as_str())),
         )
         .chain(
             ctx.admit_iter(&(ir.model
                 .procedural_surfaces
                 )[..], "STEP retain unowned carriers chain traversal")?
-                .map(|surface| surface.id.as_str()),
+                .map(|surface| Ok(surface.id.as_str())),
         )
-        .filter_map(step_instance_id)
+        .map(|identity: Result<&str, CodecError>| identity.map(step_instance_id))
+        .filter_map(Result::transpose)
     {
-        ctx.insert_btree_set(&mut roots, identity, "step_unowned_protected_roots")?;
+        ctx.insert_btree_set(&mut roots, identity?, "step_unowned_protected_roots")?;
     }
     let mut protected_roots = BTreeSet::new();
     for id in roots.into_iter().filter(|id| !unowned_pcurves.contains(id)) {
@@ -946,7 +950,7 @@ fn retain_unowned_carriers(
         .procedural_surfaces)[..], "STEP retain unowned carriers traversal").map_err(cadmpeg_core::CodecError::from)?
         .filter(|surface| !retains_carrier(surface.id.as_str(), &removed_closure, &protected))
         .count();
-    ctx.retain_vec(&mut ir.model.pcurves, |pcurve| Ok(owned.contains(pcurve.id.as_str())), "STEP unowned pcurves retention")?;
+    ctx.retain_vec(&mut ir.model.pcurves, |pcurve| ctx.contains_btree_set(&owned, pcurve.id.as_str(), "STEP owned pcurve identity lookup"), "STEP unowned pcurves retention")?;
     ctx.retain_vec(&mut ir.model.points, |point| Ok(retains_carrier(point.id.as_str(), &removed_closure, &protected)), "STEP unowned points retention")?;
     ctx.retain_vec(&mut ir.model.curves, |curve| Ok(retains_carrier(curve.id.as_str(), &removed_closure, &protected)), "STEP unowned curves retention")?;
     ctx.retain_vec(&mut ir.model.surfaces, |surface| Ok(retains_carrier(surface.id.as_str(), &removed_closure, &protected)), "STEP unowned surfaces retention")?;
@@ -1163,7 +1167,7 @@ fn record_targets(
         let values = targets
             .get_mut(&record_id)
             .ok_or_else(|| ctx.refuse_codec_limit("step_opaque_target_records", 0, 1))?;
-        if !values.contains(identity) {
+        if !ctx.contains_btree_set(values, identity, "STEP values membership")? {
             let copy =
                 ctx.format_retained(format_args!("{identity}"), "step_opaque_target_identity")?;
             ctx.insert_btree_set(values, copy, "step_opaque_target_ids")?;

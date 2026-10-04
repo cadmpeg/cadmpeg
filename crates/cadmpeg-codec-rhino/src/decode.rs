@@ -5087,7 +5087,7 @@ impl BrepDraft {
                     .map(|value| value.id.as_str()),
             )
         {
-            if !emitted.contains(id) {
+            if !ctx.contains_btree_set(&emitted, id, "Rhino emitted fallback identity lookup")? {
                 ctx.insert_btree_set(
                     &mut emitted,
                     ctx.copy_retained_text(id, "Rhino Brep emitted fallback ID text")?,
@@ -5097,23 +5097,7 @@ impl BrepDraft {
         }
         ctx.retain_vec(&mut self.links, |id| ctx.contains_btree_set(&emitted, id, "Rhino emitted fallback identity lookup"), "Rhino fallback link retention")?;
         self.draft.retain_exactness(ctx, |id| {
-            let work = u64_from_index(emitted.len())
-                .checked_mul(u64_from_index(id.len()).checked_add(1).ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "Rhino fallback exactness lookup",
-                        u64::MAX - 1,
-                        u64::MAX,
-                    )
-                })?)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "Rhino fallback exactness lookup",
-                        u64::MAX - 1,
-                        u64::MAX,
-                    )
-                })?;
-            ctx.charge_work(work, "Rhino fallback exactness lookup")?;
-            Ok(emitted.contains(id))
+            ctx.contains_btree_set(&emitted, id, "Rhino fallback exactness lookup")
         })?;
         let model = self.draft.model_mut();
         model.bodies.clear();
@@ -6135,7 +6119,7 @@ fn scale_plane_pcurves(
         values: &mut BTreeSet<String>,
         id: &str,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        if !values.contains(id) {
+        if !ctx.contains_btree_set(values, id, "Rhino values membership")? {
             ctx.insert_btree_set(
                 values,
                 ctx.copy_retained_text(id, "Rhino plane pcurve lookup ID text")?,
@@ -6158,26 +6142,26 @@ fn scale_plane_pcurves(
     }
     let mut plane_faces = BTreeSet::new();
     for face in ctx.admit_iter(&(staged.draft.model().faces)[..], "Rhino scale plane pcurves traversal").map_err(cadmpeg_core::CodecError::from)? {
-        if plane_surfaces.contains(face.surface.as_str()) {
+        if ctx.contains_btree_set(&plane_surfaces, face.surface.as_str(), "Rhino plane surfaces membership")? {
             insert_id(ctx, &mut plane_faces, face.id.as_str())?;
         }
     }
     let mut plane_loops = BTreeSet::new();
     for value in ctx.admit_iter(&(staged.draft.model().loops)[..], "Rhino scale plane pcurves traversal").map_err(cadmpeg_core::CodecError::from)? {
-        if plane_faces.contains(value.face.as_str()) {
+        if ctx.contains_btree_set(&plane_faces, value.face.as_str(), "Rhino plane faces membership")? {
             insert_id(ctx, &mut plane_loops, value.id.as_str())?;
         }
     }
     let mut plane_pcurves = BTreeSet::new();
     for coedge in ctx.admit_iter(&(staged.draft.model().coedges)[..], "Rhino scale plane pcurves traversal").map_err(cadmpeg_core::CodecError::from)? {
-        if plane_loops.contains(coedge.owner_loop.as_str()) {
+        if ctx.contains_btree_set(&plane_loops, coedge.owner_loop.as_str(), "Rhino plane loops membership")? {
             for curve_use in ctx.admit_iter(&(coedge.pcurves)[..], "Rhino scale plane pcurves traversal").map_err(cadmpeg_core::CodecError::from)? {
                 insert_id(ctx, &mut plane_pcurves, curve_use.pcurve.as_str())?;
             }
         }
     }
     for pcurve in &mut staged.draft.model_mut().pcurves {
-        if !plane_pcurves.contains(pcurve.id.as_str()) {
+        if !ctx.contains_btree_set(&plane_pcurves, pcurve.id.as_str(), "Rhino plane pcurves membership")? {
             continue;
         }
         if let PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry {

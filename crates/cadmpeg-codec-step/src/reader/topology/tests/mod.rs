@@ -21,3 +21,5 @@ fn topology_failure_count_refuses_overflow() {
     };
     assert!(format!("{:?}", outcome.fail(None)).contains("ResourceLimit"));
 }
+
+mod set_lookups;
