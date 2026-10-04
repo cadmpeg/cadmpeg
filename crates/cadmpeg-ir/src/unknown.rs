@@ -135,7 +135,7 @@ impl UnknownRecord {
         id: UnknownId,
         offset: u64,
         byte_len: u64,
-        sha256: impl Into<String>,
+        sha256: String,
         links: Vec<String>,
     ) -> Self {
         Self {
@@ -143,7 +143,7 @@ impl UnknownRecord {
             offset,
             retention: RawRetainedBytes::Digest {
                 byte_len,
-                sha256: sha256.into(),
+                sha256,
             },
             links,
         }
@@ -244,7 +244,7 @@ mod tests {
             UnknownId::mint("synthetic:source:unknown#0").unwrap(),
             u64::MAX,
             1,
-            "wire-value",
+            "wire-value".to_owned(),
             vec![],
         );
         let wire = serde_json::to_value(&record).unwrap();

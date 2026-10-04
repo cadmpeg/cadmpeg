@@ -92,7 +92,7 @@ fn staged_unknown_cache_moves_source_facts_and_extends_only_new_slots() {
         second_id.as_str().try_into().unwrap(),
         29,
         31,
-        "source-digest",
+        "source-digest".to_owned(),
         Vec::new(),
     );
     let arena = DecodeArena::new();

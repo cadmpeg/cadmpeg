@@ -359,10 +359,10 @@ fn invalid_raw_evidence_cannot_partially_enter_authoritative_retention() {
             id("digest-overflow"),
             u64::MAX,
             1,
-            Sha256Digest::digest(b"a").as_str(),
+            Sha256Digest::digest(b"a").as_str().to_owned(),
             vec![],
         ),
-        UnknownRecord::unavailable(id("digest-text"), 0, 1, "wire-value", vec![]),
+        UnknownRecord::unavailable(id("digest-text"), 0, 1, "wire-value".to_owned(), vec![]),
     ];
     for attach in [false, true] {
         for invalid in &invalid_records {

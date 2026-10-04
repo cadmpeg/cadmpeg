@@ -11,7 +11,7 @@ fn one_instance_link_record() -> UnknownRecord {
         UnknownId::mint("rhino:object:unknown#0").expect("valid identity"),
         0,
         0,
-        "",
+        String::new(),
         vec!["rhino:curve#1".to_string()],
     )
 }

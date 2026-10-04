@@ -1691,7 +1691,7 @@ fn unknown_record_link_insertion_refuses_collection_limit() {
             UnknownId::mint("rhino:object:unknown#0").expect("valid identity"),
             0,
             0,
-            "",
+            String::new(),
             Vec::new(),
         );
         append_link_to_record(
