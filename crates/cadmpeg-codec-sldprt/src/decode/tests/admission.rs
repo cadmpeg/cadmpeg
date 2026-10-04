@@ -1004,3 +1004,19 @@ fn reference_membership_refusals_do_not_become_incoherent_results() {
         assert_eq!(ctx.resource_refusal(), Some(limit));
     }
 }
+
+#[test]
+fn repeated_key_count_preserves_mutable_lookup_refusal() {
+    const KEY_BYTES: usize = 4096;
+    let key = "k".repeat(KEY_BYTES);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // Empty-tree insertion fits; eleven comparisons of the repeated key do not.
+    policy.limits.max_work_units = 8192;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = crate::decode::count_keys(&ctx, [key.clone(), key], "count repeated SLDPRT keys").unwrap_err();
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("resource refusal"); };
+    assert_eq!(limit.operation, "count repeated SLDPRT keys");
+    assert_eq!(limit.additional, 11 * cadmpeg_core::decode::u64_from_index(KEY_BYTES));
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+}

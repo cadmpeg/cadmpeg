@@ -585,7 +585,8 @@ fn inspection_inventory_refuses_unadmitted_payload_hash() {
     let scan = crate::test_support::container::scan(&source);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
+    // The block traversal fits; no work remains for hashing the payload.
+    policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(scan.blocks.len());
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = container::summarize(
         &ctx,

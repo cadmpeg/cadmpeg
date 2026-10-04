@@ -121,33 +121,6 @@ fn copy_configuration_state_features(
     Ok(copied)
 }
 
-fn charge_configuration_state_lookup(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    states: &BTreeMap<FeatureId, cadmpeg_ir::features::ConfigurationFeatureState>,
-    id: &FeatureId,
-) -> Result<(), cadmpeg_core::CodecError> {
-    const OPERATION: &str = "match SLDPRT configuration feature state";
-    let bytes = ctx.admit_iter(states, "scan SLDPRT charge_configuration_state_lookup map keys")?.map(|(key, _)| key)
-        .try_fold(
-            cadmpeg_core::decode::u64_from_index(id.as_str().len()),
-            |bytes, key| {
-                bytes.checked_add(cadmpeg_core::decode::u64_from_index(key.as_str().len()))
-            },
-        )
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(
-        bytes
-            .checked_mul(8)
-            .and_then(|work| {
-                work.checked_add(
-                    cadmpeg_core::decode::u64_from_index(states.len()).checked_mul(64)?,
-                )
-            })
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
-    )
-}
-
 fn insert_configuration_value<K: Ord + cadmpeg_core::decode::cost::DecodeCost, V>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     values: &mut BTreeMap<K, V>,
@@ -553,8 +526,7 @@ pub(crate) fn project_configuration_supplemental_edge_selections(
         )?;
         let states = &mut ir.model.configurations[configuration_index].feature_states;
         for feature in features {
-            charge_configuration_state_lookup(ctx, states, &feature.id)?;
-            let Some(state) = states.get_mut(&feature.id) else {
+            let Some(state) = ctx.get_mut_btree_map(&mut *states, &feature.id, "look up mutable SLDPRT ordered key")? else {
                 continue;
             };
             state.dependencies = feature.dependencies;
@@ -609,8 +581,7 @@ pub(crate) fn bind_configuration_topology_selections(
         )?;
         let states = &mut ir.model.configurations[configuration_index].feature_states;
         for feature in features {
-            charge_configuration_state_lookup(ctx, states, &feature.id)?;
-            let Some(state) = states.get_mut(&feature.id) else {
+            let Some(state) = ctx.get_mut_btree_map(&mut *states, &feature.id, "look up mutable SLDPRT ordered key")? else {
                 continue;
             };
             *state = configuration_feature_state(feature).1;
@@ -976,9 +947,8 @@ pub(crate) fn project_configuration_sketch_states(
                 scoped_lanes,
             )?;
             for feature in features {
-                let Some(state) = ir.model.configurations[configuration_index]
-                    .feature_states
-                    .get_mut(&feature.id)
+                let Some(state) = ctx.get_mut_btree_map(&mut (ir.model.configurations[configuration_index]
+                    .feature_states), &feature.id, "look up mutable SLDPRT ordered key")?
                 else {
                     continue;
                 };
@@ -1456,20 +1426,8 @@ pub(crate) fn inherit_configuration_reference_plane_states(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let base = ConfigurationDefinitions::new(ctx, &ir.model.features)?;
     for configuration in &mut ir.model.configurations {
-        const OPERATION: &str = "match SLDPRT configuration datum states";
-        let key_bytes = ctx.admit_iter(&configuration.feature_states, "scan SLDPRT inherit_configuration_reference_plane_states map keys")?.map(|(key, _)| key)
-            .try_fold(0_usize, |bytes, id| {
-                bytes
-                    .checked_add(id.as_str().len())
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))
-            })?;
         for feature in ctx.admit_iter(&ir.model.features, "scan SLDPRT inherit_configuration_reference_plane_states values")? {
-            let work = key_bytes
-                .checked_add(feature.id.as_str().len())
-                .and_then(|bytes| bytes.checked_add(1))
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
-            let Some(state) = configuration.feature_states.get_mut(&feature.id) else {
+            let Some(state) = ctx.get_mut_btree_map(&mut (configuration.feature_states), &feature.id, "look up mutable SLDPRT ordered key")? else {
                 continue;
             };
             inherit_configuration_reference_plane_definition(

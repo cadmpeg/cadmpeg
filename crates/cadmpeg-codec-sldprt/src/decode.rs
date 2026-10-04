@@ -355,7 +355,7 @@ fn count_keys<K: Ord + cadmpeg_core::decode::cost::DecodeCost>(
     let mut counts = BTreeMap::<K, usize>::new();
     for key in keys {
         ctx.charge_work(1, operation)?;
-        if let Some(count) = counts.get_mut(&key) {
+        if let Some(count) = ctx.get_mut_btree_map(&mut (counts), &key, operation)? {
             let next = count
                 .checked_add(1)
                 .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
@@ -2028,7 +2028,7 @@ fn multiply_projected_sketch_relation_records(
         if !ctx.contains_hash_set(&native_relation_ids, native_ref, "test SLDPRT hashed identity")? { continue; }
         const OPERATION: &str = "count SLDPRT relation projections";
         ctx.charge_work(1, OPERATION)?;
-        if let Some(count) = projection_counts.get_mut(&native_ref) {
+        if let Some(count) = ctx.get_mut_btree_map(&mut (projection_counts), &native_ref, "look up mutable SLDPRT ordered key")? {
             *count = count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
         } else {
             ctx.insert_btree_map(&mut projection_counts, native_ref, 1, OPERATION)?;
@@ -4761,7 +4761,7 @@ fn sync_active_configuration_resolutions(
         else {
             continue;
         };
-        let Some(state) = configuration.feature_states.get_mut(&feature.id) else {
+        let Some(state) = ctx.get_mut_btree_map(&mut (configuration.feature_states), &feature.id, "look up mutable SLDPRT ordered key")? else {
             continue;
         };
         if state.evaluation.is_suppressed() {
@@ -4902,7 +4902,7 @@ fn sync_active_configuration_resolutions(
         if !complete {
             continue;
         }
-        let Some(state) = configuration.feature_states.get_mut(&feature.id) else {
+        let Some(state) = ctx.get_mut_btree_map(&mut (configuration.feature_states), &feature.id, "look up mutable SLDPRT ordered key")? else {
             continue;
         };
         let cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -4943,7 +4943,7 @@ fn sync_active_configuration_resolutions(
         if selected.is_empty() {
             continue;
         }
-        let Some(state) = configuration.feature_states.get_mut(&feature.id) else {
+        let Some(state) = ctx.get_mut_btree_map(&mut (configuration.feature_states), &feature.id, "look up mutable SLDPRT ordered key")? else {
             continue;
         };
         let cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -4978,7 +4978,7 @@ fn sync_active_configuration_resolutions(
         ) {
             continue;
         }
-        let Some(state) = configuration.feature_states.get_mut(&feature.id) else {
+        let Some(state) = ctx.get_mut_btree_map(&mut (configuration.feature_states), &feature.id, "look up mutable SLDPRT ordered key")? else {
             continue;
         };
         let cadmpeg_ir::features::FeatureDefinition::Operation(

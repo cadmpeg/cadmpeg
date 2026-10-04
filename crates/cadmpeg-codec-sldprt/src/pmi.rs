@@ -222,7 +222,7 @@ pub(crate) fn enrich_history_parameters_with_features(
     lookup_storage.with_storage(|| {
         for (history_index, history) in ctx.admit_iter(&histories[..], "scan SLDPRT enrich_history_parameters_with_features values")?.enumerate() {
             for (feature_index, feature) in ctx.admit_iter(&history.features, "scan SLDPRT enrich_history_parameters_with_features values")?.enumerate() {
-                if let Some(owner) = owners.get_mut(&feature.name) {
+                if let Some(owner) = ctx.get_mut_btree_map(&mut (owners), &feature.name, "look up mutable SLDPRT ordered key")? {
                     ctx.push_vec(
                         owner,
                         (history_index, feature_index),
