@@ -97,16 +97,14 @@ fn resolve_uri<'a>(
     if has_uri_scheme(ctx, uri)? || uri.starts_with("//") {
         return Ok(ReferenceTarget::External);
     }
-    let (uri, fragment) = uri
-        .split_once('#')
+    let (uri, fragment) = ctx.split_once(uri, "#", "STEP ZIP URI fragment split")?
         .map_or((uri, None), |(uri, fragment)| (uri, Some(fragment)));
     if fragment.is_some_and(|fragment| fragment.contains('#')) {
         return Err(CodecError::malformed(format_args!(
             "invalid STEP ZIP URI fragment {uri:?}"
         )));
     }
-    let (path, query) = uri
-        .split_once('?')
+    let (path, query) = ctx.split_once(uri, "?", "STEP ZIP URI query split")?
         .map_or((uri, None), |(path, query)| (path, Some(query)));
     if path.starts_with('/') {
         return Err(CodecError::malformed(format_args!(

@@ -3085,7 +3085,7 @@ impl<'a> DecodeContext<'a> {
                 continue;
             }
             let warning = &diagnostic.message;
-            let (family, detail) = match warning.split_once(':') {
+            let (family, detail) = match ctx.split_once(warning.as_str(), ":", "Rhino warning family split")? {
                 Some((family, detail)) => (family, ctx.trim_text(detail, "Rhino warning detail trim")?),
                 None => ("rhino", warning.as_str()),
             };

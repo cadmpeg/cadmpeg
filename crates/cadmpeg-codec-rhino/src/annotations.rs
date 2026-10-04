@@ -605,7 +605,7 @@ fn source_key(
     identity: &crate::objects::SourceIdentity,
     source_order: usize,
 ) -> Result<String, CodecError> {
-    let Some((_, key)) = identity.source_id.rsplit_once('#') else {
+    let Some((_, key)) = ctx.rsplit_once(identity.source_id.as_str(), "#", "Rhino annotation source key reverse split")? else {
         return ctx.format_retained(
             format_args!("record-{source_order:06}"),
             "Rhino annotation source key",
@@ -2404,4 +2404,19 @@ mod tests {
         assert_eq!(value.mask_color, [0x11, 0x22, 0x33, 0x44]);
         assert_eq!(value.border_offset_factor.get(), 0.375);
     }
+    #[test]
+    fn annotation_source_key_reverse_split_preserves_refusal() {
+        let payload = v2_annotation_payload(7, &[], "text", "default", false);
+        let scan = scan_with_objects(&[object_record_with_payload(ArchiveVersion::V5, 0x20, crate::dimensions::V2_ANNOTATION.to_wire(), &payload)]);
+        let identity = scan.objects[0].identity().unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy).unwrap();
+        let error = super::source_key(&ctx, identity, 0).unwrap_err();
+        let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else { panic!("source key must return its resource refusal"); };
+        assert_eq!(refusal.operation, "Rhino annotation source key reverse split");
+        assert_eq!(ctx.resource_refusal(), Some(refusal));
+    }
+
 }

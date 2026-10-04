@@ -2725,7 +2725,7 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
         let Some(uri) = self.bindings.get(&key).copied() else {
             return self.clone_leaf(original);
         };
-        let Some((path, fragment)) = uri.split_once('#') else {
+        let Some((path, fragment)) = self.budget.split_once(uri, "#", "STEP reference URI fragment split").map_err(ResolveError::Resource)? else {
             return self.clone_leaf(&Value::Omitted);
         };
         if !path.is_empty() {

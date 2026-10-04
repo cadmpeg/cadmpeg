@@ -1229,3 +1229,29 @@ fn zip_entry_extension_case_equality_preserves_refusal() {
     assert_eq!(super::classify_entry(&service, "child.STEP").unwrap(), cadmpeg_core::container::ContainerRole::SubsidiaryExchange);
     assert_eq!(super::classify_entry(&service, "child.ZIP").unwrap(), cadmpeg_core::container::ContainerRole::NestedArchive);
 }
+
+#[test]
+fn zip_uri_fragment_split_preserves_refusal() {
+    cadmpeg_test_support::refusal::resource_limit_at(cadmpeg_core::decode::ResourceDimension::WorkUnits, "STEP ZIP URI fragment split", |cap| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = resolve_uri_for_test(&ctx, ROOT_NAME, "part?key=value#target").map(|_| ());
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
+
+#[test]
+fn zip_uri_query_split_preserves_refusal() {
+    cadmpeg_test_support::refusal::resource_limit_at(cadmpeg_core::decode::ResourceDimension::WorkUnits, "STEP ZIP URI query split", |cap| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = resolve_uri_for_test(&ctx, ROOT_NAME, "part?key=value#target").map(|_| ());
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}

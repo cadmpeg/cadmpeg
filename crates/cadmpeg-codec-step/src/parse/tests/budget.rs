@@ -1203,3 +1203,23 @@ fn matching_schema_identifier_trim_preserves_refusal() {
         result
     });
 }
+
+#[test]
+fn reference_uri_fragment_split_preserves_refusal() {
+    let anchors = BTreeMap::from([(String::from("anchor"), Value::Integer(7))]);
+    let references = [ReferenceEntry { name: ReferenceName::Value(2), uri: String::from("#anchor") }];
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "STEP reference URI fragment split", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = (|| {
+            ReferenceResolver::new(&references, &anchors, &ctx)?.resolve_value(&Value::ExternalReference(2), 0).map(|_| ())
+        })().map_err(|error| match error {
+            ResolveError::Resource(error) => error,
+            _ => panic!("valid reference must preserve the resource refusal"),
+        });
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
