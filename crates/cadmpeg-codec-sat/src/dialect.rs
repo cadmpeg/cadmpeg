@@ -172,37 +172,48 @@ pub(crate) fn dialect_loss(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     matched: &DialectMatch,
 ) -> Result<Option<LossNote>, cadmpeg_core::CodecError> {
-    Ok(
-        cadmpeg_asm::dialect::unverified_message(ctx, "the stream", matched)?
-            .map(|message| SatLossCode::SourceDialectUnverified.note(message)),
-    )
+    cadmpeg_asm::dialect::unverified_message(ctx, "the stream", matched)?
+        .map(|message| SatLossCode::SourceDialectUnverified.note(ctx, message))
+        .transpose()
 }
 
 /// Host-framing declarations, verbatim, under keys pinned above.
 ///
 /// Kernel save format belongs only to the separate `acis:` match.
-fn declared(evidence: &StreamEvidence<'_>) -> BTreeMap<cadmpeg_core::text::NonBlankString, String> {
+fn declared(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    evidence: &StreamEvidence<'_>,
+) -> Result<BTreeMap<cadmpeg_core::text::NonBlankString, String>, cadmpeg_core::CodecError> {
     let mut declared = BTreeMap::new();
     match evidence {
         StreamEvidence::Binary { .. } => {
-            declared.insert(
+            ctx.insert_btree_map(
+                &mut declared,
                 cadmpeg_core::nonblank_const!(DECLARED_ENCODING),
                 "binary".into(),
-            );
+                "SAT framing declarations",
+            )?;
         }
         StreamEvidence::Text(text) => {
-            declared.insert(
+            ctx.insert_btree_map(
+                &mut declared,
                 cadmpeg_core::nonblank_const!(DECLARED_ENCODING),
                 "text".into(),
-            );
-            let Some(text) = text else { return declared };
-            declared.insert(
+                "SAT framing declarations",
+            )?;
+            let Some(text) = text else { return Ok(declared) };
+            let terminator = ctx.copy_retained_text(
+                terminator_line(text.branch), "SAT framing terminator declaration",
+            )?;
+            ctx.insert_btree_map(
+                &mut declared,
                 cadmpeg_core::nonblank_const!(DECLARED_TERMINATOR),
-                terminator_line(text.branch).into(),
-            );
+                terminator,
+                "SAT framing declarations",
+            )?;
         }
     }
-    declared
+    Ok(declared)
 }
 
 /// The terminator line a text branch ends with.
@@ -219,8 +230,11 @@ pub(crate) const fn terminator_line(branch: sat::Terminator) -> &'static str {
 /// Identity is the row the leading discriminant satisfies; admission is
 /// [`host`]. Kernel save-format identity and admission are not copied into
 /// this host match.
-fn classify(evidence: &StreamEvidence<'_>) -> DialectMatch {
-    host(evidence).with_declared(declared(evidence))
+fn classify(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    evidence: &StreamEvidence<'_>,
+) -> Result<DialectMatch, cadmpeg_core::CodecError> {
+    Ok(host(evidence).with_declared(declared(ctx, evidence)?))
 }
 
 /// Classify the same evidence as the shared non-primary kernel layer.
@@ -247,7 +261,7 @@ pub(crate) fn layers(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     evidence: &StreamEvidence<'_>,
 ) -> Result<(DialectMatch, DialectMatch), cadmpeg_core::CodecError> {
-    Ok((classify(evidence), kernel_layer(ctx, evidence)?))
+    Ok((classify(ctx, evidence)?, kernel_layer(ctx, evidence)?))
 }
 
 #[cfg(test)]
