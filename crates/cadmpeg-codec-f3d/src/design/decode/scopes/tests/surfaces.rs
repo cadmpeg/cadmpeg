@@ -838,6 +838,26 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
     assert_eq!(metadata_record, 701);
     assert_eq!(metadata_record_offset, u64_from_index(prefix + 33));
     assert_eq!(metadata_field, [0; 6]);
+    let operation = "f3d BaseFeature 409/262 metadata field";
+    for (dimension, additional) in [
+        (cadmpeg_core::decode::ResourceDimension::WorkUnits, 6),
+        (cadmpeg_core::decode::ResourceDimension::CollectionItems, 6),
+        (cadmpeg_core::decode::ResourceDimension::RetainedBytes, 6),
+    ] {
+        let refusal = crate::test_support::resource_refusal_at(
+            dimension,
+            operation,
+            0,
+            |ctx| exact_base_feature_construction(ctx, &zero_body, &zero_scope).map(|_| ()),
+        );
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == dimension
+                    && limit.operation == operation
+                    && limit.additional == additional
+        ));
+    }
 
     let mut nonzero_padding = zero_body.clone();
     nonzero_padding[prefix + 47] = 1;
@@ -1147,6 +1167,26 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
     assert_eq!(metadata_record, 701);
     assert_eq!(metadata_record_offset, u64_from_index(prefix + 33));
     assert_eq!(metadata_field, [0; 14]);
+    let operation = "f3d BaseFeature 444/263 metadata tail";
+    for (dimension, additional) in [
+        (cadmpeg_core::decode::ResourceDimension::WorkUnits, 14),
+        (cadmpeg_core::decode::ResourceDimension::CollectionItems, 14),
+        (cadmpeg_core::decode::ResourceDimension::RetainedBytes, 14),
+    ] {
+        let refusal = crate::test_support::resource_refusal_at(
+            dimension,
+            operation,
+            0,
+            |ctx| exact_base_feature_construction(ctx, &zero_body, &zero_scope).map(|_| ()),
+        );
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == dimension
+                    && limit.operation == operation
+                    && limit.additional == additional
+        ));
+    }
 
     let mut nonzero_tail = zero_body.clone();
     nonzero_tail[prefix + 41] = 1;

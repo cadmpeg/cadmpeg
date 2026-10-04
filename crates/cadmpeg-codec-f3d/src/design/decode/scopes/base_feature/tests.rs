@@ -87,7 +87,8 @@ fn base_feature_result_runs_refuse_each_collection_limit() {
         (2, "f3d BaseFeature entities"),
         (5, "f3d BaseFeature references"),
         (8, "f3d BaseFeature repeated reference fields"),
-        (10, "f3d BaseFeature remaining result bodies"),
+        // Includes the two metadata bytes admitted before the remaining bodies.
+        (12, "f3d BaseFeature remaining result bodies"),
     ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
@@ -107,15 +108,41 @@ fn base_feature_result_runs_refuse_each_collection_limit() {
     }
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 11;
+    // Includes the two admitted result-body metadata bytes.
+    policy.limits.max_collection_items = 13;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = exact_base_feature_construction(&ctx, &bytes, &scope)
         .unwrap()
         .expect("admitted BaseFeature result bodies");
-    let DesignBaseFeatureConstruction::ResultBodies { bodies, .. } = result else {
+    let DesignBaseFeatureConstruction::ResultBodies {
+        bodies,
+        metadata_field,
+        ..
+    } = result else {
         panic!("unexpected BaseFeature construction");
     };
     assert_eq!(bodies.iter().count(), 3);
+    assert_eq!(metadata_field, [0; 2]);
+    let operation = "f3d BaseFeature result-body metadata field";
+    for (dimension, additional) in [
+        (ResourceDimension::WorkUnits, 2),
+        (ResourceDimension::CollectionItems, 2),
+        (ResourceDimension::RetainedBytes, 2),
+    ] {
+        let refusal = crate::test_support::resource_refusal_at(
+            dimension,
+            operation,
+            0,
+            |ctx| exact_base_feature_construction(ctx, &bytes, &scope).map(|_| ()),
+        );
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == dimension
+                    && limit.operation == operation
+                    && limit.additional == additional
+        ));
+    }
 }
 
 fn snapshot_frame() -> (Vec<u8>, DesignParameterScope) {
