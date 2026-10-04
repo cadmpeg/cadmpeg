@@ -119,24 +119,37 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Option<BinaryHeade
 /// three `0x06`-tagged tolerance doubles. The record stream's first record is
 /// the `asmheader`, which is `RecordTable` index 0. Returns `None` for streams
 /// without a recognized header layout.
-pub fn record_stream_start(bytes: &[u8]) -> Option<usize> {
-    let width = declared_width(bytes)?;
-    record_stream_start_with_width(bytes, width)
+pub fn record_stream_start(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<usize>, CodecError> {
+    let Some(width) = declared_width(bytes) else {
+        return Ok(None);
+    };
+    record_stream_start_with_width(ctx, bytes, width)
 }
 
 /// Byte offset at which the SAB record stream begins, using an already-parsed
 /// ASM header.
-pub fn record_stream_start_with_header(bytes: &[u8], header: &BinaryHeader) -> Option<usize> {
-    record_stream_start_with_width(bytes, header.width)
+pub fn record_stream_start_with_header(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    header: &BinaryHeader,
+) -> Result<Option<usize>, CodecError> {
+    record_stream_start_with_width(ctx, bytes, header.width)
 }
 
-fn record_stream_start_with_width(bytes: &[u8], width: RefWidth) -> Option<usize> {
+fn record_stream_start_with_width(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    width: RefWidth,
+) -> Result<Option<usize>, CodecError> {
     let start = match width {
         RefWidth::Eight => bf8::LEN,
         RefWidth::Four => bf4::LEN,
     };
-    let (strings, doubles, cur) = scan_string_region(bytes, start);
-    (strings == 3 && doubles == 3).then_some(cur)
+    let (strings, doubles, cur) = scan_string_region(ctx, bytes, start)?;
+    Ok((strings == 3 && doubles == 3).then_some(cur))
 }
 
 /// Exact byte boundary between solved BREP records and construction history.
@@ -152,18 +165,19 @@ pub fn solved_record_limit(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<usize>, CodecError> {
-    let Some((start, width)) = (|| {
-        let width = declared_width(bytes)?;
-        let flags = match width {
+    let Some(width) = declared_width(bytes) else {
+        return Ok(None);
+    };
+    let Some(flags) = (match width {
             RefWidth::Four => View::u32_le_at(bytes, bf4::FLAGS).map(u64::from),
             RefWidth::Eight => View::u64_le_at(bytes, bf8::FLAGS),
-        }?;
-        if flags & crate::kernel_header::HISTORY_PARTITION_FLAG == 0 {
-            return None;
-        }
-        let start = record_stream_start_with_width(bytes, width)?;
-        Some((start, width))
-    })() else {
+        }) else {
+        return Ok(None);
+    };
+    if flags & crate::kernel_header::HISTORY_PARTITION_FLAG == 0 {
+        return Ok(None);
+    }
+    let Some(start) = record_stream_start_with_width(ctx, bytes, width)? else {
         return Ok(None);
     };
     crate::sab::scan_history_boundary(
@@ -184,7 +198,7 @@ pub fn solved_record_limit_with_header(
     if !header.metadata.has_history_partition() {
         return Ok(None);
     }
-    let Some(start) = record_stream_start_with_header(bytes, header) else {
+    let Some(start) = record_stream_start_with_header(ctx, bytes, header)? else {
         return Ok(None);
     };
     crate::sab::scan_history_boundary(

@@ -5539,7 +5539,7 @@ fn try_decode_brep(
     let width = header.width;
 
     let bytes = scan.entry_bytes(&brep_entry.name)?;
-    let Some(start) = asm_header::record_stream_start(bytes) else {
+    let Some(start) = asm_header::record_stream_start(ctx, bytes)? else {
         return Ok(None);
     };
     // A stream without a delta-state boundary is history-less: its final

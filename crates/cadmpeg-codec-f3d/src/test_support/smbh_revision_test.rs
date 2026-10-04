@@ -54,7 +54,7 @@ pub(crate) fn synthetic_revision_surface_smbh(
     body: impl FnOnce(&mut Vec<u8>),
 ) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();
@@ -206,7 +206,7 @@ pub(crate) fn regenerated_procedural_surface_span(ir: &cadmpeg_ir::document::Cad
 
 /// The subtype span of the synthetic stream's revision-gated surface record.
 pub(crate) fn synthetic_revision_surface_subtype_span(smbh: &[u8]) -> Vec<u8> {
-    let start = asm_header::record_stream_start(smbh).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), smbh).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), smbh)
         .expect("history scan")
         .unwrap();

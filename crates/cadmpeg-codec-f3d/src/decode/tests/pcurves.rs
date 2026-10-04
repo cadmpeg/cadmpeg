@@ -1098,7 +1098,7 @@ fn generated_pcurve_geometry_dispatch_follows_discriminator() {
 #[test]
 fn generated_pcurve_reports_dangling_carrier_reference() {
     let mut smbh = synthetic_geometry_with_pcurve_smbh();
-    let start = asm_header::record_stream_start(&smbh).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &smbh).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &smbh)
         .expect("history scan")
         .unwrap();

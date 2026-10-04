@@ -136,7 +136,7 @@ fn asm_header_parses_binaryfile4_fields() {
     assert_eq!(h.metadata.linear, Some(HEADER_LINEAR_TOLERANCE));
     assert_eq!(h.metadata.angular, Some(HEADER_ANGULAR_TOLERANCE));
     // The record stream begins directly after the tolerance doubles.
-    assert_eq!(asm_header::record_stream_start(&bytes), Some(bytes.len()));
+    assert_eq!(asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap(), Some(bytes.len()));
 }
 
 #[test]
@@ -352,7 +352,7 @@ fn history_preamble_record_is_the_modern_partition_boundary() {
         asm_header::solved_record_limit(&service_decode_context(), &bytes).expect("history scan"),
         Some(expected)
     );
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let solved = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
@@ -372,7 +372,7 @@ fn delta_state_text_inside_a_payload_cannot_cut_the_solved_stream() {
     let delta = asm_header::solved_record_limit(&service_decode_context(), &direct)
         .expect("history scan")
         .unwrap();
-    let start = asm_header::record_stream_start(&direct).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &direct).unwrap().unwrap();
     let mut bytes = direct[..start].to_vec();
     t_ident(&mut bytes, "metadata");
     push_u8_string(&mut bytes, "delta_state");
@@ -849,7 +849,7 @@ fn smbh_header_string_region_starts_at_byte_47() {
     assert_eq!(h.metadata.flags, Some(3));
     assert_eq!(h.metadata.angular, Some(HEADER_ANGULAR_TOLERANCE));
     assert_eq!(
-        asm_header::record_stream_start(&prefix),
+        asm_header::record_stream_start(&service_decode_context(), &prefix).unwrap(),
         Some(prefix.len()),
         "record stream starts right after the header"
     );
@@ -858,7 +858,7 @@ fn smbh_header_string_region_starts_at_byte_47() {
 #[test]
 fn sab_framer_indexes_records_from_asmheader() {
     let bytes = synthetic_geometry_smbh();
-    let start = asm_header::record_stream_start(&bytes).expect("record stream start");
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().expect("record stream start");
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap_or(bytes.len());

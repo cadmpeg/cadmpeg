@@ -157,7 +157,7 @@ impl AsmEditSet {
         )?;
         let header = asm_header::parse(&ctx, bytes)?
             .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
-        let start = asm_header::record_stream_start_with_header(bytes, &header)
+        let start = asm_header::record_stream_start_with_header(&ctx, bytes, &header)?
             .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
         let limit = asm_header::solved_record_limit_with_header(&ctx, bytes, &header)?
             .unwrap_or(bytes.len());
