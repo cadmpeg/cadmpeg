@@ -123,11 +123,11 @@ fn decode_chars(ctx: &DecodeContext<'_>,
                         offset: start + error.valid_up_to(),
                         message: "invalid UTF-8 direct string bytes".into(),
                     })?;
-                    for character in text.chars() {
+                    for character in ctx.admit_iter(text, "STEP decode chars traversal").map_err(CodecError::from)? {
                         emit(character);
                     }
                 } else {
-                    for byte in direct {
+                    for byte in ctx.admit_iter(direct, "STEP decode chars view traversal").map_err(cadmpeg_core::CodecError::from)? {
                         emit(char::from(*byte));
                     }
                 }

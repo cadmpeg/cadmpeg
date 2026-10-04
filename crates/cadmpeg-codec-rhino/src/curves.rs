@@ -797,7 +797,7 @@ pub(crate) fn exact_nurbs(
             let mut segments = ctx
                 .collection_vec(children.len(), "Rhino exact NURBS segments")
                 .map_err(crate::curves::GeometryError::from)?;
-            for (index, (start, child)) in children.iter().enumerate() {
+            for (index, (start, child)) in ctx.admit_iter(&(children)[..], "Rhino exact nurbs traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
                 let end = children
                     .get(index + 1)
                     .map_or(*end_parameter, |(next, _)| *next);
@@ -847,7 +847,7 @@ pub(crate) fn remap_nurbs_domain(
     let mut remapped = ctx
         .collection_vec(curve.knots().len(), "Rhino remapped NURBS knots")
         .map_err(crate::curves::GeometryError::from)?;
-    for knot in curve.knots().iter().copied() {
+    for knot in ctx.admit_iter(&(curve.knots())[..], "Rhino remap nurbs domain traversal").map_err(cadmpeg_core::CodecError::from)?.copied() {
         let fraction = cadmpeg_ir::math::parameter_fraction(knot, source[0], source[1])
             .map(cadmpeg_ir::scalar::FiniteReal::get)
             .ok_or_else(|| error(offset, "curve knot remap overflowed"))?;
@@ -930,7 +930,7 @@ fn insert_knot_once(
         .rposition(|knot| *knot <= value)
         .map_or_else(|| Err(error(offset, ctx.copy_retained_text(failure, "Rhino knot insertion invariant message")?)), Ok)?;
     let k = if degree == 0 { k.min(n) } else { k };
-    let multiplicity = knots.iter().filter(|knot| **knot == value).count();
+    let multiplicity = ctx.admit_iter(&(knots)[..], "Rhino insert knot once traversal").map_err(cadmpeg_core::CodecError::from)?.filter(|knot| **knot == value).count();
     if multiplicity > degree
         || k < degree
         || k - degree > n
@@ -1048,7 +1048,7 @@ fn elevate_to_degree(
     let mut knots = ctx.collection_vec(source_knots.len(), "Rhino polycurve knots")?;
     knots.extend_from_slice(source_knots);
     for endpoint in domain {
-        while knots.iter().filter(|value| **value == endpoint).count() < degree + 1 {
+        while ctx.admit_iter(&(knots)[..], "Rhino elevate to degree traversal").map_err(cadmpeg_core::CodecError::from)?.filter(|value| **value == endpoint).count() < degree + 1 {
             insert_knot_once(
                 ctx,
                 &mut knots,
@@ -1061,8 +1061,7 @@ fn elevate_to_degree(
         }
     }
     let mut internal = Vec::new();
-    for knot in knots
-        .iter()
+    for knot in ctx.admit_iter(&(knots)[..], "Rhino elevate to degree traversal").map_err(cadmpeg_core::CodecError::from)?
         .copied()
         .filter(|knot| *knot > domain[0] && *knot < domain[1])
     {
@@ -1071,7 +1070,7 @@ fn elevate_to_degree(
     }
     internal.dedup();
     for knot in internal {
-        while knots.iter().filter(|value| **value == knot).count() < degree {
+        while ctx.admit_iter(&(knots)[..], "Rhino elevate to degree traversal").map_err(cadmpeg_core::CodecError::from)?.filter(|value| **value == knot).count() < degree {
             insert_knot_once(
                 ctx,
                 &mut knots,
@@ -1099,7 +1098,7 @@ fn elevate_to_degree(
         let mut bezier = ctx.collection_vec(bezier_count, "Rhino polycurve Bezier span")?;
         bezier.extend_from_slice(&points[span - degree..=span]);
         let bezier = elevate_bezier(ctx, bezier, target)?;
-        let disconnected = knots.iter().filter(|knot| **knot == knots[span]).count() > degree;
+        let disconnected = ctx.admit_iter(&(knots)[..], "Rhino elevate to degree traversal").map_err(cadmpeg_core::CodecError::from)?.filter(|knot| **knot == knots[span]).count() > degree;
         let skip = usize::from(index > 0 && !disconnected);
         if index > 0 {
             let added = target + usize::from(disconnected);
@@ -1166,7 +1165,7 @@ pub(crate) fn join_nurbs_segments(
     let mut elevated_segments = ctx
         .collection_vec(segments.len(), "Rhino elevated polycurve segments")
         .map_err(crate::curves::GeometryError::from)?;
-    for segment in &segments {
+    for segment in ctx.admit_iter(&(segments)[..], "Rhino join nurbs segments traversal").map_err(cadmpeg_core::CodecError::from)? {
         elevated_segments.push(elevate_to_degree(ctx, segment, target, offset)?);
     }
     segments = elevated_segments;
@@ -1180,7 +1179,7 @@ pub(crate) fn join_nurbs_segments(
         .ok()
         .and_then(|value| value.checked_add(1))
         .ok_or_else(|| error(offset, "curve degree overflow"))?;
-    for segment in &segments {
+    for segment in ctx.admit_iter(&(segments)[..], "Rhino join nurbs segments traversal").map_err(cadmpeg_core::CodecError::from)? {
         let start = segment.knots().get(multiplicity - 1).copied();
         let end = segment
             .knots()
@@ -1190,17 +1189,15 @@ pub(crate) fn join_nurbs_segments(
             .copied();
         if start.is_none()
             || end.is_none()
-            || segment.knots()[..multiplicity]
-                .iter()
+            || ctx.admit_iter(&(segment.knots()[..multiplicity])[..], "Rhino join nurbs segments traversal").map_err(cadmpeg_core::CodecError::from)?
                 .any(|value| Some(*value) != start)
-            || segment.knots()[segment.knots().len() - multiplicity..]
-                .iter()
+            || ctx.admit_iter(&(segment.knots()[segment.knots().len() - multiplicity..])[..], "Rhino join nurbs segments traversal").map_err(cadmpeg_core::CodecError::from)?
                 .any(|value| Some(*value) != end)
         {
             return Err(error(offset, "polycurve segment is not endpoint-clamped"));
         }
     }
-    let rational = segments.iter().any(|segment| {
+    let rational = ctx.admit_iter(&(segments)[..], "Rhino join nurbs segments traversal").map_err(cadmpeg_core::CodecError::from)?.any(|segment| {
         matches!(
             segment.pole_rows(),
             cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { .. }

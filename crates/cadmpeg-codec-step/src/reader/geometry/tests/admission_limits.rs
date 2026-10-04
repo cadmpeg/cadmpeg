@@ -543,3 +543,25 @@ fn curve_strip_source_name_refuses_retained_limit() {
                 && refusal.operation == "step_curve_strip_source_name"
     ));
 }
+
+#[test]
+fn transformation_operator_partial_refusal_stays_error() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_TRANSFORMATION_OPERATOR_3D('',$,$,#3,1.,$);#2=CARTESIAN_TRANSFORMATION_OPERATOR_2D('',$,$,#3,1.);#3=DUMMY();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner)
+        .expect("valid transformation operator records");
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    for dimension in [3, 2] {
+        crate::test_support::with_policy_context(&[], &policy, |_, ctx| {
+            let error = if dimension == 3 {
+                super::super::cartesian_transformation_operator(ctx, exchange.records().get(&1).expect("3D operator"), &std::collections::BTreeMap::new(), &std::collections::BTreeMap::new())
+                    .expect_err("3D partial scan exceeds work")
+            } else {
+                super::super::cartesian_transformation_operator_2d(ctx, exchange.records().get(&2).expect("2D operator"), &std::collections::BTreeMap::new(), &std::collections::BTreeMap::new())
+                    .expect_err("2D partial scan exceeds work")
+            };
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "STEP transformation attribute partial traversal" && Some(limit) == ctx.resource_refusal()));
+        });
+    }
+}

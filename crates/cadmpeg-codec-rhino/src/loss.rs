@@ -74,8 +74,8 @@ impl Diagnostics {
         });
     }
 
-    pub(crate) fn messages(&self) -> impl Iterator<Item = &str> {
-        self.0.iter().map(|entry| entry.message.as_str())
+    pub(crate) fn messages<'a>(&'a self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<impl Iterator<Item = &'a str> + 'a, cadmpeg_core::CodecError> {
+        Ok(ctx.admit_iter(self.0.as_slice(), "Rhino diagnostic message traversal")?.map(|entry| entry.message.as_str()))
     }
 
     /// Places `earlier` ahead of the diagnostics already recorded.
@@ -122,7 +122,7 @@ impl Diagnostics {
         other: &Self,
     ) -> Result<(), cadmpeg_core::CodecError> {
         ctx.reserve_vec(&mut self.0, other.0.len(), "Rhino diagnostic copies")?;
-        for diagnostic in &other.0 {
+        for diagnostic in ctx.admit_iter(&(other.0)[..], "Rhino extend cloned admitted traversal").map_err(cadmpeg_core::CodecError::from)? {
             self.0.push(RhinoDiagnostic {
                 code: diagnostic.code,
                 message: ctx

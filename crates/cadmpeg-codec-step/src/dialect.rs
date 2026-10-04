@@ -369,9 +369,9 @@ with the entity vocabulary verified for {FORMAT}:{}",
 pub(crate) fn refuse_alternate_encoding(ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &[u8]) -> Result<(), CodecError> {
     let encoding = if crate::codec::is_part26_hdf5(bytes) {
         AlternateEncoding::Part26Hdf5
-    } else if crate::codec::is_part28_xml(bytes) {
+    } else if crate::codec::is_part28_xml(ctx, bytes)? {
         AlternateEncoding::Part28Xml
-    } else if crate::codec::is_ap242_bo_model_xml(bytes) {
+    } else if crate::codec::is_ap242_bo_model_xml(ctx, bytes)? {
         AlternateEncoding::Ap242BoModelXml
     } else {
         return Ok(());

@@ -5,6 +5,7 @@ use crate::loss::Diagnostics;
 use std::ops::Range;
 
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::{nurbs_curve_parameter_domain, nurbs_curve_point_at_with_basis};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::features::FiniteVector3;
@@ -249,7 +250,7 @@ pub(crate) fn decode(
             }
         }
     };
-    for mesh in &meshes {
+    for mesh in expand.ctx().admit_iter(&(meshes)[..], "Rhino decode traversal").map_err(cadmpeg_core::CodecError::from)? {
         warnings.extend_cloned_admitted(expand.ctx(), &mesh.warnings)?;
     }
     finish_payload(
@@ -310,7 +311,7 @@ pub(crate) fn decode(
     for source in source_boundaries {
         orientations.push(exact_orientation(expand.ctx(), &source, version_offset)?);
         let source_nurbs = exact_nurbs(expand.ctx(), &source, version_offset)?;
-        require_profile_plane(&source_nurbs, version_offset)?;
+        require_profile_plane(expand.ctx(), &source_nurbs, version_offset)?;
         let start_nurbs = transform_nurbs(
             expand.ctx(),
             &source_nurbs,
@@ -376,7 +377,7 @@ pub(crate) fn decode(
     }
     if (orientations.len() > 1
         && (orientations.first() != Some(&1)
-            || orientations.iter().skip(1).any(|value| *value != -1)))
+            || expand.ctx().admit_iter(&(orientations)[..], "Rhino decode traversal").map_err(cadmpeg_core::CodecError::from)?.skip(1).any(|value| *value != -1)))
         || (orientations.len() == 1 && !matches!(orientations[0], 0 | 1))
     {
         return Err(error(
@@ -384,7 +385,7 @@ pub(crate) fn decode(
             "extrusion profile orientations are invalid",
         ));
     }
-    let all_closed = orientations.iter().all(|orientation| *orientation != 0);
+    let all_closed = expand.ctx().admit_iter(&(orientations)[..], "Rhino decode traversal").map_err(cadmpeg_core::CodecError::from)?.all(|orientation| *orientation != 0);
     let caps = if minor >= 2 {
         raw_caps
     } else if all_closed {
@@ -452,7 +453,7 @@ fn exact_orientation(
     if curve.pole_count() < 2 || curve.degree() == 0 {
         return Err(error(offset, "extrusion profile closure is degenerate"));
     }
-    if profile_off_plane(&curve) {
+    if profile_off_plane(ctx, &curve)? {
         return Err(error(offset, "extrusion profile is not in the XY plane"));
     }
     let domain = nurbs_curve_parameter_domain(&curve)
@@ -539,7 +540,7 @@ fn exact_orientation(
 
     let mut previous = end;
     let mut twice_area = 0.0;
-    for pair in curve.knots().windows(2) {
+    for pair in ctx.admit_iter(&curve.knots()[..], "Rhino exact orientation window traversal").map_err(cadmpeg_core::CodecError::from)?.windows(std::num::NonZeroUsize::new(2).ok_or_else(|| cadmpeg_core::CodecError::malformed("invalid window size"))?) {
         let span_start = pair[0].max(domain[0]);
         let span_end = pair[1].min(domain[1]);
         if span_start >= span_end {
@@ -626,18 +627,18 @@ fn points_coincident(first: Point3, second: Point3) -> bool {
     })
 }
 
-fn require_profile_plane(curve: &NurbsCurve, offset: usize) -> Result<(), GeometryError> {
-    if profile_off_plane(curve) {
+fn require_profile_plane(ctx: &DecodeContext<'_>, curve: &NurbsCurve, offset: usize) -> Result<(), GeometryError> {
+    if profile_off_plane(ctx, curve)? {
         return Err(error(offset, "extrusion profile is not in the XY plane"));
     }
     Ok(())
 }
 
-fn profile_off_plane(curve: &NurbsCurve) -> bool {
-    match curve.pole_rows() {
-        NurbsPoles3::Polynomial { points } => points.iter().any(|point| point.get().z != 0.0),
-        NurbsPoles3::Rational { points } => points.iter().any(|pole| pole.point.get().z != 0.0),
-    }
+fn profile_off_plane(ctx: &DecodeContext<'_>, curve: &NurbsCurve) -> Result<bool, CodecError> {
+    Ok(match curve.pole_rows() {
+        NurbsPoles3::Polynomial { points } => ctx.admit_iter(points.as_slice(), "Rhino extrusion profile plane traversal")?.any(|point| point.get().z != 0.0),
+        NurbsPoles3::Rational { points } => ctx.admit_iter(points.as_slice(), "Rhino extrusion profile plane traversal")?.any(|pole| pole.point.get().z != 0.0),
+    })
 }
 
 fn transform_nurbs(
@@ -907,8 +908,7 @@ fn read_v5_mesh_cache(
         writer_version,
         scale,
     } = format;
-    let Some(cache) = userdata
-        .iter()
+    let Some(cache) = expand.ctx().admit_iter(&(userdata)[..], "Rhino read v5 mesh cache traversal").map_err(cadmpeg_core::CodecError::from)?
         .filter_map(UserdataDescriptor::known)
         .find(|value| {
             value.class_uuid == ON_V5_EXTRUSION_DISPLAY_MESH_CACHE

@@ -1699,11 +1699,11 @@ pub(crate) fn install(
     let mut cplanes = Vec::new();
     let mut losses = Vec::new();
     let mut opaque_records = Vec::new();
-    for table in &scan.tables {
+    for table in ctx.admit_iter(&(scan.tables)[..], "Rhino install traversal").map_err(cadmpeg_core::CodecError::from)? {
         if table.typecode & !0x0000_8000 != SETTINGS {
             continue;
         }
-        for record in &table.records {
+        for record in ctx.admit_iter(&(table.records)[..], "Rhino install traversal").map_err(cadmpeg_core::CodecError::from)? {
             if record.typecode == NAMED_CPLANES {
                 let Some(scale) = binding.neutral_scale() else {
                     retain_unbound_view_record(

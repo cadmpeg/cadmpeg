@@ -499,7 +499,9 @@ fn drawing_untyped_relationship_loss_refuses_collection_limit() {
         crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
             .expect("valid drawing exchange");
     let record = exchange.records().get(&2).expect("view record");
-    let parameters = super::super::source_parameters(record, "PRESENTATION_VIEW");
+    let parameters = crate::test_support::with_service_context(&[], |_, ctx| {
+        super::super::source_parameters(ctx, record, "PRESENTATION_VIEW").expect("view parameters")
+    });
     let refused = (0..=128).any(|limit| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();

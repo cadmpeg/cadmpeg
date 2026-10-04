@@ -90,11 +90,11 @@ pub(super) fn decode(
     let mut hidden_style_ids = BTreeSet::new();
     let mut hidden_layer_ids = BTreeSet::new();
     let mut deferred_invisibility = BTreeMap::<u64, (bool, BTreeSet<u64>, BTreeSet<u64>)>::new();
-    for (&id, record) in exchange.records() {
-        if record.partial("INVISIBILITY").is_none() {
+    for (&id, record) in ctx.admit_iter(exchange.records(), "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
+        if record.partial(ctx, "INVISIBILITY")?.is_none() {
             continue;
         }
-        let Some(items) = named_parameter(record, "INVISIBILITY", 0).and_then(ValueExt::list)
+        let Some(items) = named_parameter(ctx, record, "INVISIBILITY", 0)?.and_then(ValueExt::list)
         else {
             ctx.push_vec(
                 &mut losses,
@@ -110,7 +110,7 @@ pub(super) fn decode(
             if exchange
                 .records()
                 .get(&target)
-                .is_some_and(|record| record.partial("PRESENTATION_LAYER_ASSIGNMENT").is_some())
+                .map(|record| record.partial(ctx, "PRESENTATION_LAYER_ASSIGNMENT")).transpose()?.flatten().is_some()
             {
                 ctx.insert_btree_set(
                     &mut hidden_layer_ids,
@@ -124,10 +124,9 @@ pub(super) fn decode(
                 )?;
                 continue;
             }
-            if exchange
-                .records()
-                .get(&target)
-                .is_some_and(|record| styled_item_parts(record).is_some())
+            if exchange.records().get(&target)
+                .map(|record| styled_item_parts(ctx, record))
+                .transpose()?.flatten().is_some()
             {
                 ctx.insert_btree_set(
                     &mut hidden_style_ids,
@@ -141,19 +140,15 @@ pub(super) fn decode(
                 )?;
                 continue;
             }
-            if exchange
-                .records()
-                .get(&target)
-                .is_some_and(super::drawing::is_supported_invisibility_target)
-            {
-                continue;
+            if let Some(record) = exchange.records().get(&target) {
+                if super::drawing::is_supported_invisibility_target(ctx, record)? {
+                    continue;
+                }
             }
-            if exchange
-                .records()
-                .get(&target)
-                .is_some_and(super::pmi::is_supported_invisibility_target)
-            {
-                continue;
+            if let Some(record) = exchange.records().get(&target) {
+                if super::pmi::is_supported_invisibility_target(ctx, record)? {
+                    continue;
+                }
             }
             let (body_ids, target_supported) =
                 invisible_body_ids(target, exchange, topology, &body_indices, ctx)?;
@@ -186,12 +181,12 @@ pub(super) fn decode(
             )?;
         }
     }
-    for (&layer_id, layer) in exchange.records() {
-        if layer.partial("PRESENTATION_LAYER_ASSIGNMENT").is_none() {
+    for (&layer_id, layer) in ctx.admit_iter(exchange.records(), "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
+        if layer.partial(ctx, "PRESENTATION_LAYER_ASSIGNMENT")?.is_none() {
             continue;
         }
         let Some(assigned_items) =
-            named_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 2).and_then(ValueExt::list)
+            named_parameter(ctx, layer, "PRESENTATION_LAYER_ASSIGNMENT", 2)?.and_then(ValueExt::list)
         else {
             ctx.push_vec(
                 &mut losses,
@@ -212,7 +207,7 @@ pub(super) fn decode(
             )?;
             continue;
         }
-        let Some(name) = named_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 0)
+        let Some(name) = named_parameter(ctx, layer, "PRESENTATION_LAYER_ASSIGNMENT", 0)?
             .map(|value| {
                 decode_text_charged(
                     exchange,
@@ -236,7 +231,7 @@ pub(super) fn decode(
             )?;
             continue;
         };
-        let description = named_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 1)
+        let description = named_parameter(ctx, layer, "PRESENTATION_LAYER_ASSIGNMENT", 1)?
             .map(|value| {
                 decode_text_charged(
                     exchange,
@@ -277,15 +272,15 @@ pub(super) fn decode(
         ctx.insert_hash_set(&mut typed, layer_id, "step_presentation_typed_claims")?;
     }
     let mut styles = Vec::new();
-    for (&id, record) in exchange.records() {
-        if styled_item_parts(record).is_some() {
+    for (&id, record) in ctx.admit_iter(exchange.records(), "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
+        if styled_item_parts(ctx, record)?.is_some() {
             let order = style_application_order(id, exchange, graph_limit, ctx)?;
             ctx.push_vec(&mut styles, (id, order), "step_presentation_style_ids")?;
         }
     }
     let mut overridden_styles = BTreeSet::new();
-    for (id, _) in &styles {
-        if let Some(overridden) = overridden_style(&exchange.records()[id]) {
+    for (id, _) in ctx.admit_iter(&(styles)[..], "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
+        if let Some(overridden) = overridden_style(ctx, &exchange.records()[id])? {
             ctx.insert_btree_set(
                 &mut overridden_styles,
                 overridden,
@@ -306,7 +301,7 @@ pub(super) fn decode(
             continue;
         }
         let style = &exchange.records()[&style_id];
-        let Some(parts) = styled_item_parts(style) else {
+        let Some(parts) = styled_item_parts(ctx, style)? else {
             continue;
         };
         let Some(target_step) = parts.target.reference() else {
@@ -329,12 +324,8 @@ pub(super) fn decode(
         let mut color_cache = BTreeMap::new();
         let mut invalid_surface_sides = BTreeSet::new();
         let mut style_references = Vec::new();
-        for reference in parts
-            .styles
-            .list()
-            .into_iter()
-            .flatten()
-            .flat_map(|value| references(value, ctx))
+        for value in ctx.admit_iter(parts.styles.list().unwrap_or_default(), "STEP style value traversal")? {
+        for reference in references(value, ctx)
         {
             let reference = reference?;
             ctx.push_vec(
@@ -343,12 +334,12 @@ pub(super) fn decode(
                 "step_presentation_style_references",
             )?;
         }
+        }
         let mut context_style_ids = BTreeSet::new();
-        for reference in &style_references {
-            if exchange
-                .records()
-                .get(reference)
-                .is_some_and(is_presentation_style_by_context)
+        for reference in ctx.admit_iter(&(style_references)[..], "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
+            if exchange.records().get(reference)
+                .map(|record| is_presentation_style_by_context(ctx, record))
+                .transpose()?.unwrap_or(false)
             {
                 ctx.insert_btree_set(
                     &mut context_style_ids,
@@ -522,10 +513,10 @@ pub(super) fn decode(
             }
         }
         ctx.insert_hash_set(&mut typed, style_id, "step_presentation_typed_claims")?;
-        if let Some(overridden) = overridden_style(style) {
+        if let Some(overridden) = overridden_style(ctx, style)? {
             ctx.insert_hash_set(&mut typed, overridden, "step_presentation_typed_claims")?;
         }
-        for &(id, _) in color_cache.keys() {
+        for &(id, _) in ctx.admit_iter(&(color_cache), "STEP decode map traversal").map_err(cadmpeg_core::CodecError::from)?.map(|(key, _)| key) {
             if !invalid_surface_sides.contains(&id) {
                 ctx.insert_hash_set(&mut typed, id, "step_presentation_typed_claims")?;
             }
@@ -597,7 +588,7 @@ pub(super) fn decode(
     }
     for (target, candidates) in scalar_color_candidates {
         let mut colors = Vec::<Color>::new();
-        for (_, color) in &candidates {
+        for (_, color) in ctx.admit_iter(&(candidates)[..], "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
             let Some(existing) = colors.iter_mut().find(|existing| {
                 existing.r() == color.r() && existing.g() == color.g() && existing.b() == color.b()
             }) else {
@@ -698,17 +689,15 @@ fn collect_invisible_body_ids(
     };
     let mut found_reference = false;
     let mut supported = true;
-    if record
-        .partials
-        .iter()
+    if ctx.admit_iter(&(record
+        .partials)[..], "STEP collect invisible body ids traversal").map_err(cadmpeg_core::CodecError::from)?
         .any(|partial| partial.name == "STYLED_ITEM")
-        || record
-            .partials
-            .iter()
+        || ctx.admit_iter(&(record
+            .partials)[..], "STEP collect invisible body ids traversal").map_err(cadmpeg_core::CodecError::from)?
             .any(|partial| partial.name == "OVER_RIDING_STYLED_ITEM")
     {
         if let Some(reference) =
-            styled_item_parts(record).and_then(|parts| parts.target.reference())
+            styled_item_parts(ctx, record)?.and_then(|parts| parts.target.reference())
         {
             found_reference = true;
             supported &= collect_invisible_body_ids(
@@ -721,12 +710,11 @@ fn collect_invisible_body_ids(
                 ctx,
             )?;
         }
-    } else if record
-        .partials
-        .iter()
+    } else if ctx.admit_iter(&(record
+        .partials)[..], "STEP collect invisible body ids traversal").map_err(cadmpeg_core::CodecError::from)?
         .any(|partial| super::representation::is_representation_name(&partial.name))
     {
-        if let Some(references) = super::representation::items(record) {
+        if let Some(references) = super::representation::items(ctx, record)? {
             for reference in references {
                 found_reference = true;
                 supported &= collect_invisible_body_ids(
@@ -765,7 +753,7 @@ fn expand_style_targets(
         ctx.push_vec(&mut targets, id, "step_presentation_style_target_items")?;
         return Ok(targets);
     };
-    let Some(set_name) = record.partials.iter().find_map(|partial| {
+    let Some(set_name) = ctx.admit_iter(&(record.partials)[..], "STEP expand style targets traversal").map_err(cadmpeg_core::CodecError::from)?.find_map(|partial| {
         matches!(
             partial.name.as_str(),
             "GEOMETRIC_SET" | "GEOMETRIC_CURVE_SET"
@@ -779,7 +767,7 @@ fn expand_style_targets(
     };
     ctx.insert_hash_set(typed, id, "step_presentation_typed_claims")?;
     let mut targets = Vec::new();
-    for item in named_parameter(record, set_name, 1)
+    for item in named_parameter(ctx, record, set_name, 1)?
         .and_then(ValueExt::list)
         .into_iter()
         .flatten()
@@ -1035,9 +1023,9 @@ fn presentation_item_one(
             source_id: super::step_source_id(ctx, id)?,
         });
     };
-    let has = |name: &str| record.partial(name).is_some();
+    let has = |name: &str| -> Result<bool, CodecError> { Ok(record.partial(ctx, name)?.is_some()) };
     Ok(
-        if has("NEXT_ASSEMBLY_USAGE_OCCURRENCE")
+        if has("NEXT_ASSEMBLY_USAGE_OCCURRENCE")?
             && entity_ids
                 .occurrences
                 .contains(ids::product(kind!("occurrence"), id).as_str())
@@ -1045,7 +1033,7 @@ fn presentation_item_one(
             PresentationItem::Occurrence {
                 occurrence: OccurrenceId::from(ids::product(kind!("occurrence"), id)),
             }
-        } else if record.partials.iter().any(|partial| {
+        } else if ctx.admit_iter(&(record.partials)[..], "STEP presentation item one traversal").map_err(cadmpeg_core::CodecError::from)?.any(|partial| {
             (partial.name == "DATUM"
                 || partial.name == "DATUM_SYSTEM"
                 || partial.name.starts_with("DIMENSIONAL_")
@@ -1058,10 +1046,10 @@ fn presentation_item_one(
             PresentationItem::Pmi {
                 annotation: PmiId::from(ids::presentation(kind!("pmi"), id)),
             }
-        } else if (has("TRIANGULATED_FACE")
-            || has("COMPLEX_TRIANGULATED_FACE")
-            || has("TRIANGULATED_SURFACE_SET")
-            || has("COMPLEX_TRIANGULATED_SURFACE_SET"))
+        } else if (has("TRIANGULATED_FACE")?
+            || has("COMPLEX_TRIANGULATED_FACE")?
+            || has("TRIANGULATED_SURFACE_SET")?
+            || has("COMPLEX_TRIANGULATED_SURFACE_SET")?)
             && entity_ids
                 .tessellations
                 .contains(ids::tessellation(kind!("mesh"), id).as_str())
@@ -1148,10 +1136,10 @@ fn collect_identity_indices<'a>(
     Ok(result)
 }
 
-fn overridden_style(style: &RawRecord) -> Option<u64> {
-    styled_item_parts(style)
+fn overridden_style(ctx: &DecodeContext<'_>, style: &RawRecord) -> Result<Option<u64>, CodecError> {
+    Ok(styled_item_parts(ctx, style)?
         .and_then(|parts| parts.overridden)
-        .and_then(ValueExt::reference)
+        .and_then(ValueExt::reference))
 }
 
 struct StyledItemParts<'a> {
@@ -1160,41 +1148,32 @@ struct StyledItemParts<'a> {
     overridden: Option<&'a Value>,
 }
 
-fn styled_item_parts(record: &RawRecord) -> Option<StyledItemParts<'_>> {
-    if let Some(partial) = record
-        .partials
-        .iter()
-        .find(|partial| partial.name == "OVER_RIDING_STYLED_ITEM")
-    {
+fn styled_item_parts<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord) -> Result<Option<StyledItemParts<'a>>, CodecError> {
+    if let Some(partial) = ctx.admit_iter(&record.partials[..], "STEP overriding styled item partial traversal")?
+        .find(|partial| partial.name == "OVER_RIDING_STYLED_ITEM") {
         let parameters = partial.parameters.as_slice();
-        let target = parameters.get(parameters.len().checked_sub(2)?)?;
-        let styles = parameters.get(parameters.len().checked_sub(3)?)?;
-        let overridden = parameters.last()?;
-        return Some(StyledItemParts {
-            styles,
-            target,
-            overridden: Some(overridden),
-        });
+        return Ok((|| {
+            let target = parameters.get(parameters.len().checked_sub(2)?)?;
+            let styles = parameters.get(parameters.len().checked_sub(3)?)?;
+            let overridden = parameters.last()?;
+            Some(StyledItemParts { styles, target, overridden: Some(overridden) })
+        })());
     }
-    let partial = record
-        .partials
-        .iter()
-        .find(|partial| partial.name == "STYLED_ITEM")?;
+    let Some(partial) = ctx.admit_iter(&record.partials[..], "STEP styled item partial traversal")?
+        .find(|partial| partial.name == "STYLED_ITEM") else {
+        return Ok(None);
+    };
     let parameters = partial.parameters.as_slice();
-    let target = parameters.last()?;
-    let styles = parameters.get(parameters.len().checked_sub(2)?)?;
-    Some(StyledItemParts {
-        styles,
-        target,
-        overridden: None,
-    })
+    Ok((|| {
+        let target = parameters.last()?;
+        let styles = parameters.get(parameters.len().checked_sub(2)?)?;
+        Some(StyledItemParts { styles, target, overridden: None })
+    })())
 }
 
-fn is_presentation_style_by_context(record: &RawRecord) -> bool {
-    record
-        .partials
-        .iter()
-        .any(|partial| partial.name == "PRESENTATION_STYLE_BY_CONTEXT")
+fn is_presentation_style_by_context(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<bool, CodecError> {
+    Ok(ctx.admit_iter(&record.partials[..], "STEP contextual style partial traversal")?
+        .any(|partial| partial.name == "PRESENTATION_STYLE_BY_CONTEXT"))
 }
 
 fn presentation_style_context(record: &RawRecord) -> Option<&Value> {
@@ -1264,8 +1243,8 @@ fn scalar_conflict_message(
     ctx.format_retained(format_args!("independent styled items {style_ids} assign conflicting scalar colors to {target:?}; scalar color omitted and appearance bindings retain every assignment"), "step_presentation_scalar_conflict_text")
 }
 
-pub(super) fn styled_item_target(record: &RawRecord) -> Option<u64> {
-    styled_item_parts(record).and_then(|parts| parts.target.reference())
+pub(super) fn styled_item_target(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<Option<u64>, CodecError> {
+    Ok(styled_item_parts(ctx, record)?.and_then(|parts| parts.target.reference()))
 }
 
 /// The position of one styled item in override-depth order.
@@ -1297,7 +1276,7 @@ fn style_depth(
     let _nested = ctx.enter_nested("step_presentation_style_depth_walk")?;
     ctx.insert_btree_set(active, id, "step_presentation_style_depth_active")?;
     let result = if let Some(style) = exchange.records().get(&id) {
-        if let Some(base) = overridden_style(style) {
+        if let Some(base) = overridden_style(ctx, style)? {
             style_depth(base, exchange, active, depth + 1, graph_limit, ctx)?
                 .and_then(|depth| depth.checked_add(1))
         } else {
@@ -1466,7 +1445,7 @@ fn find_color(
     let Some(record) = exchange.records().get(&id) else {
         return Ok(None);
     };
-    if is_presentation_style_by_context(record) {
+    if is_presentation_style_by_context(ctx, record)? {
         return Ok(None);
     }
     if active.contains(&id) {
@@ -1492,16 +1471,10 @@ fn find_color(
         } else {
             SurfaceSideRank::NoUsage
         };
-        let name = record.simple_name().or_else(|| {
-            record.partials.iter().find_map(|partial| {
-                matches!(
-                    partial.name.as_str(),
-                    "COLOUR_RGB" | "DRAUGHTING_PRE_DEFINED_COLOUR"
-                )
-                .then_some(partial.name.as_str())
-            })
-        });
-        let record_domain = record.partials.iter().find_map(|partial| {
+        let name = if let Some(name) = record.simple_name() { Some(name) } else {
+            ctx.admit_iter(&record.partials[..], "STEP color classification partial traversal")?.find_map(|partial| matches!(partial.name.as_str(), "COLOUR_RGB" | "DRAUGHTING_PRE_DEFINED_COLOUR").then_some(partial.name.as_str()))
+        };
+        let record_domain = ctx.admit_iter(&(record.partials)[..], "STEP find color traversal").map_err(cadmpeg_core::CodecError::from)?.find_map(|partial| {
             if partial.name.starts_with("SURFACE_STYLE") {
                 Some(StyleDomain::Surface)
             } else if partial.name == "CURVE_STYLE" {
@@ -1515,12 +1488,10 @@ fn find_color(
         let incompatible = record_domain
             .is_some_and(|candidate| domain != StyleDomain::Any && candidate != domain);
         if incompatible {
-            for reference in record
-                .partials
-                .iter()
-                .flat_map(|partial| partial.parameters.iter())
-                .flat_map(|value| references(value, ctx))
-            {
+            for partial in ctx.admit_iter(&(record
+                .partials)[..], "STEP find color traversal").map_err(cadmpeg_core::CodecError::from)? {
+        for value in ctx.admit_iter(partial.parameters.as_slice(), "STEP record reference parameter traversal")? {
+            for reference in references(value, ctx) {
                 let reference = reference?;
                 // The recursive search caches the colour and records its losses.
                 find_color(
@@ -1538,13 +1509,14 @@ fn find_color(
                     ctx,
                 )?;
             }
+    }
+    }
             return Ok(None);
         }
         match name {
             Some("COLOUR_RGB") => {
-                let Some(rgb) = record
-                    .partials
-                    .iter()
+                let Some(rgb) = ctx.admit_iter(&(record
+                    .partials)[..], "STEP find color traversal").map_err(cadmpeg_core::CodecError::from)?
                     .find(|partial| partial.name == "COLOUR_RGB")
                 else {
                     return Ok(None);
@@ -1562,9 +1534,8 @@ fn find_color(
                 let name_value = if record.partials.len() == 1 {
                     rgb.parameters.first()
                 } else {
-                    record
-                        .partials
-                        .iter()
+                    ctx.admit_iter(&(record
+                        .partials)[..], "STEP find color traversal").map_err(cadmpeg_core::CodecError::from)?
                         .find(|partial| partial.name == "COLOUR_SPECIFICATION")
                         .and_then(|partial| partial.parameters.first())
                 };
@@ -1603,9 +1574,8 @@ fn find_color(
                 let name_value = if record.partials.len() == 1 {
                     record.parameter(0)
                 } else {
-                    record
-                        .partials
-                        .iter()
+                    ctx.admit_iter(&(record
+                        .partials)[..], "STEP find color traversal").map_err(cadmpeg_core::CodecError::from)?
                         .find(|partial| partial.name == "PRE_DEFINED_ITEM")
                         .and_then(|partial| partial.parameters.first())
                 };
@@ -1633,35 +1603,20 @@ fn find_color(
                     })
                 }))
             }
-            _ => combine_color_resolutions(
-                record
-                    .partials
-                    .iter()
-                    .flat_map(|partial| partial.parameters.iter())
-                    .flat_map(|value| references(value, ctx))
-                    .map(|reference| {
-                        let reference = reference?;
-                        find_color(
-                            reference,
-                            exchange,
-                            domain,
-                            ColorSearchState {
-                                storage,
-                                active: &mut *active,
-                                cache: &mut *cache,
-                                losses: &mut *losses,
-                                invalid_surface_sides: &mut *invalid_surface_sides,
-                            },
-                            depth + 1,
-                            ctx,
-                        )
-                    })
-                    .map(|result| {
-                        result.map(|candidate| {
-                            candidate.map(|candidate| candidate.with_min_rank(side_rank))
-                        })
-                    }),
-            ),
+            _ => {
+                let mut color = None;
+                for partial in ctx.admit_iter(&record.partials[..], "STEP color partial traversal")? {
+                    for value in ctx.admit_iter(partial.parameters.as_slice(), "STEP color parameter traversal")? {
+                        for reference in references(value, ctx) {
+                            let candidate = find_color(reference?, exchange, domain, ColorSearchState {
+                                storage, active: &mut *active, cache: &mut *cache, losses: &mut *losses, invalid_surface_sides: &mut *invalid_surface_sides,
+                            }, depth + 1, ctx)?.map(|candidate| candidate.with_min_rank(side_rank));
+                            color = combine_color_resolutions([Ok(color), Ok(candidate)])?;
+                        }
+                    }
+                }
+                Ok(color)
+            },
         }
     })();
     active.remove(&id);
@@ -1713,24 +1668,16 @@ fn surface_transparency(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Fraction>, CodecError> {
     let mut candidates = Vec::new();
-    for property_id in record
-        .partials
-        .iter()
-        .filter(|partial| partial.name == "SURFACE_STYLE_RENDERING_WITH_PROPERTIES")
-        .flat_map(|partial| {
-            partial
-                .parameters
-                .iter()
-                .flat_map(|value| references(value, ctx))
-        })
-    {
+    for partial in ctx.admit_iter(&record.partials[..], "STEP surface transparency partial traversal")?.filter(|partial| partial.name == "SURFACE_STYLE_RENDERING_WITH_PROPERTIES") {
+        for value in ctx.admit_iter(partial.parameters.as_slice(), "STEP surface transparency parameter traversal")? {
+        for property_id in references(value, ctx)
+{
         let property_id = property_id?;
         let Some(property) = exchange.records().get(&property_id) else {
             continue;
         };
-        let Some(transparency) = property
-            .partials
-            .iter()
+        let Some(transparency) = ctx.admit_iter(&(property
+            .partials)[..], "STEP surface transparency traversal").map_err(cadmpeg_core::CodecError::from)?
             .find(|partial| partial.name == "SURFACE_STYLE_TRANSPARENT")
             .and_then(|partial| partial.parameters.first())
             .and_then(ValueExt::number)
@@ -1743,6 +1690,8 @@ fn surface_transparency(
             (property_id, transparency),
             "step_presentation_transparency_candidates",
         )?;
+    }
+        }
     }
     match candidates.as_slice() {
         [] => Ok(None),
@@ -1768,9 +1717,8 @@ fn surface_side_rank(
     storage: &std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'_>>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<SurfaceSideRank>, CodecError> {
-    let Some(partial) = record
-        .partials
-        .iter()
+    let Some(partial) = ctx.admit_iter(&(record
+        .partials)[..], "STEP surface side rank traversal").map_err(cadmpeg_core::CodecError::from)?
         .find(|partial| partial.name == "SURFACE_STYLE_USAGE")
     else {
         return Ok(Some(SurfaceSideRank::NoUsage));
@@ -1867,7 +1815,7 @@ fn style_domain_at(
         active.remove(&id);
         return Ok(StyleDomain::Any);
     };
-    let set_name = record.partials.iter().find_map(|partial| {
+    let set_name = ctx.admit_iter(&(record.partials)[..], "STEP style domain at traversal").map_err(cadmpeg_core::CodecError::from)?.find_map(|partial| {
         matches!(
             partial.name.as_str(),
             "GEOMETRIC_SET" | "GEOMETRIC_CURVE_SET"
@@ -1877,7 +1825,7 @@ fn style_domain_at(
     if let Some(set_name) = set_name {
         let mut first = None;
         let mut same = true;
-        for member in named_parameter(record, set_name, 1)
+        for member in named_parameter(ctx, record, set_name, 1)?
             .and_then(ValueExt::list)
             .into_iter()
             .flatten()
@@ -1896,7 +1844,7 @@ fn style_domain_at(
             return Ok(if same { first } else { StyleDomain::Any });
         }
     }
-    let has_point = record.partials.iter().any(|partial| {
+    let has_point = ctx.admit_iter(&(record.partials)[..], "STEP style domain at traversal").map_err(cadmpeg_core::CodecError::from)?.any(|partial| {
         let name = partial.name.as_str();
         name.contains("POINT") || name.contains("VERTEX")
     });
@@ -1904,7 +1852,7 @@ fn style_domain_at(
         active.remove(&id);
         return Ok(StyleDomain::Point);
     }
-    let has_curve = record.partials.iter().any(|partial| {
+    let has_curve = ctx.admit_iter(&(record.partials)[..], "STEP style domain at traversal").map_err(cadmpeg_core::CodecError::from)?.any(|partial| {
         let name = partial.name.as_str();
         name.contains("CURVE")
             || name.contains("EDGE")
@@ -1918,7 +1866,7 @@ fn style_domain_at(
         active.remove(&id);
         return Ok(StyleDomain::Curve);
     }
-    let result = if record.partials.iter().any(|partial| {
+    let result = if ctx.admit_iter(&(record.partials)[..], "STEP style domain at traversal").map_err(cadmpeg_core::CodecError::from)?.any(|partial| {
         let name = partial.name.as_str();
         name.contains("FACE")
             || name.contains("SURFACE")
@@ -1949,7 +1897,7 @@ fn style_is_hidden(
     }
     let _nested = ctx.enter_nested("step_presentation_hidden_style_walk")?;
     ctx.insert_btree_set(active, id, "step_presentation_hidden_style_active")?;
-    let hidden = if let Some(base) = exchange.records().get(&id).and_then(overridden_style) {
+    let hidden = if let Some(base) = exchange.records().get(&id).map(|record| overridden_style(ctx, record)).transpose()?.flatten() {
         style_is_hidden(base, hidden_style_ids, exchange, active, ctx)?
     } else {
         false
@@ -1970,7 +1918,7 @@ fn style_inherits_from(
     }
     let _nested = ctx.enter_nested("step_presentation_style_inheritance_walk")?;
     ctx.insert_btree_set(active, id, "step_presentation_style_inheritance_active")?;
-    let inherits = if let Some(base) = exchange.records().get(&id).and_then(overridden_style) {
+    let inherits = if let Some(base) = exchange.records().get(&id).map(|record| overridden_style(ctx, record)).transpose()?.flatten() {
         style_inherits_from(base, ancestor, exchange, active, ctx)?
     } else {
         false
@@ -1994,7 +1942,7 @@ fn contains_null_style(
         Value::Typed(name, _) if name == "NULL_STYLE" => Ok(true),
         Value::Typed(_, value) => contains_null_style(value, exchange, visited, depth + 1, ctx),
         Value::List(values) => {
-            for value in values {
+            for value in ctx.admit_iter(values.as_slice(), "STEP contains null style value traversal").map_err(cadmpeg_core::CodecError::from)? {
                 if contains_null_style(value, exchange, visited, depth + 1, ctx)? {
                     return Ok(true);
                 }
@@ -2004,15 +1952,14 @@ fn contains_null_style(
         Value::Reference(id) if !visited.contains(id) => {
             ctx.insert_btree_set(visited, *id, "step_presentation_null_style_visited")?;
             if let Some(record) = exchange.records().get(id) {
-                for value in record
-                    .partials
-                    .iter()
-                    .flat_map(|partial| partial.parameters.iter())
-                {
+                for partial in ctx.admit_iter(&(record
+                    .partials)[..], "STEP contains null style traversal").map_err(cadmpeg_core::CodecError::from)? {
+        for value in ctx.admit_iter(partial.parameters.as_slice(), "STEP record parameter traversal")? {
                     if contains_null_style(value, exchange, visited, depth + 1, ctx)? {
                         return Ok(true);
                     }
                 }
+    }
             }
             Ok(false)
         }

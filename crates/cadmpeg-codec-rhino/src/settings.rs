@@ -2552,8 +2552,7 @@ fn parse_layer(
     // internal disambiguation.
     let mut source_requires_opaque = serialized_id.is_some_and(super::wire::Uuid::is_nil);
     if let Some(descriptor) =
-        userdata
-            .iter()
+        ctx.admit_iter(&(userdata)[..], "Rhino parse layer traversal").map_err(cadmpeg_core::CodecError::from)?
             .filter_map(UserdataDescriptor::known)
             .find(|descriptor| {
                 descriptor.class_uuid == LAYER_EXTENSIONS
@@ -2699,9 +2698,9 @@ pub(crate) fn parse_metadata(
     let mut property_workspace = ctx.reserve_scoped(0, "Rhino property singleton workspace")?;
     let mut setting_workspace = ctx.reserve_scoped(0, "Rhino setting singleton workspace")?;
     let mut opaque_records = Vec::new();
-    for table in tables {
+    for table in ctx.admit_iter(tables, "Rhino parse metadata traversal").map_err(cadmpeg_core::CodecError::from)? {
         let table_type = table.typecode & !0x0000_8000;
-        for record in &table.records {
+        for record in ctx.admit_iter(&(table.records)[..], "Rhino parse metadata traversal").map_err(cadmpeg_core::CodecError::from)? {
             let singleton = match table_type {
                 PROPERTIES => matches!(
                     record.typecode,
@@ -2875,7 +2874,7 @@ pub(crate) fn parse_metadata(
     }
     let mut layer_index_counts = Vec::<(i32, usize)>::new();
     let mut index_workspace = ctx.reserve_scoped(0, "Rhino layer index workspace")?;
-    for layer in &metadata.layers {
+    for layer in ctx.admit_iter(&(metadata.layers)[..], "Rhino parse metadata traversal").map_err(cadmpeg_core::CodecError::from)? {
         match layer_index_counts.binary_search_by_key(&layer.index, |(index, _)| *index) {
             Ok(position) => layer_index_counts[position].1 += 1,
             Err(position) => {
@@ -2909,7 +2908,7 @@ fn report_layer_parent_references(
 ) -> Result<(), CodecError> {
     let mut id_counts = HashMap::<Uuid, usize>::new();
     let mut workspace = ctx.reserve_scoped(0, "Rhino layer parent workspace")?;
-    for layer in layers {
+    for layer in ctx.admit_iter(layers, "Rhino report layer parent references traversal").map_err(cadmpeg_core::CodecError::from)? {
         if let Some(id) = layer.id.filter(|id| !id.is_nil()) {
             if let Some(count) = id_counts.get_mut(&id) {
                 *count += 1;
@@ -2923,7 +2922,7 @@ fn report_layer_parent_references(
             }
         }
     }
-    for layer in layers {
+    for layer in ctx.admit_iter(layers, "Rhino report layer parent references traversal").map_err(cadmpeg_core::CodecError::from)? {
         let Some(parent) = layer
             .hierarchy
             .map(|hierarchy| hierarchy.parent_id)

@@ -61,12 +61,13 @@ fn join_product_references(
 }
 
 fn join_product_texts<'a>(
-    values: impl IntoIterator<Item = &'a str>,
+    values: impl IntoIterator<Item = Result<&'a str, CodecError>>,
     ctx: &DecodeContext<'_>,
     operation: &'static str,
 ) -> Result<String, CodecError> {
     let mut text = String::new();
     for value in values {
+        let value = value?;
         let separator = if text.is_empty() { "" } else { ", " };
         ctx.append_retained(&mut text, separator, operation)?;
         ctx.append_retained(&mut text, value, operation)?;
@@ -85,8 +86,9 @@ pub(super) fn decode(
     let mut typed = HashSet::new();
     let mut losses = Vec::new();
     let mut formations = BTreeMap::new();
-    for (id, record) in exchange.entities_any(PRODUCT_DEFINITION_FORMATION_TYPES) {
-        let Some(product) = product_definition_formation_parameters(record)
+    for entity in exchange.entities_any(ctx, PRODUCT_DEFINITION_FORMATION_TYPES)? {
+        let (id, record) = entity?;
+        let Some(product) = product_definition_formation_parameters(ctx, record)?
             .and_then(|parameters| parameters.get(2))
             .and_then(ValueExt::reference)
         else {
@@ -95,8 +97,9 @@ pub(super) fn decode(
         ctx.insert_btree_map(&mut formations, id, product, "step_product_formations")?;
     }
     let mut definitions = BTreeMap::new();
-    for (id, record) in exchange.entities_any(PRODUCT_DEFINITION_TYPES) {
-        let Some(product) = product_definition_parameters(record)
+    for entity in exchange.entities_any(ctx, PRODUCT_DEFINITION_TYPES)? {
+        let (id, record) = entity?;
+        let Some(product) = product_definition_parameters(ctx, record)?
             .and_then(|parameters| parameters.get(2))
             .and_then(ValueExt::reference)
             .and_then(|formation| formations.get(&formation).copied())
@@ -106,7 +109,7 @@ pub(super) fn decode(
         ctx.insert_btree_map(&mut definitions, id, product, "step_product_definitions")?;
     }
     let mut definitions_by_product_in_source_order = BTreeMap::<u64, Vec<u64>>::new();
-    for (&definition, &product) in &definitions {
+    for (&definition, &product) in ctx.admit_iter(&definitions, "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
         ctx.admit_btree_entry(
             &definitions_by_product_in_source_order,
             &product,
@@ -137,8 +140,9 @@ pub(super) fn decode(
         )?;
     }
     let mut definition_descriptions = BTreeMap::<u64, String>::new();
-    for (id, record) in exchange.entities_any(PRODUCT_DEFINITION_TYPES) {
-        let Some(parameters) = product_definition_parameters(record) else {
+    for entity in exchange.entities_any(ctx, PRODUCT_DEFINITION_TYPES)? {
+        let (id, record) = entity?;
+        let Some(parameters) = product_definition_parameters(ctx, record)? else {
             continue;
         };
         let Some(_) = parameters
@@ -177,7 +181,7 @@ pub(super) fn decode(
     }
     let mut shape_bindings = shape_bindings(exchange, &definitions, topology, ctx)?;
     let mut definition_counts = BTreeMap::<u64, usize>::new();
-    for product in definitions.values() {
+    for product in ctx.admit_iter(&(definitions), "STEP decode map traversal").map_err(cadmpeg_core::CodecError::from)?.map(|(_, value)| value) {
         ctx.admit_btree_entry(
             &definition_counts,
             product,
@@ -190,9 +194,9 @@ pub(super) fn decode(
     let mut definition_prototypes = BTreeMap::<u64, ProductDefinitionId>::new();
     let mut product_definition_ids_by_source = BTreeMap::<u64, Vec<ProductDefinitionId>>::new();
 
-    for (step_id, record) in exchange.entities("PRODUCT") {
+    for (step_id, record) in exchange.entities(ctx, "PRODUCT")? {
         let Some(parameters) = record
-            .partial("PRODUCT")
+            .partial(ctx, "PRODUCT")?
             .map(|partial| partial.parameters.as_slice())
         else {
             continue;
@@ -252,7 +256,7 @@ pub(super) fn decode(
         let definition_count = definition_counts.get(&step_id).copied().unwrap_or(0);
         let definition_iter = std::iter::once(None)
             .filter(|_| product_definitions.is_empty())
-            .chain(product_definitions.iter().copied().map(Some));
+            .chain(ctx.admit_iter(&(product_definitions)[..], "STEP decode chain traversal")?.copied().map(Some));
         for definition in definition_iter {
             let product_definition_id = definition.map_or_else(
                 || Ok::<ProductDefinitionId, CodecError>(product_ir_id(step_id)),
@@ -299,24 +303,16 @@ pub(super) fn decode(
                 .and_then(|definition| shape_bindings.remove(&definition))
                 .unwrap_or_default();
             let missing = join_product_texts(
-                bodies
-                    .iter()
-                    .filter(|body| {
-                        !ir.model
-                            .bodies
-                            .iter()
-                            .any(|candidate| candidate.id == **body)
-                    })
-                    .map(cadmpeg_ir::ids::BodyId::as_str),
+                ctx.admit_iter(bodies.as_slice(), "STEP missing body reference traversal")?
+                    .map(|body| {
+                        Ok::<_, CodecError>((!ctx.admit_iter(ir.model.bodies.as_slice(), "STEP missing body carrier traversal")?.any(|candidate| candidate.id == *body)).then_some(body.as_str()))
+                    }).filter_map(Result::transpose),
                 ctx,
                 "step_missing_shape_body_text",
             )?;
-            bodies.retain(|body| {
-                ir.model
-                    .bodies
-                    .iter()
-                    .any(|candidate| candidate.id == *body)
-            });
+            ctx.retain_vec(&mut bodies, |body| {
+                Ok(ctx.admit_iter(ir.model.bodies.as_slice(), "STEP retained body carrier traversal")?.any(|candidate| candidate.id == *body))
+            }, "STEP product body retention")?;
             ctx.stable_sort_by(
                 &mut bodies,
                 |value| value,
@@ -380,8 +376,8 @@ pub(super) fn decode(
         ctx.insert_hash_set(&mut typed, step_id, "step_product_typed_claims")?;
     }
     let mut product_definition_ids_by_shape = BTreeMap::new();
-    for (shape_id, record) in exchange.entities("PRODUCT_DEFINITION_SHAPE") {
-        let Some(prototype) = named_parameter(record, "PRODUCT_DEFINITION_SHAPE", 2)
+    for (shape_id, record) in exchange.entities(ctx, "PRODUCT_DEFINITION_SHAPE")? {
+        let Some(prototype) = named_parameter(ctx, record, "PRODUCT_DEFINITION_SHAPE", 2)?
             .and_then(ValueExt::reference)
             .and_then(|definition| definition_prototypes.get(&definition))
         else {
@@ -397,13 +393,13 @@ pub(super) fn decode(
             prototype.try_clone_for_decode(ctx, "step_product_identity_copy")?,
         );
     }
-    for id in formations.keys().chain(definitions.keys()) {
+    for id in ctx.admit_iter(&(formations), "STEP decode map traversal").map_err(cadmpeg_core::CodecError::from)?.map(|(key, _)| key).chain(ctx.admit_iter(&definitions, "STEP decode chain traversal")?.map(|(key, _)| key)) {
         ctx.insert_hash_set(&mut typed, *id, "step_product_typed_claims")?;
     }
 
     let mut usages = BTreeMap::new();
-    for (id, record) in exchange.entities("NEXT_ASSEMBLY_USAGE_OCCURRENCE") {
-        let name = named_parameter(record, "NEXT_ASSEMBLY_USAGE_OCCURRENCE", 1)
+    for (id, record) in exchange.entities(ctx, "NEXT_ASSEMBLY_USAGE_OCCURRENCE")? {
+        let name = named_parameter(ctx, record, "NEXT_ASSEMBLY_USAGE_OCCURRENCE", 1)?
             .map(|value| {
                 decode_text_charged(
                     exchange,
@@ -417,12 +413,12 @@ pub(super) fn decode(
             })
             .transpose()?
             .flatten();
-        let Some(parent_definition) = named_parameter(record, "NEXT_ASSEMBLY_USAGE_OCCURRENCE", 3)
+        let Some(parent_definition) = named_parameter(ctx, record, "NEXT_ASSEMBLY_USAGE_OCCURRENCE", 3)?
             .and_then(ValueExt::reference)
         else {
             continue;
         };
-        let Some(child_definition) = named_parameter(record, "NEXT_ASSEMBLY_USAGE_OCCURRENCE", 4)
+        let Some(child_definition) = named_parameter(ctx, record, "NEXT_ASSEMBLY_USAGE_OCCURRENCE", 4)?
             .and_then(ValueExt::reference)
         else {
             continue;
@@ -439,7 +435,7 @@ pub(super) fn decode(
         )?;
     }
     let mut child_definitions = BTreeSet::new();
-    for usage in usages.values() {
+    for usage in ctx.admit_iter(&(usages), "STEP decode map traversal").map_err(cadmpeg_core::CodecError::from)?.map(|(_, value)| value) {
         ctx.insert_btree_set(
             &mut child_definitions,
             usage.child_definition,
@@ -451,7 +447,7 @@ pub(super) fn decode(
     let mut occurrence_paths = BTreeMap::<OccurrenceId, BTreeSet<u64>>::new();
     let mut pending_occurrences = VecDeque::new();
     let mut root_ordinal = 0_u32;
-    for &definition in definitions.keys() {
+    for &definition in ctx.admit_iter(&(definitions), "STEP decode map traversal").map_err(cadmpeg_core::CodecError::from)?.map(|(key, _)| key) {
         if child_definitions.contains(&definition) {
             continue;
         }
@@ -531,7 +527,7 @@ pub(super) fn decode(
         &mut competing_placements,
         ctx,
     )?;
-    for (&usage_id, source_ids) in &ambiguous_placements {
+    for (&usage_id, source_ids) in ctx.admit_iter(&ambiguous_placements, "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
         if competing_placements.contains_key(&usage_id) {
             continue;
         }
@@ -540,13 +536,13 @@ pub(super) fn decode(
             ctx,
             "step_ambiguous_placement_source_text",
         )?;
-        let context_dependent = source_ids.iter().all(|id| {
-            exchange.records().get(id).is_some_and(|record| {
-                record
-                    .partial("CONTEXT_DEPENDENT_SHAPE_REPRESENTATION")
-                    .is_some()
-            })
-        });
+        let mut context_dependent = true;
+        for id in ctx.admit_iter(&source_ids[..], "STEP decode traversal")? {
+            if exchange.records().get(id).map(|record| record.partial(ctx, "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION")).transpose()?.flatten().is_none() {
+                context_dependent = false;
+                break;
+            }
+        }
         let placement_kind = if context_dependent {
             "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION"
         } else {
@@ -555,7 +551,7 @@ pub(super) fn decode(
         ctx.reserve_vec(&mut losses, 1, "step_product_losses")?;
         losses.push(StepLossCode::NauoPlacementAmbiguous.note(ctx.format_retained(format_args!("NAUO #{usage_id} has multiple resolved {placement_kind} placements ({records}); no neutral occurrence was admitted and the source placement relations remain opaque"), "step_ambiguous_placement_loss_text")?));
     }
-    for (&usage_id, source_ids) in &competing_placements {
+    for (&usage_id, source_ids) in ctx.admit_iter(&competing_placements, "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
         let records = join_product_references(
             source_ids.iter().copied(),
             ctx,
@@ -568,7 +564,7 @@ pub(super) fn decode(
     let mut missing_placement_reports = BTreeSet::new();
     let mut child_ordinals = BTreeMap::<OccurrenceId, u32>::new();
     let mut usages_by_parent = BTreeMap::<u64, Vec<u64>>::new();
-    for (&usage_id, usage) in &usages {
+    for (&usage_id, usage) in ctx.admit_iter(&usages, "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
         ctx.admit_btree_entry(
             &usages_by_parent,
             &usage.parent_definition,
@@ -747,7 +743,7 @@ pub(super) fn decode(
         &mut losses,
         ctx,
     )?;
-    for (id, record) in exchange.entities_any(&[
+    for entity in exchange.entities_any(ctx, &[
         "APPLICATION_CONTEXT",
         "PRODUCT_CONTEXT",
         "PRODUCT_DEFINITION_CONTEXT",
@@ -759,7 +755,8 @@ pub(super) fn decode(
         "MAPPED_ITEM",
         "SHAPE_REPRESENTATION_RELATIONSHIP",
         "REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION",
-    ]) {
+    ])? {
+        let (id, record) = entity?;
         if [
             "APPLICATION_CONTEXT",
             "PRODUCT_CONTEXT",
@@ -773,15 +770,17 @@ pub(super) fn decode(
             "SHAPE_REPRESENTATION_RELATIONSHIP",
         ]
         .iter()
-        .any(|name| record.partial(name).is_some())
+        .map(|name| record.partial(ctx, name))
+        .filter_map(Result::transpose)
+        .next().transpose()?.is_some()
             || record
-                .partial("REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION")
+                .partial(ctx, "REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION")?
                 .is_some()
         {
             ctx.insert_hash_set(&mut typed, id, "step_product_typed_claims")?;
         }
     }
-    for (&usage_id, source_ids) in &ambiguous_placements {
+    for (&usage_id, source_ids) in ctx.admit_iter(&ambiguous_placements, "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
         typed.remove(&usage_id);
         for &source_id in source_ids {
             typed.remove(&source_id);
@@ -830,30 +829,25 @@ fn apply_body_placements(
         usages,
     } = sources;
     let mut pds = BTreeMap::new();
-    for (id, record) in exchange.entities("PRODUCT_DEFINITION_SHAPE") {
+    for (id, record) in exchange.entities(ctx, "PRODUCT_DEFINITION_SHAPE")? {
         if let Some(definition) =
-            named_parameter(record, "PRODUCT_DEFINITION_SHAPE", 2).and_then(ValueExt::reference)
+            named_parameter(ctx, record, "PRODUCT_DEFINITION_SHAPE", 2)?.and_then(ValueExt::reference)
         {
             ctx.insert_btree_map(&mut pds, id, definition, "step_body_placement_shapes")?;
         }
     }
     let definition_representations = definition_representations(exchange, &pds, ctx)?;
     let mut assembly_representations = BTreeSet::new();
-    for representation in usages.values().flat_map(|usage| {
-        definition_representations
-            .get(&usage.child_definition)
-            .into_iter()
-            .flatten()
-    }) {
-        ctx.insert_btree_set(
-            &mut assembly_representations,
-            *representation,
-            "step_assembly_representations",
-        )?;
+    for (_, usage) in ctx.admit_iter(usages, "STEP assembly usage traversal")? {
+        if let Some(representations) = definition_representations.get(&usage.child_definition) {
+            for representation in ctx.admit_iter(representations, "STEP assembly representation traversal")? {
+                ctx.insert_btree_set(&mut assembly_representations, *representation, "step_assembly_representations")?;
+            }
+        }
     }
     let mut body_index_copy_storage = ctx.reserve_scoped(0, "step_body_placement_identity_copy")?;
     let mut body_indices = BTreeMap::new();
-    for (index, body) in ir.model.bodies.iter().enumerate() {
+    for (index, body) in ctx.admit_iter(&(ir.model.bodies)[..], "STEP apply body placements traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
         ctx.admit_btree_entry(&body_indices, &body.id, "step_body_placement_indices")?;
         body_indices.insert(
             body_index_copy_storage.with_storage(|| {
@@ -866,20 +860,20 @@ fn apply_body_placements(
     let mut representation_cache = BTreeMap::new();
     let mut placements_by_body = BTreeMap::<BodyId, Vec<(u64, Transform)>>::new();
     let drawing_owned_items = drawing_owned_items(exchange, ctx)?;
-    for (id, item) in exchange.entities("MAPPED_ITEM") {
-        if item.partial("MAPPED_ITEM").is_none() {
+    for (id, item) in exchange.entities(ctx, "MAPPED_ITEM")? {
+        if item.partial(ctx, "MAPPED_ITEM")?.is_none() {
             continue;
         }
         if drawing_owned_items.contains(&id) {
             continue;
         }
-        let Some((representation, origin, target)) = mapped_item_definition(item, exchange) else {
+        let Some((representation, origin, target)) = mapped_item_definition(ctx, item, exchange)? else {
             continue;
         };
         if assembly_representations.contains(&representation) {
             continue;
         }
-        if is_two_dimensional_mapping(origin, target, exchange) {
+        if is_two_dimensional_mapping(ctx, origin, target, exchange)? {
             continue;
         }
         let bodies = super::topology::representation_bodies(
@@ -947,19 +941,17 @@ fn drawing_owned_items(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeSet<u64>, CodecError> {
     let mut pending = Vec::new();
-    for record in exchange.records().values() {
-        let drawing_owner = record
-            .partials
-            .iter()
+    for record in ctx.admit_iter(exchange.records(), "STEP drawing owned items map traversal").map_err(cadmpeg_core::CodecError::from)?.map(|(_, value)| value) {
+        let drawing_owner = ctx.admit_iter(&(record
+            .partials)[..], "STEP drawing owned items traversal").map_err(cadmpeg_core::CodecError::from)?
             .any(|partial| DRAWING_ITEM_OWNER_TYPES.contains(&partial.name.as_str()));
         if drawing_owner {
-            for value in record
-                .partials
-                .iter()
-                .flat_map(|partial| partial.parameters.iter())
-            {
+            for partial in ctx.admit_iter(&(record
+                .partials)[..], "STEP drawing owned items traversal").map_err(cadmpeg_core::CodecError::from)? {
+        for value in ctx.admit_iter(partial.parameters.as_slice(), "STEP record parameter traversal")? {
                 collect_references(value, &mut pending, ctx)?;
             }
+    }
         }
     }
     let mut items = BTreeSet::new();
@@ -972,22 +964,22 @@ fn drawing_owned_items(
         let Some(record) = exchange.records().get(&id) else {
             continue;
         };
-        if record.partial("MAPPED_ITEM").is_some() {
+        if record.partial(ctx, "MAPPED_ITEM")?.is_some() {
             ctx.insert_btree_set(&mut items, id, "step_drawing_owned_items")?;
             continue;
         }
-        if let Some(representation_items) = super::representation::items(record) {
+        if let Some(representation_items) = super::representation::items(ctx, record)? {
             for item in representation_items {
                 ctx.push_vec(&mut pending, item, "step_drawing_owned_pending")?;
             }
         }
-        for partial in record.partials.iter().filter(|partial| {
+        for partial in ctx.admit_iter(&(record.partials)[..], "STEP drawing owned items traversal").map_err(cadmpeg_core::CodecError::from)?.filter(|partial| {
             matches!(
                 partial.name.as_str(),
                 "GEOMETRIC_SET" | "GEOMETRIC_CURVE_SET" | "TESSELLATED_GEOMETRIC_SET"
             )
         }) {
-            let Some(values) = partial.parameters.iter().find_map(|value| match value {
+            let Some(values) = ctx.admit_iter(&(partial.parameters)[..], "STEP drawing owned items traversal").map_err(cadmpeg_core::CodecError::from)?.find_map(|value| match value {
                 Value::List(values) => Some(values.as_slice()),
                 _ => None,
             }) else {
@@ -1012,7 +1004,7 @@ fn collect_references(
             ctx.push_vec(references, *id, "step_drawing_owned_pending")?;
         }
         Value::List(values) => {
-            for value in values {
+            for value in ctx.admit_iter(values.as_slice(), "STEP collect references value traversal").map_err(cadmpeg_core::CodecError::from)? {
                 collect_references(value, references, ctx)?;
             }
         }
@@ -1035,20 +1027,17 @@ fn shape_bindings(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, Vec<BodyId>>, CodecError> {
     let mut pds = BTreeMap::new();
-    for (id, record) in exchange.entities("PRODUCT_DEFINITION_SHAPE") {
+    for (id, record) in exchange.entities(ctx, "PRODUCT_DEFINITION_SHAPE")? {
         if let Some(definition) =
-            named_parameter(record, "PRODUCT_DEFINITION_SHAPE", 2).and_then(ValueExt::reference)
+            named_parameter(ctx, record, "PRODUCT_DEFINITION_SHAPE", 2)?.and_then(ValueExt::reference)
         {
             ctx.insert_btree_map(&mut pds, id, definition, "step_shape_binding_shapes")?;
         }
     }
     let mut result = BTreeMap::<u64, Vec<BodyId>>::new();
     let mut representation_cache = BTreeMap::new();
-    for record in exchange
-        .records()
-        .values()
-        .filter(|record| record.partial("SHAPE_DEFINITION_REPRESENTATION").is_some())
-    {
+    for (_, record) in ctx.admit_iter(exchange.records(), "STEP shape bindings map traversal")? {
+        if record.partial(ctx, "SHAPE_DEFINITION_REPRESENTATION")?.is_none() { continue; }
         if let Some((definition, bodies)) = shape_binding(
             record,
             exchange,
@@ -1078,7 +1067,7 @@ fn shape_binding<'a>(
     ctx: &'a DecodeContext<'_>,
 ) -> Result<Option<(u64, super::topology::AdmittedRepresentationBodies<'a>)>, CodecError> {
     let Some(shape) =
-        named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 0).and_then(ValueExt::reference)
+        named_parameter(ctx, record, "SHAPE_DEFINITION_REPRESENTATION", 0)?.and_then(ValueExt::reference)
     else {
         return Ok(None);
     };
@@ -1089,7 +1078,7 @@ fn shape_binding<'a>(
         return Ok(None);
     }
     let Some(representation) =
-        named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 1).and_then(ValueExt::reference)
+        named_parameter(ctx, record, "SHAPE_DEFINITION_REPRESENTATION", 1)?.and_then(ValueExt::reference)
     else {
         return Ok(None);
     };
@@ -1110,8 +1099,8 @@ fn definition_representations(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, BTreeSet<u64>>, CodecError> {
     let mut result = BTreeMap::<u64, BTreeSet<u64>>::new();
-    for (_, record) in exchange.entities("SHAPE_DEFINITION_REPRESENTATION") {
-        let Some(shape) = named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 0)
+    for (_, record) in exchange.entities(ctx, "SHAPE_DEFINITION_REPRESENTATION")? {
+        let Some(shape) = named_parameter(ctx, record, "SHAPE_DEFINITION_REPRESENTATION", 0)?
             .and_then(ValueExt::reference)
         else {
             continue;
@@ -1119,7 +1108,7 @@ fn definition_representations(
         let Some(&definition) = pds.get(&shape) else {
             continue;
         };
-        let Some(representation) = named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 1)
+        let Some(representation) = named_parameter(ctx, record, "SHAPE_DEFINITION_REPRESENTATION", 1)?
             .and_then(ValueExt::reference)
         else {
             continue;
@@ -1149,16 +1138,16 @@ fn occurrence_placements(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, Transform>, CodecError> {
     let mut pds = BTreeMap::new();
-    for (&id, record) in exchange.records() {
+    for (&id, record) in ctx.admit_iter(exchange.records(), "STEP occurrence placements traversal").map_err(cadmpeg_core::CodecError::from)? {
         if let Some(definition) =
-            named_parameter(record, "PRODUCT_DEFINITION_SHAPE", 2).and_then(ValueExt::reference)
+            named_parameter(ctx, record, "PRODUCT_DEFINITION_SHAPE", 2)?.and_then(ValueExt::reference)
         {
             ctx.insert_btree_map(&mut pds, id, definition, "step_occurrence_placement_shapes")?;
         }
     }
     let definition_representations = definition_representations(exchange, &pds, ctx)?;
     let mut definitions_by_representation = BTreeMap::<u64, BTreeSet<u64>>::new();
-    for (&definition, representations) in &definition_representations {
+    for (&definition, representations) in ctx.admit_iter(&definition_representations, "STEP occurrence placements traversal").map_err(cadmpeg_core::CodecError::from)? {
         for &representation in representations {
             ctx.admit_btree_entry(
                 &definitions_by_representation,
@@ -1177,15 +1166,15 @@ fn occurrence_placements(
     }
     let mut result = BTreeMap::new();
     let mut context_candidates = BTreeMap::<u64, Vec<u64>>::new();
-    for (record_id, record) in exchange.entities("CONTEXT_DEPENDENT_SHAPE_REPRESENTATION") {
-        match occurrence_placement(
+    for (record_id, record) in exchange.entities(ctx, "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION")? {
+        match occurrence_placement(ctx, 
             record,
             exchange,
             geometry,
             &pds,
             usages,
             &definition_representations,
-        ) {
+        )? {
             Ok(Some((usage, transform))) => {
                 if usages.contains_key(&usage) {
                     ctx.admit_btree_entry(
@@ -1214,7 +1203,7 @@ fn occurrence_placements(
             Err(error) => return Err(placement_error(error)),
         }
     }
-    for (&usage, source_ids) in &context_candidates {
+    for (&usage, source_ids) in ctx.admit_iter(&context_candidates, "STEP occurrence placements traversal").map_err(cadmpeg_core::CodecError::from)? {
         if source_ids.len() > 1 {
             let mut copied = Vec::new();
             ctx.reserve_vec(
@@ -1240,8 +1229,8 @@ fn occurrence_placements(
         }
     }
     let mut occurrence_representations = BTreeMap::<u64, Vec<(u64, u64)>>::new();
-    for (record_id, record) in exchange.entities("SHAPE_DEFINITION_REPRESENTATION") {
-        let Some(shape) = named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 0)
+    for (record_id, record) in exchange.entities(ctx, "SHAPE_DEFINITION_REPRESENTATION")? {
+        let Some(shape) = named_parameter(ctx, record, "SHAPE_DEFINITION_REPRESENTATION", 0)?
             .and_then(ValueExt::reference)
         else {
             continue;
@@ -1252,7 +1241,7 @@ fn occurrence_placements(
         if !usages.contains_key(&usage) {
             continue;
         }
-        let Some(representation) = named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 1)
+        let Some(representation) = named_parameter(ctx, record, "SHAPE_DEFINITION_REPRESENTATION", 1)?
             .and_then(ValueExt::reference)
         else {
             continue;
@@ -1266,7 +1255,7 @@ fn occurrence_placements(
         ctx.reserve_vec(grouped, 1, "step_occurrence_representation_members")?;
         grouped.push((record_id, representation));
     }
-    for (&usage_id, representations) in &occurrence_representations {
+    for (&usage_id, representations) in ctx.admit_iter(&occurrence_representations, "STEP occurrence placements traversal").map_err(cadmpeg_core::CodecError::from)? {
         let Some(usage) = usages.get(&usage_id) else {
             continue;
         };
@@ -1279,18 +1268,18 @@ fn occurrence_placements(
             let Some(record) = exchange.records().get(&representation) else {
                 continue;
             };
-            let Some(items) = super::representation::items(record) else {
+            let Some(items) = super::representation::items(ctx, record)? else {
                 continue;
             };
             for item_id in items {
                 let Some(item) = exchange.records().get(&item_id) else {
                     continue;
                 };
-                if item.partial("MAPPED_ITEM").is_none() {
+                if item.partial(ctx, "MAPPED_ITEM")?.is_none() {
                     continue;
                 }
                 let (mapped_representation, transform) =
-                    match mapped_item_placement(item, exchange, geometry) {
+                    match mapped_item_placement(ctx, item, exchange, geometry)? {
                         Ok(Some(placement)) => placement,
                         Ok(None) => continue,
                         Err(TransformError::Singular) => {
@@ -1390,12 +1379,12 @@ fn occurrence_placements(
         }
     }
     let mut sibling_usage_counts = BTreeMap::<(u64, u64), usize>::new();
-    for usage in usages.values() {
+    for usage in ctx.admit_iter(usages, "STEP occurrence placements map traversal").map_err(cadmpeg_core::CodecError::from)?.map(|(_, value)| value) {
         let pair = (usage.parent_definition, usage.child_definition);
         ctx.admit_btree_entry(&sibling_usage_counts, &pair, "step_sibling_usage_counts")?;
         *sibling_usage_counts.entry(pair).or_default() += 1;
     }
-    for (&usage_id, usage) in usages {
+    for (&usage_id, usage) in ctx.admit_iter(usages, "STEP occurrence placements traversal").map_err(cadmpeg_core::CodecError::from)? {
         if result.contains_key(&usage_id) || ambiguous.contains_key(&usage_id) {
             continue;
         }
@@ -1412,18 +1401,18 @@ fn occurrence_placements(
             let Some(record) = exchange.records().get(&parent_representation) else {
                 continue;
             };
-            let Some(items) = super::representation::items(record) else {
+            let Some(items) = super::representation::items(ctx, record)? else {
                 continue;
             };
             for item_id in items {
                 let Some(item) = exchange.records().get(&item_id) else {
                     continue;
                 };
-                if item.partial("MAPPED_ITEM").is_none() {
+                if item.partial(ctx, "MAPPED_ITEM")?.is_none() {
                     continue;
                 }
                 let (mapped_representation, transform) =
-                    match mapped_item_placement(item, exchange, geometry) {
+                    match mapped_item_placement(ctx, item, exchange, geometry)? {
                         Ok(Some(placement)) => placement,
                         Ok(None) => continue,
                         Err(TransformError::Singular) => {
@@ -1474,16 +1463,9 @@ fn placement_error(error: TransformError) -> CodecError {
     CodecError::malformed(format_args!("invalid STEP placement: {error}"))
 }
 
-fn mapped_item_placement(
-    item: &RawRecord,
-    exchange: &Exchange,
-    geometry: &GeometryData,
-) -> Result<Option<(u64, Transform)>, TransformError> {
-    let Some((representation, origin, target)) = mapped_item_definition(item, exchange) else {
-        return Ok(None);
-    };
-    Ok(mapped_item_transform(origin, target, geometry)?
-        .map(|transform| (representation, transform)))
+fn mapped_item_placement(ctx: &DecodeContext<'_>, item: &RawRecord, exchange: &Exchange, geometry: &GeometryData) -> Result<Result<Option<(u64, Transform)>, TransformError>, CodecError> {
+    let Some((representation, origin, target)) = mapped_item_definition(ctx, item, exchange)? else { return Ok(Ok(None)); };
+    Ok(mapped_item_transform(origin, target, geometry).map(|transform| transform.map(|transform| (representation, transform))))
 }
 
 fn mapped_item_transform(
@@ -1500,83 +1482,43 @@ fn mapped_item_transform(
     to.compose(from.try_inverse_affine()?).map(Some)
 }
 
-fn is_two_dimensional_mapping(origin: u64, target: u64, exchange: &Exchange) -> bool {
-    [origin, target].into_iter().all(|id| {
-        exchange.records().get(&id).is_some_and(|record| {
-            record.partial("AXIS2_PLACEMENT_2D").is_some()
-                || record
-                    .partial("CARTESIAN_TRANSFORMATION_OPERATOR_2D")
-                    .is_some()
-        })
-    })
+fn is_two_dimensional_mapping(ctx: &DecodeContext<'_>, origin: u64, target: u64, exchange: &Exchange) -> Result<bool, CodecError> {
+    for id in [origin, target] {
+        let Some(record) = exchange.records().get(&id) else { return Ok(false); };
+        let placement = ctx.admit_iter(&record.partials[..], "STEP 2D placement classifier traversal")?.any(|partial| partial.name == "AXIS2_PLACEMENT_2D");
+        if !placement && !ctx.admit_iter(&record.partials[..], "STEP 2D transformation classifier traversal")?.any(|partial| partial.name == "CARTESIAN_TRANSFORMATION_OPERATOR_2D") { return Ok(false); }
+    }
+    Ok(true)
 }
 
-fn mapped_item_definition(item: &RawRecord, exchange: &Exchange) -> Option<(u64, u64, u64)> {
-    let map = named_parameter(item, "MAPPED_ITEM", 1)
-        .and_then(ValueExt::reference)
-        .and_then(|map| exchange.records().get(&map))?;
-    let origin = named_parameter(map, "REPRESENTATION_MAP", 0).and_then(ValueExt::reference)?;
-    let representation =
-        named_parameter(map, "REPRESENTATION_MAP", 1).and_then(ValueExt::reference)?;
-    let target = named_parameter(item, "MAPPED_ITEM", 2).and_then(ValueExt::reference)?;
-    Some((representation, origin, target))
+fn mapped_item_definition(ctx: &DecodeContext<'_>, item: &RawRecord, exchange: &Exchange) -> Result<Option<(u64, u64, u64)>, CodecError> {
+    let Some(map) = named_parameter(ctx, item, "MAPPED_ITEM", 1)?.and_then(ValueExt::reference).and_then(|map| exchange.records().get(&map)) else { return Ok(None); };
+    let Some(origin) = named_parameter(ctx, map, "REPRESENTATION_MAP", 0)?.and_then(ValueExt::reference) else { return Ok(None); };
+    let Some(representation) = named_parameter(ctx, map, "REPRESENTATION_MAP", 1)?.and_then(ValueExt::reference) else { return Ok(None); };
+    let Some(target) = named_parameter(ctx, item, "MAPPED_ITEM", 2)?.and_then(ValueExt::reference) else { return Ok(None); };
+    Ok(Some((representation, origin, target)))
 }
 
-fn occurrence_placement(
-    record: &RawRecord,
-    exchange: &Exchange,
-    geometry: &GeometryData,
-    pds: &BTreeMap<u64, u64>,
-    usages: &BTreeMap<u64, Usage>,
-    definition_representations: &BTreeMap<u64, BTreeSet<u64>>,
-) -> Result<Option<(u64, Transform)>, TransformError> {
-    let Some((usage, from_id, to_id)) =
-        occurrence_placement_definition(record, exchange, pds, usages, definition_representations)
-    else {
-        return Ok(None);
-    };
-    Ok(mapped_item_transform(from_id, to_id, geometry)?.map(|transform| (usage, transform)))
+fn occurrence_placement(ctx: &DecodeContext<'_>, record: &RawRecord, exchange: &Exchange, geometry: &GeometryData, pds: &BTreeMap<u64, u64>, usages: &BTreeMap<u64, Usage>, definition_representations: &BTreeMap<u64, BTreeSet<u64>>) -> Result<Result<Option<(u64, Transform)>, TransformError>, CodecError> {
+    let Some((usage, from_id, to_id)) = occurrence_placement_definition(ctx, record, exchange, pds, usages, definition_representations)? else { return Ok(Ok(None)); };
+    Ok(mapped_item_transform(from_id, to_id, geometry).map(|transform| transform.map(|transform| (usage, transform))))
 }
 
-fn occurrence_placement_definition(
-    record: &RawRecord,
-    exchange: &Exchange,
-    pds: &BTreeMap<u64, u64>,
-    usages: &BTreeMap<u64, Usage>,
-    definition_representations: &BTreeMap<u64, BTreeSet<u64>>,
-) -> Option<(u64, u64, u64)> {
-    let relation = exchange.records().get(
-        &named_parameter(record, "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION", 0)
-            .and_then(ValueExt::reference)?,
-    )?;
-    let usage = *pds.get(
-        &named_parameter(record, "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION", 1)
-            .and_then(ValueExt::reference)?,
-    )?;
-    let usage_data = usages.get(&usage)?;
-    let child_representations = definition_representations.get(&usage_data.child_definition)?;
-    let parent_representations = definition_representations.get(&usage_data.parent_definition)?;
-    let relation_representations = representation_relationship_endpoints(relation)?;
-    let transform_id = relation
-        .partial("REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION")?
-        .parameters
-        .first()?
-        .reference()?;
-    let transform = exchange.records().get(&transform_id)?;
-    let item_one = named_parameter(transform, "ITEM_DEFINED_TRANSFORMATION", 2)
-        .and_then(ValueExt::reference)?;
-    let item_two = named_parameter(transform, "ITEM_DEFINED_TRANSFORMATION", 3)
-        .and_then(ValueExt::reference)?;
-    let child_to_parent = child_representations.contains(&relation_representations.0)
-        && parent_representations.contains(&relation_representations.1);
-    let parent_to_child = parent_representations.contains(&relation_representations.0)
-        && child_representations.contains(&relation_representations.1);
-    let (from_id, to_id) = match (child_to_parent, parent_to_child) {
-        (true, false) => (item_one, item_two),
-        (false, true) => (item_two, item_one),
-        _ => return None,
-    };
-    Some((usage, from_id, to_id))
+fn occurrence_placement_definition(ctx: &DecodeContext<'_>, record: &RawRecord, exchange: &Exchange, pds: &BTreeMap<u64, u64>, usages: &BTreeMap<u64, Usage>, definition_representations: &BTreeMap<u64, BTreeSet<u64>>) -> Result<Option<(u64, u64, u64)>, CodecError> {
+    let Some(relation) = named_parameter(ctx, record, "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION", 0)?.and_then(ValueExt::reference).and_then(|id| exchange.records().get(&id)) else { return Ok(None); };
+    let Some(usage) = named_parameter(ctx, record, "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION", 1)?.and_then(ValueExt::reference).and_then(|id| pds.get(&id)).copied() else { return Ok(None); };
+    let Some(usage_data) = usages.get(&usage) else { return Ok(None); };
+    let Some(child_representations) = definition_representations.get(&usage_data.child_definition) else { return Ok(None); };
+    let Some(parent_representations) = definition_representations.get(&usage_data.parent_definition) else { return Ok(None); };
+    let Some(relation_representations) = representation_relationship_endpoints(ctx, relation)? else { return Ok(None); };
+    let Some(transform_id) = ctx.admit_iter(&relation.partials[..], "STEP occurrence transform partial traversal")?.find(|partial| partial.name == "REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION").and_then(|partial| partial.parameters.first()).and_then(ValueExt::reference) else { return Ok(None); };
+    let Some(transform) = exchange.records().get(&transform_id) else { return Ok(None); };
+    let Some(item_one) = named_parameter(ctx, transform, "ITEM_DEFINED_TRANSFORMATION", 2)?.and_then(ValueExt::reference) else { return Ok(None); };
+    let Some(item_two) = named_parameter(ctx, transform, "ITEM_DEFINED_TRANSFORMATION", 3)?.and_then(ValueExt::reference) else { return Ok(None); };
+    let child_to_parent = child_representations.contains(&relation_representations.0) && parent_representations.contains(&relation_representations.1);
+    let parent_to_child = parent_representations.contains(&relation_representations.0) && child_representations.contains(&relation_representations.1);
+    let (from_id, to_id) = match (child_to_parent, parent_to_child) { (true, false) => (item_one, item_two), (false, true) => (item_two, item_one), _ => return Ok(None) };
+    Ok(Some((usage, from_id, to_id)))
 }
 
 fn transformation_item(id: u64, geometry: &GeometryData) -> Option<Transform> {
@@ -1588,15 +1530,13 @@ fn transformation_item(id: u64, geometry: &GeometryData) -> Option<Transform> {
         .or_else(|| geometry.transformation_operators.get(&id).copied())
 }
 
-fn representation_relationship_endpoints(record: &RawRecord) -> Option<(u64, u64)> {
-    let relationship = record
-        .partial("REPRESENTATION_RELATIONSHIP")
-        .or_else(|| record.partial("SHAPE_REPRESENTATION_RELATIONSHIP"))?;
-    let mut references = relationship
-        .parameters
-        .iter()
-        .filter_map(ValueExt::reference);
-    Some((references.next()?, references.next()?))
+fn representation_relationship_endpoints(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<Option<(u64, u64)>, CodecError> {
+    let mut relationship = ctx.admit_iter(&record.partials[..], "STEP representation relationship partial traversal")?.find(|partial| partial.name == "REPRESENTATION_RELATIONSHIP");
+    if relationship.is_none() { relationship = ctx.admit_iter(&record.partials[..], "STEP shape relationship partial traversal")?.find(|partial| partial.name == "SHAPE_REPRESENTATION_RELATIONSHIP"); }
+    let Some(relationship) = relationship else { return Ok(None); };
+    let mut references = ctx.admit_iter(relationship.parameters.as_slice(), "STEP representation relationship endpoint traversal")?.filter_map(ValueExt::reference);
+    let Some(first) = references.next() else { return Ok(None); };
+    Ok(references.next().map(|second| (first, second)))
 }
 
 fn product_ir_id(id: u64) -> ProductDefinitionId {
@@ -1620,28 +1560,14 @@ fn product_definition_ir_id(
     }
 }
 
-fn product_definition_formation_parameters(record: &RawRecord) -> Option<&[Value]> {
-    if let Some(partial) = record.partial("PRODUCT_DEFINITION_FORMATION") {
-        return Some(partial.parameters.as_slice());
-    }
-    match record.simple_name() {
-        Some("PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE" | "FINAL_SOLUTION") => {
-            Some(record.partials.first().parameters.as_slice())
-        }
-        _ => None,
-    }
+fn product_definition_formation_parameters<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord) -> Result<Option<&'a [Value]>, CodecError> {
+    if let Some(partial) = ctx.admit_iter(&record.partials[..], "STEP product definition partial traversal")?.find(|partial| partial.name == "PRODUCT_DEFINITION_FORMATION") { return Ok(Some(partial.parameters.as_slice())); }
+    Ok(match record.simple_name() { Some("PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE" | "FINAL_SOLUTION") => Some(record.partials.first().parameters.as_slice()), _ => None })
 }
 
-fn product_definition_parameters(record: &RawRecord) -> Option<&[Value]> {
-    if let Some(partial) = record.partial("PRODUCT_DEFINITION") {
-        return Some(partial.parameters.as_slice());
-    }
-    match record.simple_name() {
-        Some("PRODUCT_DEFINITION_WITH_ASSOCIATED_DOCUMENTS") => {
-            Some(record.partials.first().parameters.as_slice())
-        }
-        _ => None,
-    }
+fn product_definition_parameters<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord) -> Result<Option<&'a [Value]>, CodecError> {
+    if let Some(partial) = ctx.admit_iter(&record.partials[..], "STEP product definition partial traversal")?.find(|partial| partial.name == "PRODUCT_DEFINITION") { return Ok(Some(partial.parameters.as_slice())); }
+    Ok(match record.simple_name() { Some("PRODUCT_DEFINITION_WITH_ASSOCIATED_DOCUMENTS") => Some(record.partials.first().parameters.as_slice()), _ => None })
 }
 
 #[cfg(test)]

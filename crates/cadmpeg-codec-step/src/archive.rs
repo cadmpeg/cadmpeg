@@ -62,7 +62,7 @@ pub(crate) fn open_root<'a>(
     root: View<'a>,
 ) -> Result<OpenedRoot<'a>, CodecError> {
     let archive = ArchiveSnapshot::new(ctx, root)?;
-    for entry in archive.entries() {
+    for entry in ctx.admit_iter(archive.entries(), "STEP open root borrowed traversal").map_err(cadmpeg_core::CodecError::from)? {
         validate_entry_name(&entry.name)?;
         if entry.uses_utf8_name_encoding() {
             return Err(CodecError::Malformed(
@@ -94,7 +94,7 @@ fn resolve_uri<'a>(
     base_member: &'a str,
     uri: &'a str,
 ) -> Result<ReferenceTarget<'a>, CodecError> {
-    if has_uri_scheme(uri) || uri.starts_with("//") {
+    if has_uri_scheme(ctx, uri)? || uri.starts_with("//") {
         return Ok(ReferenceTarget::External);
     }
     let (uri, fragment) = uri
@@ -161,8 +161,7 @@ fn resolve_uri<'a>(
             "STEP ZIP URI resolves to no member: {uri:?}"
         )));
     }
-    let member_len = components
-        .iter()
+    let member_len = ctx.admit_iter(&(components)[..], "STEP resolve uri traversal").map_err(cadmpeg_core::CodecError::from)?
         .try_fold(0_usize, |total, component| {
             total.checked_add(component.len())
         })
@@ -171,7 +170,7 @@ fn resolve_uri<'a>(
     let mut member = String::new();
 
     ctx.reserve_scoped_string(member_bytes, &mut member, member_len, "step_zip_uri_member")?;
-    for (index, component) in components.iter().enumerate() {
+    for (index, component) in ctx.admit_iter(&(components)[..], "STEP resolve uri traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
         if index != 0 {
             member.push('/');
         }
@@ -193,7 +192,7 @@ pub(crate) fn root_reference_notes(
     // CE-02: Annex A.4 makes subsidiary access a root reference operation;
     // this pass records the binding and does not import a subsidiary graph.
     let mut notes = Vec::new();
-    for reference in exchange.references() {
+    for reference in ctx.admit_iter(exchange.references(), "STEP root reference notes borrowed traversal").map_err(cadmpeg_core::CodecError::from)? {
         let name = reference.name;
         let uri = forwarded_reference_uri(exchange, &reference.uri, ctx)?;
         let mut member_bytes = ctx.reserve_scoped(0, "step_zip_uri_member_temp")?;
@@ -306,16 +305,15 @@ fn forwarded_reference_uri<'a>(
     Ok(uri)
 }
 
-fn has_uri_scheme(uri: &str) -> bool {
+fn has_uri_scheme(ctx: &DecodeContext<'_>, uri: &str) -> Result<bool, CodecError> {
     let Some(colon) = uri.find(':') else {
-        return false;
+        return Ok(false);
     };
     let scheme = &uri[..colon];
-    !scheme.is_empty()
+    Ok(!scheme.is_empty()
         && scheme.as_bytes()[0].is_ascii_alphabetic()
-        && scheme
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'-' | b'.'))
+        && ctx.admit_iter(scheme.as_bytes(), "STEP URI scheme traversal")?.copied()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'-' | b'.')))
 }
 
 /// Classifies a physical ZIP member for the STEP container report.

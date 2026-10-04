@@ -1021,23 +1021,23 @@ fn validate_level(
     let mut types = HashMap::new();
     ctx.reserve_map(&mut types, component_count, "Rhino SubD component types")
         .map_err(SubdError::from)?;
-    for vertex in &level.vertices {
+    for vertex in ctx.admit_iter(&(level.vertices)[..], "Rhino validate level traversal").map_err(cadmpeg_core::CodecError::from)? {
         types.insert(vertex.base.archive_id, ComponentType::Vertex);
     }
-    for edge in &level.edges {
+    for edge in ctx.admit_iter(&(level.edges)[..], "Rhino validate level traversal").map_err(cadmpeg_core::CodecError::from)? {
         types.insert(edge.base.archive_id, ComponentType::Edge);
     }
-    for face in &level.faces {
+    for face in ctx.admit_iter(&(level.faces)[..], "Rhino validate level traversal").map_err(cadmpeg_core::CodecError::from)? {
         types.insert(face.base.archive_id, ComponentType::Face);
     }
     if types.len() != component_count {
         return Err(malformed(level.source_offset, "duplicate SubD archive ID"));
     }
-    for vertex in &level.vertices {
+    for vertex in ctx.admit_iter(&(level.vertices)[..], "Rhino validate level traversal").map_err(cadmpeg_core::CodecError::from)? {
         resolve_all(&types, &vertex.edges, ComponentType::Edge)?;
         resolve_all(&types, &vertex.faces, ComponentType::Face)?;
     }
-    for edge in &level.edges {
+    for edge in ctx.admit_iter(&(level.edges)[..], "Rhino validate level traversal").map_err(cadmpeg_core::CodecError::from)? {
         resolve_all(&types, &edge.vertices, ComponentType::Vertex)?;
         resolve_all(&types, &edge.faces, ComponentType::Face)?;
         if edge.vertices[0].archive_id == edge.vertices[1].archive_id {
@@ -1047,7 +1047,7 @@ fn validate_level(
             ));
         }
     }
-    for face in &level.faces {
+    for face in ctx.admit_iter(&(level.faces)[..], "Rhino validate level traversal").map_err(cadmpeg_core::CodecError::from)? {
         resolve_all(&types, &face.edges, ComponentType::Edge)?;
         if face.edges.len() < 3 {
             return Err(malformed(
@@ -1060,7 +1060,7 @@ fn validate_level(
     let vertex_edges = incidence_from_edges(ctx, level)?;
     let vertex_faces = incidence_from_faces(ctx, level)?;
     let edge_faces = edge_face_incidence(ctx, level)?;
-    for vertex in &level.vertices {
+    for vertex in ctx.admit_iter(&(level.vertices)[..], "Rhino validate level traversal").map_err(cadmpeg_core::CodecError::from)? {
         compare_incidence(
             ctx,
             &vertex.edges,
@@ -1074,7 +1074,7 @@ fn validate_level(
             "vertex-face",
         )?;
     }
-    for edge in &level.edges {
+    for edge in ctx.admit_iter(&(level.edges)[..], "Rhino validate level traversal").map_err(cadmpeg_core::CodecError::from)? {
         compare_incidence(
             ctx,
             &edge.faces,
@@ -1083,13 +1083,13 @@ fn validate_level(
         )?;
     }
     if expected_level == 0 {
-        if let Some(vertex) = level.vertices.iter().find(|vertex| vertex.tag.is_none()) {
+        if let Some(vertex) = ctx.admit_iter(&(level.vertices)[..], "Rhino validate level traversal").map_err(cadmpeg_core::CodecError::from)?.find(|vertex| vertex.tag.is_none()) {
             return Err(malformed(
                 vertex.base.source_offset,
                 "level-zero SubD vertex has unset tag",
             ));
         }
-        if let Some(edge) = level.edges.iter().find(|edge| edge.tag.is_none()) {
+        if let Some(edge) = ctx.admit_iter(&(level.edges)[..], "Rhino validate level traversal").map_err(cadmpeg_core::CodecError::from)?.find(|edge| edge.tag.is_none()) {
             return Err(malformed(
                 edge.base.source_offset,
                 "level-zero SubD edge has unset tag",
@@ -1110,7 +1110,7 @@ fn incidence_from_edges(
         "Rhino SubD vertex-edge map",
     )
     .map_err(SubdError::from)?;
-    for edge in &level.edges {
+    for edge in ctx.admit_iter(&(level.edges)[..], "Rhino incidence from edges traversal").map_err(cadmpeg_core::CodecError::from)? {
         for vertex in edge.vertices {
             insert_incidence(ctx, &mut result, vertex.archive_id, edge.base.archive_id)?;
         }
@@ -1125,7 +1125,7 @@ fn incidence_from_faces(
     let mut edges = HashMap::new();
     ctx.reserve_map(&mut edges, level.edges.len(), "Rhino SubD face edge lookup")
         .map_err(SubdError::from)?;
-    for edge in &level.edges {
+    for edge in ctx.admit_iter(&(level.edges)[..], "Rhino incidence from faces traversal").map_err(cadmpeg_core::CodecError::from)? {
         edges.insert(edge.base.archive_id, edge);
     }
     let mut result = HashMap::new();
@@ -1135,10 +1135,10 @@ fn incidence_from_faces(
         "Rhino SubD vertex-face map",
     )
     .map_err(SubdError::from)?;
-    for face in &level.faces {
+    for face in ctx.admit_iter(&(level.faces)[..], "Rhino incidence from faces traversal").map_err(cadmpeg_core::CodecError::from)? {
         let mut first = None;
         let mut previous_end = None;
-        for edge_use in &face.edges {
+        for edge_use in ctx.admit_iter(&(face.edges)[..], "Rhino incidence from faces traversal").map_err(cadmpeg_core::CodecError::from)? {
             let edge = edges.get(&edge_use.archive_id).ok_or_else(|| {
                 malformed(face.base.source_offset, "face references missing SubD edge")
             })?;
@@ -1176,8 +1176,8 @@ fn edge_face_incidence(
     let mut result = HashMap::new();
     ctx.reserve_map(&mut result, level.edges.len(), "Rhino SubD edge-face map")
         .map_err(SubdError::from)?;
-    for face in &level.faces {
-        for edge in &face.edges {
+    for face in ctx.admit_iter(&(level.faces)[..], "Rhino edge face incidence traversal").map_err(cadmpeg_core::CodecError::from)? {
+        for edge in ctx.admit_iter(&(face.edges)[..], "Rhino edge face incidence traversal").map_err(cadmpeg_core::CodecError::from)? {
             if !insert_incidence(ctx, &mut result, edge.archive_id, face.base.archive_id)? {
                 return Err(malformed(
                     face.base.source_offset,
@@ -1202,7 +1202,7 @@ fn compare_incidence(
         "Rhino SubD serialized incidence",
     )
     .map_err(SubdError::from)?;
-    for pointer in serialized {
+    for pointer in ctx.admit_iter(serialized, "Rhino compare incidence traversal").map_err(cadmpeg_core::CodecError::from)? {
         serialized_ids.insert(pointer.archive_id);
     }
     let empty = HashSet::new();
@@ -1242,7 +1242,7 @@ fn materialize(
         "Rhino SubD vertex indices",
     )
     .map_err(SubdError::from)?;
-    for (index, vertex) in level.vertices.iter().enumerate() {
+    for (index, vertex) in ctx.admit_iter(&(level.vertices)[..], "Rhino materialize traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
         let index = u32::try_from(index)
             .map_err(|_| malformed(vertex.base.source_offset, "SubD vertex index overflow"))?;
         vertex_indices.insert(vertex.base.archive_id, index);
@@ -1254,7 +1254,7 @@ fn materialize(
         "Rhino SubD edge indices",
     )
     .map_err(SubdError::from)?;
-    for (index, edge) in level.edges.iter().enumerate() {
+    for (index, edge) in ctx.admit_iter(&(level.edges)[..], "Rhino materialize traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
         let index = u32::try_from(index)
             .map_err(|_| malformed(edge.base.source_offset, "SubD edge index overflow"))?;
         edge_indices.insert(edge.base.archive_id, index);

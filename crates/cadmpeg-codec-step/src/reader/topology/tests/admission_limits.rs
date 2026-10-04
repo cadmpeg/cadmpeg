@@ -1004,3 +1004,42 @@ fn selected_pcurve_id_refuses_retained_limit() {
         if refusal.dimension == ResourceDimension::RetainedBytes
             && refusal.operation == "step_selected_pcurve_id"));
 }
+
+#[test]
+fn topology_subtype_partial_refusal_stays_error() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=(EDGE()EDGE_CURVE());ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner)
+        .expect("valid complex edge");
+    let record = exchange.records().get(&1).expect("complex edge record");
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    crate::test_support::with_policy_context(&[], &policy, |_, ctx| {
+        let error = super::super::most_specific(ctx, record, &["EDGE_CURVE"])
+            .expect_err("partial scan exceeds remaining work");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "STEP topology subtype partial traversal"
+                && Some(limit) == ctx.resource_refusal()));
+    });
+}
+
+#[test]
+fn topology_edge_vertex_parameter_refusal_stays_error() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=(EDGE(#3,#4)EDGE_CURVE(#5));#3=DUMMY();#4=DUMMY();#5=DUMMY();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner)
+        .expect("valid complex edge vertices");
+    let record = exchange.records().get(&1).expect("complex edge record");
+    crate::test_support::with_service_context(&[], |_, ctx| {
+        assert_eq!(super::super::edge_vertices(ctx, record).expect("vertex scans fit"), Some((3, 4)));
+    });
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 2;
+    crate::test_support::with_policy_context(&[], &policy, |_, ctx| {
+        let error = super::super::edge_vertices(ctx, record)
+            .expect_err("parameter scan exceeds remaining work");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "STEP edge vertex reference traversal"
+                && Some(limit) == ctx.resource_refusal()));
+    });
+}

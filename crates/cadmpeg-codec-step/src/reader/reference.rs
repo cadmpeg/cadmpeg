@@ -116,13 +116,13 @@ impl Iterator for References<'_, '_, '_> {
 pub(super) fn first_matching<'a>(
     values: impl IntoIterator<Item = &'a Value>,
     ctx: &DecodeContext<'_>,
-    mut predicate: impl FnMut(u64) -> bool,
+    mut predicate: impl FnMut(u64) -> Result<bool, CodecError>,
 ) -> Result<Option<u64>, CodecError> {
     for value in values {
         for reference in references(value, ctx) {
             let id = reference?;
             ctx.charge_work(1, "step_reference_predicate")?;
-            if predicate(id) {
+            if predicate(id)? {
                 return Ok(Some(id));
             }
         }
@@ -156,7 +156,7 @@ mod tests {
                 [1, 2, 4]
             );
             assert_eq!(
-                first_matching([&value], ctx, |id| id > 1).expect("matching traversal"),
+                first_matching([&value], ctx, |id| Ok(id > 1)).expect("matching traversal"),
                 Some(2)
             );
         });
@@ -195,7 +195,7 @@ mod tests {
             );
         });
         with_policy_context(b"", &policy, |_, ctx| {
-            assert!(matches!(first_matching([&value], ctx, |_| true),
+            assert!(matches!(first_matching([&value], ctx, |_| Ok(true)),
                 Err(CodecError::ResourceLimit(refusal)) if refusal.operation == "step_reference_value_frames"));
         });
     }
@@ -209,7 +209,7 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_recursion_depth = 2;
         with_policy_context(b"", &policy, |_, ctx| {
-            assert!(matches!(first_matching([&value], ctx, |_| true),
+            assert!(matches!(first_matching([&value], ctx, |_| Ok(true)),
                 Err(CodecError::ResourceLimit(refusal)) if refusal.dimension == ResourceDimension::RecursionDepth
                     && refusal.operation == "step_reference_value_walk"));
         });
@@ -221,7 +221,7 @@ mod tests {
         policy.limits.max_work_units = 0;
         with_policy_context(b"", &policy, |_, ctx| {
             assert!(
-                matches!(first_matching([&Value::Reference(9)], ctx, |_| true),
+                matches!(first_matching([&Value::Reference(9)], ctx, |_| Ok(true)),
                 Err(CodecError::ResourceLimit(refusal)) if refusal.dimension == ResourceDimension::WorkUnits
                     && refusal.operation == "step_reference_value_walk")
             );
@@ -235,7 +235,7 @@ mod tests {
         policy.limits.max_recursion_depth = 2;
         with_policy_context(b"", &policy, |_, ctx| {
             assert_eq!(
-                first_matching([&value], ctx, |_| true).expect("matching traversal"),
+                first_matching([&value], ctx, |_| Ok(true)).expect("matching traversal"),
                 Some(9)
             );
             let _first = ctx
@@ -246,4 +246,17 @@ mod tests {
                 .expect("child guard was released");
         });
     }
+    #[test]
+    fn reference_matching_propagates_predicate_work_refusal() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 2;
+        with_policy_context(b"", &policy, |_, ctx| {
+            let error = first_matching([&Value::Reference(9)], ctx, |_| {
+                Ok(ctx.admit_iter(&[1_u64, 2], "test reference predicate scan")?.any(|value| *value == 9))
+            }).expect_err("predicate scan exceeds remaining work");
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
+                if limit.operation == "test reference predicate scan" && Some(limit) == ctx.resource_refusal()));
+        });
+    }
+
 }

@@ -1077,7 +1077,7 @@ fn v1_nurbs_curve_data(
         }
         control_values.push(values);
     }
-    let read_values = control_values.iter().map(Vec::len).sum::<usize>();
+    let read_values = ctx.admit_iter(&(control_values)[..], "Rhino v1 nurbs curve data traversal").map_err(cadmpeg_core::CodecError::from)?.map(Vec::len).sum::<usize>();
     if read_values != value_count {
         return Err(CodecError::malformed(format_args!(
             "V1 NURBS curve declares {value_count} control values and carries {read_values}"
@@ -1701,18 +1701,13 @@ fn append_legacy_brep(
     brep: LegacyBrep,
     suffix: &str,
 ) -> Result<(), CodecError> {
-    let trim_count = brep
-        .faces
-        .iter()
-        .try_fold(0_usize, |total, face| {
-            face.loops.iter().try_fold(total, |total, loop_record| {
-                total.checked_add(loop_record.trims.len())
-            })
-        })
-        .ok_or_else(|| {
-            CodecError::NotImplemented("Rhino V1 Brep trim count exceeds address space".to_string())
-        })?;
-    let mut workspace = ctx.reserve_scoped(0, "Rhino V1 Brep topology workspace")?;
+    let mut trim_count = 0_usize;
+for face in ctx.admit_iter(brep.faces.as_slice(), "Rhino append legacy brep traversal")? {
+    for loop_record in ctx.admit_iter(face.loops.as_slice(), "Rhino legacy Brep trim count traversal")? {
+        trim_count = trim_count.checked_add(loop_record.trims.len()).ok_or_else(|| CodecError::NotImplemented("Rhino V1 Brep trim count exceeds address space".to_string()))?;
+    }
+}
+let mut workspace = ctx.reserve_scoped(0, "Rhino V1 Brep topology workspace")?;
     let mut draft = cadmpeg_ir::draft::ModelDraft::new();
     let model = draft.model_mut();
     let mut suffix_key_storage = ctx.reserve_scoped(0, "Rhino append_legacy_brep text copy")?;
@@ -1767,10 +1762,9 @@ fn append_legacy_brep(
     for _ in 0..brep.faces.len() {
         face_trim_indices.push(Vec::new());
     }
-    for (face_index, face) in brep.faces.iter().enumerate() {
-        let face_trim_count = face
-            .loops
-            .iter()
+    for (face_index, face) in ctx.admit_iter(&(brep.faces)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+        let face_trim_count = ctx.admit_iter(&(face
+            .loops)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?
             .try_fold(0_usize, |total, loop_record| {
                 total.checked_add(loop_record.trims.len())
             })
@@ -1789,7 +1783,7 @@ fn append_legacy_brep(
             )?;
             values
         };
-        for (loop_index, loop_record) in face.loops.iter().enumerate() {
+        for (loop_index, loop_record) in ctx.admit_iter(&(face.loops)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
             for trim_index in 0..loop_record.trims.len() {
                 let global = trim_paths.len();
                 trim_paths.push((face_index, loop_index, trim_index));
@@ -1822,7 +1816,7 @@ fn append_legacy_brep(
             union(parents, left, right);
         }
     };
-    for (face_index, face) in brep.faces.iter().enumerate() {
+    for (face_index, face) in ctx.admit_iter(&(brep.faces)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
         let mut seam_workspace = ctx.reserve_scoped(0, "Rhino V1 Brep seams")?;
         let mut seams = {
             let mut values = Vec::new();
@@ -1834,14 +1828,14 @@ fn append_legacy_brep(
             )?;
             values
         };
-        for index in face_trim_indices[face_index].iter().copied() {
+        for index in ctx.admit_iter(&(face_trim_indices[face_index])[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?.copied() {
             let (_, loop_index, trim_index) = trim_paths[index];
             if face.loops[loop_index].trims[trim_index].mate == Mate::Seam {
                 seams.push(index);
             }
         }
         if face.seam_glue.len() == seams.len() {
-            for (index, mate) in face.seam_glue.iter().copied().enumerate() {
+            for (index, mate) in ctx.admit_iter(&(face.seam_glue)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?.copied().enumerate() {
                 if mate < seams.len() {
                     glue_edges(&mut parents, seams[index], seams[mate]);
                 }
@@ -1858,14 +1852,14 @@ fn append_legacy_brep(
         )?;
         values
     };
-    for (index, (face, loop_index, trim)) in trim_paths.iter().enumerate() {
+    for (index, (face, loop_index, trim)) in ctx.admit_iter(&(trim_paths)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
         let record = &brep.faces[*face].loops[*loop_index].trims[*trim];
         if record.mate == Mate::Mated {
             mates.push(index);
         }
     }
     if brep.shell_glue.len() == mates.len() {
-        for (index, mate) in brep.shell_glue.iter().copied().enumerate() {
+        for (index, mate) in ctx.admit_iter(&(brep.shell_glue)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?.copied().enumerate() {
             if mate < mates.len() {
                 glue_edges(&mut parents, mates[index], mates[mate]);
             }
@@ -1916,7 +1910,7 @@ fn append_legacy_brep(
     )?;
     let mut group_curve = BTreeMap::<usize, NurbsCurve>::new();
     let mut group_tolerance = BTreeMap::<usize, f64>::new();
-    for (index, (face, loop_index, trim)) in trim_paths.iter().copied().enumerate() {
+    for (index, (face, loop_index, trim)) in ctx.admit_iter(&(trim_paths)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?.copied().enumerate() {
         let record = &brep.faces[face].loops[loop_index].trims[trim];
         let root = roots[index];
         if let Some(curve) = &record.curve {
@@ -1936,7 +1930,7 @@ fn append_legacy_brep(
         "Rhino V1 Brep grouped endpoints",
     )?;
     let mut group_points = BTreeMap::<usize, [Point3; 2]>::new();
-    for (root, curve) in &group_curve {
+    for (root, curve) in ctx.admit_iter(&group_curve, "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)? {
         let domain = curve_domain(curve)?;
         group_points.insert(
             *root,
@@ -1946,10 +1940,9 @@ fn append_legacy_brep(
             ],
         );
     }
-    for (face_index, face) in brep.faces.iter().enumerate() {
-        for (loop_index, loop_record) in face.loops.iter().enumerate() {
-            let start = trim_paths
-                .iter()
+    for (face_index, face) in ctx.admit_iter(&(brep.faces)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+        for (loop_index, loop_record) in ctx.admit_iter(&(face.loops)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+            let start = ctx.admit_iter(&(trim_paths)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?
                 .enumerate()
                 .find_map(|(global, path)| (*path == (face_index, loop_index, 0)).then_some(global))
                 .ok_or_else(|| CodecError::malformed("V1 loop has no indexed trim"))?;
@@ -1965,7 +1958,7 @@ fn append_legacy_brep(
                 values
             };
             globals.extend(start..start + loop_record.trims.len());
-            for (position, global) in globals.iter().copied().enumerate() {
+            for (position, global) in ctx.admit_iter(&(globals)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?.copied().enumerate() {
                 let root = roots[global];
                 if group_points.contains_key(&root) {
                     continue;
@@ -1984,7 +1977,7 @@ fn append_legacy_brep(
             }
         }
     }
-    for root in &group_roots {
+    for root in ctx.admit_iter(&(group_roots)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)? {
         if !group_points.contains_key(root) {
             return Err(CodecError::Malformed(
                 "V1 edge group has no model-space endpoint curve".to_string(),
@@ -2011,10 +2004,9 @@ fn append_legacy_brep(
         values
     };
     endpoint_parents.extend(0..endpoint_count);
-    for (face_index, face) in brep.faces.iter().enumerate() {
-        for (loop_index, loop_record) in face.loops.iter().enumerate() {
-            let start = face_trim_indices[face_index]
-                .iter()
+    for (face_index, face) in ctx.admit_iter(&(brep.faces)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+        for (loop_index, loop_record) in ctx.admit_iter(&(face.loops)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+            let start = ctx.admit_iter(&(face_trim_indices[face_index])[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?
                 .position(|global| {
                     let (_, candidate_loop, candidate_trim) = trim_paths[*global];
                     candidate_loop == loop_index && candidate_trim == 0
@@ -2033,7 +2025,7 @@ fn append_legacy_brep(
                 values
             };
             globals.extend((0..loop_record.trims.len()).map(|offset| start + offset));
-            for (position, global) in globals.iter().copied().enumerate() {
+            for (position, global) in ctx.admit_iter(&(globals)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?.copied().enumerate() {
                 let next = globals[(position + 1) % globals.len()];
                 let (_, _, trim_index) = trim_paths[global];
                 let (_, _, next_trim_index) = trim_paths[next];
@@ -2051,7 +2043,7 @@ fn append_legacy_brep(
             }
         }
     }
-    for (index, root) in roots.iter().copied().enumerate() {
+    for (index, root) in ctx.admit_iter(&(roots)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?.copied().enumerate() {
         let (_, loop_index, trim_index) = trim_paths[index];
         let trim = &brep.faces[trim_paths[index].0].loops[loop_index].trims[trim_index];
         for endpoint in 0..2 {
@@ -2080,7 +2072,7 @@ fn append_legacy_brep(
         "Rhino V1 Brep endpoint samples",
     )?;
     let mut class_samples = BTreeMap::<usize, Vec<(Point3, f64)>>::new();
-    for root in &group_roots {
+    for root in ctx.admit_iter(&(group_roots)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)? {
         let points = group_points[root];
         let tolerance = group_tolerance
             .get(root)
@@ -2103,9 +2095,8 @@ fn append_legacy_brep(
     let mut vertex_by_class = BTreeMap::<usize, cadmpeg_ir::ids::VertexId>::new();
     let vertex_count = class_samples.len();
     let face_count = brep.faces.len();
-    let loop_count = brep
-        .faces
-        .iter()
+    let loop_count = ctx.admit_iter(&(brep
+        .faces)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?
         .try_fold(0_usize, |count, face| count.checked_add(face.loops.len()))
         .ok_or_else(|| {
             CodecError::NotImplemented("Rhino V1 Brep loops exceed address space".to_string())
@@ -2198,7 +2189,7 @@ fn append_legacy_brep(
         group_roots.len(),
     )?;
     let mut group_vertices = BTreeMap::new();
-    for root in &group_roots {
+    for root in ctx.admit_iter(&(group_roots)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)? {
         let start_class = find_root(&mut endpoint_parents, root * 2);
         let end_class = find_root(&mut endpoint_parents, root * 2 + 1);
         let start = vertex_by_class
@@ -2226,7 +2217,7 @@ fn append_legacy_brep(
         group_roots.len(),
     )?;
     let mut group_edges = BTreeMap::new();
-    for (edge_index, root) in group_roots.iter().copied().enumerate() {
+    for (edge_index, root) in ctx.admit_iter(&(group_roots)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?.copied().enumerate() {
         let curve_id = if let Some(curve) = group_curve.remove(&root) {
             let id = cadmpeg_ir::ids::CurveId::compose(
                 &cadmpeg_ir::identity_namespace!("rhino", "object", "curve"),
@@ -2503,7 +2494,7 @@ fn append_legacy_brep(
         model.coedges.len(),
     )?;
     let mut coedge_positions = BTreeMap::new();
-    for (index, coedge) in model.coedges.iter().enumerate() {
+    for (index, coedge) in ctx.admit_iter(&(model.coedges)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
         let id = cadmpeg_ir::ids::CoedgeId::try_from(
             ctx.copy_retained_text(coedge.id.as_str(), "Rhino V1 Brep radial position ID")?,
         )
@@ -2515,7 +2506,7 @@ fn append_legacy_brep(
             "Rhino V1 Brep radial positions",
         )?;
     }
-    for ring in coedges_by_root.values() {
+    for ring in ctx.admit_iter(&(coedges_by_root), "Rhino append legacy brep map traversal").map_err(cadmpeg_core::CodecError::from)?.map(|(_, value)| value) {
         for index in 0..ring.len() {
             model.coedges[coedge_positions[&ring[index]]].radial_next = ring
                 [(index + 1) % ring.len()]
@@ -3519,13 +3510,11 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
     }
     ir.model.finalize(ctx)?;
     let opaque_count = opaque_records.len();
-    let opaque_bytes = opaque_records
-        .iter()
+    let opaque_bytes = ctx.admit_iter(&(opaque_records)[..], "Rhino decode v1 traversal").map_err(cadmpeg_core::CodecError::from)?
         .filter(|record| record.data().is_some())
         .count();
     let typed_source_count = typed_source_records.len();
-    let typed_source_bytes = typed_source_records
-        .iter()
+    let typed_source_bytes = ctx.admit_iter(&(typed_source_records)[..], "Rhino decode v1 traversal").map_err(cadmpeg_core::CodecError::from)?
         .filter(|record| record.data().is_some())
         .count();
     let mut losses = Vec::new();
@@ -3597,7 +3586,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
         coverage.record(ctx, key, count)?;
     }
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
-    for _ in opaque_records.iter().chain(&typed_source_records) {
+    for _ in ctx.admit_iter(&(opaque_records)[..], "Rhino decode v1 traversal").map_err(cadmpeg_core::CodecError::from)?.chain(&typed_source_records) {
         ctx.charge_collection_items(2, "Rhino V1 source fidelity indexes")?;
         ctx.charge_retained(5, "Rhino V1 source fidelity owners")?;
     }
@@ -4142,7 +4131,7 @@ mod tests {
 
     fn legacy_chunk(typecode: u32, body: &[u8]) -> Vec<u8> {
         let mut protected = body.to_vec();
-        protected.extend(crate::chunks::crc16(0, body).to_le_bytes());
+        protected.extend(crate::chunks::crc16(&cadmpeg_test_support::service_decode_context(), 0, body).expect("CRC bytes admitted").to_le_bytes());
         chunk(typecode, &protected)
     }
 
@@ -5078,7 +5067,7 @@ mod tests {
             let chunk = chunk_at(&source, *offset, source.len(), ArchiveVersion::V1, false)
                 .expect("framed ancestor");
             let body = chunk.body();
-            let checksum = crate::chunks::crc16(0, &source[body.clone()]);
+            let checksum = crate::chunks::crc16(&cadmpeg_test_support::service_decode_context(), 0, &source[body.clone()]).expect("CRC bytes admitted");
             source[body.end..chunk.next_offset()].copy_from_slice(&checksum.to_le_bytes());
         }
         let comment =
