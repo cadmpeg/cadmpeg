@@ -2117,6 +2117,7 @@ pub(super) fn inferred_point_coordinates_by_index(
     // scalar form. They are admitted here only to solve omitted point
     // coordinates; generic operand resolution still requires a marker match.
     const SOLVER_POINT_REFERENCE_TAGS: [u16; 2] = [0x8100, 0x820f];
+    let mut candidates_storage = ctx.reserve_scoped(0, POINT_SOLVER_OPERATION)?;
     let mut candidates = Vec::new();
     for marker in &lane.sketch_entities {
         charge_endpoint_work(
@@ -2136,8 +2137,7 @@ pub(super) fn inferred_point_coordinates_by_index(
         else {
             continue;
         };
-        reserve_point_solver_vec(ctx, &mut candidates, 1)?;
-        candidates.push(point);
+        candidates_storage.with_storage(|| ctx.push_vec(&mut candidates, point, POINT_SOLVER_OPERATION))?;
     }
     ctx.sort_unstable_by_key(
         &mut candidates,
@@ -2154,6 +2154,7 @@ pub(super) fn inferred_point_coordinates_by_index(
         same_dimension_length(left[0], right[0]) && same_dimension_length(left[1], right[1])
     });
 
+    let mut constraints_storage = ctx.reserve_scoped(0, POINT_SOLVER_OPERATION)?;
     let mut constraints = Vec::new();
     for scalar in &lane.scalars {
         charge_endpoint_work(
@@ -2169,14 +2170,13 @@ pub(super) fn inferred_point_coordinates_by_index(
         };
         if scalar.feature_ref.as_deref() != Some(feature) || scalar.role != FeatureInputScalarRole::Driving || scalar.value.get() < 0.0
             || ![first, second].iter().all(|operand| matches!(operand.kind, FeatureInputOperandKind::Native(tag) if SOLVER_POINT_REFERENCE_TAGS.contains(&tag.value()))) { continue; }
-        reserve_point_solver_vec(ctx, &mut constraints, 1)?;
-        constraints.push((
+        constraints_storage.with_storage(|| ctx.push_vec(&mut constraints, (
             [
                 u32::from(first.entity_index),
                 u32::from(second.entity_index),
             ],
             scalar.value.get(),
-        ));
+        ), POINT_SOLVER_OPERATION))?;
     }
     let mut indices = HashSet::new();
     for (endpoints, _) in &constraints {
@@ -2274,9 +2274,9 @@ fn point_distance_component_has_solution(
 ) -> Result<bool, CodecError> {
     let mut component = HashSet::new();
     insert_point_solver_index(ctx, &mut component, seed)?;
+    let mut pending_storage = ctx.reserve_scoped(0, POINT_SOLVER_OPERATION)?;
     let mut pending = Vec::new();
-    reserve_point_solver_vec(ctx, &mut pending, 1)?;
-    pending.push(seed);
+    pending_storage.with_storage(|| ctx.push_vec(&mut pending, seed, POINT_SOLVER_OPERATION))?;
     while let Some(index) = pending.pop() {
         for (endpoints, _) in constraints {
             ctx.charge_work(8, POINT_SOLVER_OPERATION)?;
@@ -2285,8 +2285,7 @@ fn point_distance_component_has_solution(
             }
             for endpoint in endpoints {
                 if insert_point_solver_index(ctx, &mut component, *endpoint)? {
-                    reserve_point_solver_vec(ctx, &mut pending, 1)?;
-                    pending.push(*endpoint);
+                    pending_storage.with_storage(|| ctx.push_vec(&mut pending, *endpoint, POINT_SOLVER_OPERATION))?;
                 }
             }
         }

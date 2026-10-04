@@ -1494,3 +1494,31 @@ fn linear_pattern_dimension_lookup_propagates_work_refusal() {
     assert_eq!(count, 3);
     assert_eq!(spacing.get(), 25.0);
 }
+
+#[test]
+fn line_reference_direction_propagates_slot_refusal() {
+    let mut payload = vec![0; 224];
+    payload[136..144].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff]);
+    payload[148..152].copy_from_slice(&[0xf8, 0x2a, 0, 0]);
+    payload[200..208].copy_from_slice(&1.0f64.to_le_bytes());
+    for dimension in [cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes] {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        match dimension {
+            cadmpeg_core::decode::ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+            _ => panic!("test dimension"),
+        }
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(super::line_reference_direction(&ctx, &payload, 0),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == dimension
+                    && limit.operation == "collect SLDPRT line reference directions"
+                    && ctx.resource_refusal() == Some(limit)));
+    }
+    let direction = super::line_reference_direction(
+        &cadmpeg_test_support::service_decode_context(), &payload, 0,
+    ).unwrap().expect("declared direction");
+    assert_eq!(*direction.as_raw(), Vector3::new(1.0, 0.0, 0.0));
+}

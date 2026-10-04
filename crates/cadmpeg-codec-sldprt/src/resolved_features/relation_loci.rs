@@ -1821,14 +1821,14 @@ fn repeated_dimensioned_circular_entities(
         return Ok(None);
     }
     let mut entities = Vec::new();
-    ctx.reserve_vec(&mut entities, count, OPERATION)?;
+    ctx.reserve_capacity(&mut entities, count, OPERATION)?;
     for entity in sketch_entities {
         if matches(entity)? {
-            entities.push(super::transforms::copy_sketch_entity_identity(
+            ctx.push_vec(&mut entities, super::transforms::copy_sketch_entity_identity(
                 ctx,
                 entity.id(),
                 OPERATION,
-            )?);
+            )?, OPERATION)?;
         }
     }
     Ok(Some(entities))
@@ -5458,6 +5458,7 @@ pub(super) fn profile_loci_by_marker(
         |key: &&str| key.len(),
         "index SLDPRT feature profile sketches",
     )?;
+    let mut profile_locus_storage = ctx.reserve_scoped(0, BUILD_OPERATION)?;
     let mut profile_loci = HashMap::<&SketchId, Vec<(Point2, SketchLocus)>>::new();
     let mut line_midpoints = HashMap::<&SketchId, Vec<(Point2, SketchLocus)>>::new();
     let geometry_by_entity = collect_profile_locus_map(
@@ -5523,9 +5524,9 @@ pub(super) fn profile_loci_by_marker(
                     })?,
                 BUILD_OPERATION,
             )?;
-            ctx.reserve_vec(loci, count, BUILD_OPERATION)?;
+            profile_locus_storage.with_storage(|| ctx.reserve_capacity(loci, count, BUILD_OPERATION))?;
             for (point, role) in points.into_iter().flatten() {
-                loci.push((point, role.copy_locus(ctx, entity.id(), BUILD_OPERATION)?));
+                profile_locus_storage.with_storage(|| ctx.push_vec(loci, (point, role.copy_locus(ctx, entity.id(), BUILD_OPERATION)?), BUILD_OPERATION))?;
             }
         }
         if let SketchGeometryDefinition::Line { start, end } = entity.geometry.definition() {
@@ -6486,10 +6487,11 @@ pub(super) fn unique_linked_endpoint_locus(
             sum.checked_add(cadmpeg_core::decode::u64_from_index(id.as_str().len()))
         })
         .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    let mut group_storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut groups = Vec::<
         HashMap<GridPoint, Vec<(&SketchEntityId, super::transforms::SketchLocusRole)>>,
     >::new();
-    ctx.reserve_vec(&mut groups, marker.links().len(), OPERATION)?;
+    group_storage.with_storage(|| ctx.reserve_capacity(&mut groups, marker.links().len(), OPERATION))?;
     let mut sketch: Option<&cadmpeg_ir::sketches::SketchId> = None;
     for link in marker.links() {
         let entities = marker_entities(
@@ -6567,7 +6569,7 @@ pub(super) fn unique_linked_endpoint_locus(
         if endpoints.is_empty() {
             return Ok(None);
         }
-        groups.push(endpoints);
+        group_storage.with_storage(|| ctx.push_vec(&mut groups, endpoints, OPERATION))?;
     }
     let Some(first) = groups.first() else {
         return Ok(None);

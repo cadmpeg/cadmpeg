@@ -38,7 +38,7 @@ use cadmpeg_ir::{
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 fn line_reference_direction(payload: &[u8], class_offset: u64) -> Option<Vector3> {
-    typed_line_reference_direction(payload, class_offset).map(|direction| *direction.as_raw())
+    typed_line_reference_direction(&cadmpeg_test_support::service_decode_context(), payload, class_offset).unwrap().map(|direction| *direction.as_raw())
 }
 
 fn declared_line_reference_directions(
