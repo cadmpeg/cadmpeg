@@ -73,7 +73,9 @@ pub(crate) enum ConfigurationScalar {
 }
 
 impl ConfigurationScalar {
-    pub(crate) fn text_charged(&self, ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
+    pub(crate) fn format_text<E>(&self,
+        format: impl FnOnce(std::fmt::Arguments<'_>) -> Result<String, E>,
+    ) -> Result<String, E> {
         struct ScalarText<'a>(&'a ConfigurationScalar);
         impl std::fmt::Display for ScalarText<'_> {
             fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -85,10 +87,7 @@ impl ConfigurationScalar {
                 }
             }
         }
-        ctx.format_retained(
-            format_args!("{}", ScalarText(self)),
-            "project F3D configuration scalar text",
-        )
+        format(format_args!("{}", ScalarText(self)))
     }
 
     fn value(&self) -> Value {
