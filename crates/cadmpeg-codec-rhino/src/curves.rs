@@ -924,8 +924,9 @@ fn insert_knot_once(
 ) -> Result<(), GeometryError> {
     let n = points.len() - 1;
     // Endpoint clamping can select a span beyond the last control point.
-    let k = knots
-        .iter()
+    let k = ctx
+        .admit_iter(knots.as_slice(), "Rhino knot span search")
+        .map_err(CodecError::from)?
         .rposition(|knot| *knot <= value)
         .map_or_else(|| Err(error(offset, ctx.copy_retained_text(failure, "Rhino knot insertion invariant message")?)), Ok)?;
     let k = if degree == 0 { k.min(n) } else { k };
@@ -2080,6 +2081,24 @@ pub(crate) fn error(offset: usize, message: impl Into<String>) -> GeometryError 
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn knot_span_search_refusal_preserves_control_points_and_knots() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let mut knots = vec![0.0, 0.0, 1.0, 1.0];
+        let mut points = vec![super::Homogeneous([0.0, 0.0, 0.0, 1.0]), super::Homogeneous([1.0, 0.0, 0.0, 1.0])];
+        let error = super::insert_knot_once(&ctx, &mut knots, &mut points, 1, 0.5, 0, "knot invariant").expect_err("span scan refuses before mutation");
+        let GeometryError::Codec(CodecError::ResourceLimit(limit)) = error else { panic!("original resource error must escape") };
+        assert_eq!(limit.operation, "Rhino knot span search");
+        assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+        assert_eq!(knots, [0.0, 0.0, 1.0, 1.0]);
+        assert_eq!(points[0].0, [0.0, 0.0, 0.0, 1.0]);
+        assert_eq!(points[1].0, [1.0, 0.0, 0.0, 1.0]);
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    }
+
     #[test]
     fn numerical_audit_nurbs_elevation_preserves_active_spans_and_discontinuities() {
         use cadmpeg_ir::geometry::SolvedCurveGeometry;
