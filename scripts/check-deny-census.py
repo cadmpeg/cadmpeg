@@ -216,6 +216,13 @@ def source_files():
 SCOPE_TOKEN = re.compile(r"\bmod\s+(\w+)\s*\{|[{}]")
 
 
+@SOURCE_POLICY.cached_analysis
+def read_source(path):
+    """Read each file once within a census invocation."""
+    return path.read_text(encoding="utf-8")
+
+
+@SOURCE_POLICY.cached_analysis
 def lexical_scopes(code):
     """Scope after each brace, preserving inline modules and local blocks."""
     offsets = [0]
@@ -232,8 +239,9 @@ def lexical_scopes(code):
     return offsets, scopes
 
 
+@SOURCE_POLICY.cached_analysis
 def collect_items(path):
-    source = path.read_text(encoding="utf-8")
+    source = read_source(path)
     code, _ = SOURCE_POLICY.production_source(source)
     offsets, scopes = lexical_scopes(code)
     items = []
@@ -611,7 +619,7 @@ def use_tree_bindings(text, prefix=""):
 
 def collect_imports(path):
     """Collect imports and modules before recognizing external reader paths."""
-    source = path.read_text(encoding="utf-8")
+    source = read_source(path)
     code, _ = SOURCE_POLICY.production_source(source)
     offsets, scopes = lexical_scopes(code)
     module_scope = source_module_scope(path)
@@ -786,7 +794,7 @@ def deserialize_impl_target(header):
 
 def collect_deserialize_impls(path):
     """Collect handwritten readers without accepting comments or literals."""
-    source = path.read_text(encoding="utf-8")
+    source = read_source(path)
     code, _ = SOURCE_POLICY.production_source(source)
     offsets, scopes = lexical_scopes(code)
     readers = []
@@ -835,7 +843,7 @@ def collect_deserialize_impls(path):
 
 def collect_deserialize_functions(path):
     """Collect named helper functions used by custom field readers."""
-    source = path.read_text(encoding="utf-8")
+    source = read_source(path)
     code, _ = SOURCE_POLICY.production_source(source)
     offsets, scopes = lexical_scopes(code)
     module_scope = source_module_scope(path)
@@ -863,7 +871,7 @@ def collect_deserialize_functions(path):
 
 def macro_templates(path, items):
     """Return recognized declaration macro templates found in ``path``."""
-    source = path.read_text(encoding="utf-8")
+    source = read_source(path)
     code, _ = SOURCE_POLICY.production_source(source)
     templates = {}
     for definition in re.finditer(
@@ -936,7 +944,7 @@ def macro_generated_items(path, items, templates=None):
     site. This is source proof from the macro body, not an exception list of
     accepted identifiers.
     """
-    source = path.read_text(encoding="utf-8")
+    source = read_source(path)
     code, _ = SOURCE_POLICY.production_source(source)
     offsets, scopes = lexical_scopes(code)
     if templates is None:
@@ -997,7 +1005,7 @@ def macro_generated_items(path, items, templates=None):
 
 def deserializer_macro_contracts(path):
     """Read forwarding contracts from the macro bodies that define them."""
-    source = path.read_text(encoding="utf-8")
+    source = read_source(path)
     code, _ = SOURCE_POLICY.production_source(source)
     contracts = {}
     for definition in re.finditer(
@@ -1039,7 +1047,7 @@ def deserializer_helpers(path, contracts=None):
     declared target type visible at the call site. These are forwarding
     contracts in the macro bodies; names alone are never admitted.
     """
-    source = path.read_text(encoding="utf-8")
+    source = read_source(path)
     code, _ = SOURCE_POLICY.production_source(source)
     if contracts is None:
         contracts = deserializer_macro_contracts(path)
@@ -1785,7 +1793,7 @@ def present_forwarders():
     sources = {}
     macro_crates = set()
     for path in absent_key_source_files():
-        raw = path.read_text(encoding="utf-8")
+        raw = read_source(path)
         source, _ = SOURCE_POLICY.production_source(raw)
         sources[path] = (raw, source)
         definition = PRESENT_FORWARDER_DEFINITION.search(source)
@@ -1821,9 +1829,10 @@ def present_forwarders():
     return forwarders, failures
 
 
+@SOURCE_POLICY.cached_analysis
 def file_imports(path):
     """The module path each ``use`` declaration of one file names."""
-    source, _ = SOURCE_POLICY.production_source(path.read_text(encoding="utf-8"))
+    source, _ = SOURCE_POLICY.production_source(read_source(path))
     bindings = {}
     for match in USE_DECLARATION.finditer(source):
         text = "".join(match.group(1).split())
@@ -1992,33 +2001,38 @@ def field_type_name(body, field):
     return None
 
 
-def reader_functions(last, crate_paths, crate_items, owner, field):
-    """The structs a named reader function reads.
+@SOURCE_POLICY.cached_analysis
+def reader_function_index(path):
+    source = read_source(path)
+    code, _ = SOURCE_POLICY.production_source(source)
+    functions = {}
+    for match in re.finditer(r"\bfn\s+([^\s<(]+)\s*[<(]", code):
+        opening = body_open(code, match.end() - 1)
+        if opening is None:
+            continue
+        end = delimited_end(code, opening)
+        if end is None:
+            continue
+        read = frozenset(BODY_DESERIALIZE_CALL.findall(code[opening:end]))
+        generics = FUNCTION_GENERICS.match(code, match.end() - 1)
+        parameters = frozenset(
+            parameter.split(":", 1)[0].strip()
+            for parameter in (generics.group(1).split(",") if generics else ())
+            if not parameter.strip().startswith("'")
+        )
+        functions.setdefault(match.group(1), []).append((opening, end, read, parameters))
+    return functions
 
-    A function contributes the structs declared in its body and the struct it
-    deserializes by name. A function that deserializes one of its own type
-    parameters forwards the field's declared type, so that type is the struct
-    it reads.
+
+def reader_functions(last, crate_paths, crate_items, owner, field):
+    """Structs declared or deserialized by the named reader function.
+
+    A reader that deserializes its own type parameter forwards the field type.
     """
     functions = []
     for path in crate_paths:
-        source = path.read_text(encoding="utf-8")
-        code, _ = SOURCE_POLICY.production_source(source)
-        for match in re.finditer(r"\bfn\s+" + re.escape(last) + r"\s*[<(]", code):
-            opening = body_open(code, match.end() - 1)
-            if opening is None:
-                continue
-            end = delimited_end(code, opening)
-            if end is None:
-                continue
-            body = code[opening:end]
-            read = set(BODY_DESERIALIZE_CALL.findall(body))
-            generics = FUNCTION_GENERICS.match(code, match.end() - 1)
-            parameters = {
-                parameter.split(":", 1)[0].strip()
-                for parameter in (generics.group(1).split(",") if generics else ())
-                if not parameter.strip().startswith("'")
-            }
+        for opening, end, declared, parameters in reader_function_index(path).get(last, ()):
+            read = set(declared)
             if read & parameters:
                 forwarded = field_type_name(owner.body, field)
                 if forwarded is not None:
@@ -2027,8 +2041,7 @@ def reader_functions(last, crate_paths, crate_items, owner, field):
                 for item in crate_items[candidate_path]:
                     if item.kind != "struct":
                         continue
-                    inside = (candidate_path == path
-                              and opening <= item.start < end)
+                    inside = candidate_path == path and opening <= item.start < end
                     if inside or item.name in read:
                         functions.append((candidate_path, item))
     return functions
@@ -2154,6 +2167,7 @@ def reader_option_failures(path, item, owner, field, reader, declarations):
     return found
 
 
+@SOURCE_POLICY.analysis_session
 def absent_key_failures():
     """Optional keys whose writer omits them but whose reader admits ``null``."""
     found = []
@@ -2238,6 +2252,7 @@ def absent_key_failures():
     return found
 
 
+@SOURCE_POLICY.analysis_session
 def main():
     paths = list(source_files())
     raw_items = {path: collect_items(path) for path in paths}
