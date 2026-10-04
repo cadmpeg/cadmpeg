@@ -3954,8 +3954,11 @@ fn parse_part_attributes(
     let Some(root) = xml_root_element(ctx, document)? else {
         return Ok(None);
     };
-    let Some(version) = xml_attribute(ctx, root, &["version"])?
-        .and_then(|version| version.parse::<u32>().ok())
+    let Some(version_text) = xml_attribute(ctx, root, &["version"])? else {
+        return Ok(None);
+    };
+    let Ok(version) =
+        ctx.parse_text::<u32>(version_text, "parse NX part attribute XML version")?
     else {
         return Ok(None);
     };
@@ -3974,9 +3977,15 @@ fn parse_part_attributes(
                 xml_attribute(ctx, node, &["pdmBased"])?,
                 Some("true" | "false")
             )
-            || xml_attribute(ctx, node, &["version"])?
-                .and_then(|version| version.parse::<u32>().ok())
-                .is_none()
+        {
+            return Ok(None);
+        }
+        let Some(version_text) = xml_attribute(ctx, node, &["version"])? else {
+            return Ok(None);
+        };
+        if ctx
+            .parse_text::<u32>(version_text, "parse NX part attribute version")?
+            .is_err()
         {
             return Ok(None);
         }
@@ -4005,7 +4014,9 @@ fn parse_part_attributes(
         let Some(version_text) = xml_attribute(ctx, node, &["version"])? else {
             return Ok(None);
         };
-        let Some(version) = version_text.parse::<u32>().ok() else {
+        let Ok(version) =
+            ctx.parse_text::<u32>(version_text, "parse NX part attribute version")?
+        else {
             return Ok(None);
         };
         let pdm_based = pdm_based == "true";
@@ -6321,24 +6332,41 @@ pub(super) fn expressions(
             let indexed_record = indexed
                 .get(&(entry.name.as_str(), expression.offset))
                 .copied();
-            let declaration = declarations_by_name
+            let declaration = if let Some(candidates) = declarations_by_name
                 .get(&(entry.name.as_str(), expression.name.as_str()))
-                .and_then(|candidates| {
-                    let mut matches = candidates.iter().copied().filter(|declaration| {
-                        indexed_record.is_none_or(|(_, section_ordinal, _)| {
-                            declaration
-                                .record
-                                .split_once(":entry#")
-                                .and_then(|(prefix, _)| {
-                                    prefix.strip_prefix("nx:om-record-directory-")
-                                })
-                                .and_then(|ordinal| ordinal.parse::<usize>().ok())
-                                == Some(section_ordinal)
-                        })
-                    });
-                    let first = matches.next()?;
-                    matches.next().is_none().then_some(first)
-                });
+            {
+                let mut first = None;
+                let mut ambiguous = false;
+                for declaration in candidates.iter().copied() {
+                    let matches_record = if let Some((_, section_ordinal, _)) = indexed_record {
+                        let Some((prefix, _)) = declaration.record.split_once(":entry#") else {
+                            continue;
+                        };
+                        let Some(ordinal) = prefix.strip_prefix("nx:om-record-directory-") else {
+                            continue;
+                        };
+                        let Ok(ordinal) = ctx.parse_text::<usize>(
+                            ordinal,
+                            "parse NX expression record-directory ordinal",
+                        )? else {
+                            continue;
+                        };
+                        ordinal == section_ordinal
+                    } else {
+                        true
+                    };
+                    if matches_record {
+                        if first.is_some() {
+                            ambiguous = true;
+                            break;
+                        }
+                        first = Some(declaration);
+                    }
+                }
+                if ambiguous { None } else { first }
+            } else {
+                None
+            };
             let value = expression.constant_value(ctx)?;
             let source_table_text = retained_om_index_id(
                 ctx,

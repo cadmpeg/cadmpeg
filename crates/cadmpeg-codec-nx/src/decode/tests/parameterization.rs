@@ -912,6 +912,43 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
             .pcurves
             .iter()
             .any(|pcurve| pcurve.id.as_str().contains("intersection-pcurve-completed")));
+        let completion_input = ir.clone();
+        let parse_refusal = crate::test_support::resource_refusal_at(
+            &[],
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "nx completion coedge XMT",
+            |ctx| {
+                let mut completion_ir = completion_input.clone();
+                let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+                let geometry_budget =
+                    crate::decode::geometry_work::GeometryWorkBudget::from_context(
+                        ctx,
+                        cadmpeg_core::decode::u64_from_index(usize::MAX),
+                    );
+                let completion_source =
+                    crate::decode::support_uv::IntersectionCompletionSource {
+                        scope: crate::decode::ids::IdScope::stream(0),
+                        graph: &graph,
+                        source_stream: source_stream.clone(),
+                        coedge_start: 0,
+                        procedural_start: 0,
+                    };
+                crate::decode::support_uv::attach_completed_intersection_pcurves_for_model_with_budget(
+                    ctx,
+                    &mut completion_ir,
+                    std::slice::from_ref(&completion_source),
+                    &mut annotations,
+                    &std::collections::BTreeMap::new(),
+                    &geometry_budget,
+                )
+            },
+        );
+        assert!(matches!(
+            parse_refusal,
+            cadmpeg_core::CodecError::ResourceLimit(refusal)
+                if refusal.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                    && refusal.operation == "nx completion coedge XMT"
+        ));
         let source = crate::decode::support_uv::IntersectionCompletionSource {
             scope: crate::decode::ids::IdScope::stream(0),
             graph: &graph,

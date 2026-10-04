@@ -441,8 +441,20 @@ pub(in crate::native) fn feature_point_construction_scalar_lanes(
         else {
             continue;
         };
-        let section_ordinal = expected_section.parse::<usize>().ok();
-        let block_ordinal = expected_block.parse::<usize>().ok();
+        let section_ordinal = match ctx.parse_text::<usize>(
+            expected_section,
+            "parse NX point scalar lane section ordinal",
+        )? {
+            Ok(ordinal) => Some(ordinal),
+            Err(_) => None,
+        };
+        let block_ordinal = match ctx.parse_text::<usize>(
+            expected_block,
+            "parse NX point scalar lane block ordinal",
+        )? {
+            Ok(ordinal) => Some(ordinal),
+            Err(_) => None,
+        };
         let canonical = section_ordinal.is_some_and(|section| {
             expected_section.len()
                 == section
@@ -2416,7 +2428,7 @@ pub(in crate::native) fn feature_block_payload_points(
             cadmpeg_core::decode::u64_from_index(name.frame.value().len()),
             "parse NX block payload point name",
         )?;
-        if parse_sketch_point_name(name.frame.value()).is_none() {
+        if parse_sketch_point_name(ctx, name.frame.value())?.is_none() {
             continue;
         }
         let [first_id, second_id] = record.scalar_fields.as_slice() else {
