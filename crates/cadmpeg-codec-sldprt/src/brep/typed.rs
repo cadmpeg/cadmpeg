@@ -1033,23 +1033,22 @@ fn parse_face(bytes: &[u8], offset: usize) -> Option<FaceNode> {
 /// Add one framed typed node and its source offset to the scan result.
 fn push_record<T, F: FnOnce() -> Result<T, CodecError>>(
     ctx: &DecodeContext<'_>,
+    offsets_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     offsets: &mut HashSet<usize>,
     records: &mut Vec<T>,
     offset: usize,
     record: F,
 ) -> Result<(), CodecError> {
     ctx.reserve_vec(records, 1, "admit typed Parasolid record")?;
-    if !offsets.contains(&offset) {
-        ctx.reserve_set(offsets, 1, "index typed Parasolid record offset")?;
-    }
     let record = record()?;
-    offsets.insert(offset);
+    offsets_storage.with_storage(|| ctx.insert_hash_set(offsets, offset, "index typed Parasolid record offset"))?;
     records.push(record);
     Ok(())
 }
 
 pub(super) fn scan(bytes: &[u8], ctx: &DecodeContext<'_>) -> Result<Facts, CodecError> {
     let mut facts = Facts::default();
+    let mut offsets_storage = ctx.reserve_scoped(0, "typed Parasolid temporary record offsets")?;
     let mut body_offsets = HashSet::new();
     let mut shell_offsets = HashSet::new();
     let mut region_offsets = HashSet::new();
@@ -1066,7 +1065,7 @@ pub(super) fn scan(bytes: &[u8], ctx: &DecodeContext<'_>) -> Result<Facts, Codec
         }
         if let Some(body) = parse_body_layout(bytes, z + 1, z + 1) {
             push_record(
-                ctx,
+                ctx, &mut offsets_storage,
                 &mut body_offsets,
                 &mut facts.bodies,
                 body.offset,
@@ -1076,7 +1075,7 @@ pub(super) fn scan(bytes: &[u8], ctx: &DecodeContext<'_>) -> Result<Facts, Codec
         if let Some(shell) = parse_shell_fields(bytes, z + 1, z + 1) {
             if !shell_offsets.contains(&shell.offset) {
                 push_record(
-                    ctx,
+                    ctx, &mut offsets_storage,
                     &mut shell_offsets,
                     &mut facts.shells,
                     shell.offset,
@@ -1087,7 +1086,7 @@ pub(super) fn scan(bytes: &[u8], ctx: &DecodeContext<'_>) -> Result<Facts, Codec
         if let Some(region) = parse_region_fields(bytes, z + 1, z + 1) {
             if !region_offsets.contains(&region.offset) {
                 push_record(
-                    ctx,
+                    ctx, &mut offsets_storage,
                     &mut region_offsets,
                     &mut facts.regions,
                     region.offset,
@@ -1098,7 +1097,7 @@ pub(super) fn scan(bytes: &[u8], ctx: &DecodeContext<'_>) -> Result<Facts, Codec
         if let Some(face) = parse_face_fields(bytes, z + 1, z + 1) {
             if !face_offsets.contains(&face.offset) {
                 push_record(
-                    ctx,
+                    ctx, &mut offsets_storage,
                     &mut face_offsets,
                     &mut facts.faces,
                     face.offset,
@@ -1113,7 +1112,7 @@ pub(super) fn scan(bytes: &[u8], ctx: &DecodeContext<'_>) -> Result<Facts, Codec
             if let Some(body) = parse_tagged_body(bytes, offset) {
                 if !body_offsets.contains(&body.offset) {
                     push_record(
-                        ctx,
+                        ctx, &mut offsets_storage,
                         &mut body_offsets,
                         &mut facts.bodies,
                         body.offset,
@@ -1125,7 +1124,7 @@ pub(super) fn scan(bytes: &[u8], ctx: &DecodeContext<'_>) -> Result<Facts, Codec
         if let Some(shell) = parse_shell(bytes, offset) {
             if !shell_offsets.contains(&shell.offset) {
                 push_record(
-                    ctx,
+                    ctx, &mut offsets_storage,
                     &mut shell_offsets,
                     &mut facts.shells,
                     shell.offset,
@@ -1136,7 +1135,7 @@ pub(super) fn scan(bytes: &[u8], ctx: &DecodeContext<'_>) -> Result<Facts, Codec
         if let Some(region) = parse_region(bytes, offset) {
             if !region_offsets.contains(&region.offset) {
                 push_record(
-                    ctx,
+                    ctx, &mut offsets_storage,
                     &mut region_offsets,
                     &mut facts.regions,
                     region.offset,
@@ -1156,7 +1155,7 @@ pub(super) fn scan(bytes: &[u8], ctx: &DecodeContext<'_>) -> Result<Facts, Codec
                 *existing = face;
             } else if !face_offsets.contains(&face.offset) {
                 push_record(
-                    ctx,
+                    ctx, &mut offsets_storage,
                     &mut face_offsets,
                     &mut facts.faces,
                     face.offset,
@@ -1194,6 +1193,7 @@ pub(super) fn scan(bytes: &[u8], ctx: &DecodeContext<'_>) -> Result<Facts, Codec
 
 #[cfg(test)]
 mod tests {
+    mod record_admission;
     use super::{
         read_ref, region_chain, scan, BodyCandidate, BodyNode, FaceNode, Facts, RegionNode,
         ShellNode, BODY_POST_TOPOLOGY_REF_MAX, BODY_TAG, FACE_TAG, MAGIC, REGION_TAG, SHELL_TAG,

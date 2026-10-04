@@ -710,14 +710,12 @@ fn append_design_losses(
         {
             continue;
         }
-        lookup_storage
-            .with_storage(|| ctx.reserve_set(&mut global_parameter_owners, 1, OPERATION))?;
         let id = cadmpeg_ir::features::FeatureId::mint(
             lookup_storage
                 .with_storage(|| copy_retained_string(ctx, feature.id.as_str(), OPERATION))?,
         )
         .map_err(CodecError::malformed)?;
-        global_parameter_owners.insert(id);
+        lookup_storage.with_storage(|| ctx.insert_hash_set(&mut global_parameter_owners, id, OPERATION))?;
     }
     let incomplete_parameters = ctx.admit_iter(&ir.model.parameters[..], "scan SLDPRT append_design_losses values")?.try_fold(0_usize, |count, candidate| { let parameter = &candidate; Ok::<_, cadmpeg_core::CodecError>(count + usize::from( {
             parameter.value.is_none()

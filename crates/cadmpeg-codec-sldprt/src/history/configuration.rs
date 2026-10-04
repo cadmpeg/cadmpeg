@@ -635,10 +635,8 @@ pub(crate) fn project_configuration_sketch_states(
         let states = &ir.model.configurations[configuration_index].feature_states;
         let mut features = copy_configuration_state_features(ctx, &ir.model.features, states)?;
         inherit_configuration_reference_plane_semantics(ctx, &mut features, &ir.model.features)?;
-        let mut reusable_spatial_sketches = ConfigurationIdentitySet::new(
-            "index SLDPRT configuration spatial sketches",
-            "match SLDPRT configuration spatial sketch",
-        );
+        let mut spatial_sketches_storage = ctx.reserve_scoped(0, "SLDPRT temporary configuration spatial sketch identities")?;
+        let mut reusable_spatial_sketches = HashSet::new();
         for sketch in ctx.admit_iter(&ir.model.spatial_sketches, "scan SLDPRT project_configuration_sketch_states values")? {
             const OPERATION: &str = "match SLDPRT configuration spatial sketch scope";
             let work = sketch
@@ -662,7 +660,7 @@ pub(crate) fn project_configuration_sketch_states(
                         sketch.configuration.as_deref() == Some(configuration)
                     })
             {
-                reusable_spatial_sketches.insert(ctx, &sketch.id, sketch.id.as_str())?;
+                spatial_sketches_storage.with_storage(|| ctx.insert_hash_set(&mut reusable_spatial_sketches, &sketch.id, "index SLDPRT configuration spatial sketches"))?;
             }
         }
         let base_definitions = ConfigurationDefinitions::new(ctx, &ir.model.features)?;
@@ -690,7 +688,7 @@ pub(crate) fn project_configuration_sketch_states(
                     continue;
                 };
                 if sketch.is_none()
-                    && ctx.contains_hash_set(&reusable_spatial_sketches.ids, &expected, reusable_spatial_sketches.match_operation)?
+                    && ctx.contains_hash_set(&reusable_spatial_sketches, &expected, "match SLDPRT configuration spatial sketch")?
                 {
                     feature
                         .evaluation
@@ -714,7 +712,7 @@ pub(crate) fn project_configuration_sketch_states(
                 continue;
             };
             if sketch.id().is_none()
-                && ctx.contains_hash_set(&reusable_spatial_sketches.ids, base_sketch, reusable_spatial_sketches.match_operation)?
+                && ctx.contains_hash_set(&reusable_spatial_sketches, base_sketch, "match SLDPRT configuration spatial sketch")?
             {
                 const OPERATION: &str = "copy SLDPRT configuration spatial sketch identity";
                 let work = base_sketch
@@ -1442,48 +1440,6 @@ pub(crate) fn inherit_configuration_reference_plane_states(
     Ok(())
 }
 
-struct ConfigurationIdentitySet<'id, T> {
-    ids: HashSet<&'id T>,
-    key_bytes: usize,
-    insert_operation: &'static str,
-    match_operation: &'static str,
-}
-
-impl<'id, T: Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost>
-    ConfigurationIdentitySet<'id, T>
-{
-    fn new(insert_operation: &'static str, match_operation: &'static str) -> Self {
-        Self {
-            ids: HashSet::new(),
-            key_bytes: 0,
-            insert_operation,
-            match_operation,
-        }
-    }
-
-    fn insert(
-        &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        id: &'id T,
-        text: &str,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        let operation = self.insert_operation;
-        let bytes = self
-            .key_bytes
-            .checked_add(text.len())
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-        let work = bytes
-            .checked_add(1)
-            .and_then(|bytes| bytes.checked_mul(4))
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), operation)?;
-        ctx.reserve_set(&mut self.ids, 1, operation)?;
-        self.ids.insert(id);
-        self.key_bytes = bytes;
-        Ok(())
-    }
-}
-
 fn configuration_surface_carriers(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &cadmpeg_ir::CadIr,
@@ -1500,58 +1456,44 @@ fn configuration_surface_carriers(
         }
         return Ok(surfaces);
     };
-    let mut bodies = ConfigurationIdentitySet::new(
-        "index SLDPRT configuration surface ancestry",
-        "match SLDPRT configuration surface ancestry",
-    );
+    let mut surface_ancestry_storage = ctx.reserve_scoped(0, "SLDPRT temporary configuration surface ancestry")?;
+    let mut bodies = HashSet::new();
     for id in body_ids {
-        bodies.insert(ctx, id, id.as_str())?;
+        surface_ancestry_storage.with_storage(|| ctx.insert_hash_set(&mut bodies, id, "index SLDPRT configuration surface ancestry"))?;
     }
-    let mut regions = ConfigurationIdentitySet::new(
-        "index SLDPRT configuration surface ancestry",
-        "match SLDPRT configuration surface ancestry",
-    );
+    let mut regions = HashSet::new();
     for body in ctx.admit_iter(&ir.model.bodies, "scan SLDPRT configuration_surface_carriers values")? {
-        if ctx.contains_hash_set(&bodies.ids, &body.id, bodies.match_operation)? {
+        if ctx.contains_hash_set(&bodies, &body.id, "match SLDPRT configuration surface ancestry")? {
             for id in ctx.admit_iter(&body.regions, "scan SLDPRT configuration_surface_carriers values")? {
-                regions.insert(ctx, id, id.as_str())?;
+                surface_ancestry_storage.with_storage(|| ctx.insert_hash_set(&mut regions, id, "index SLDPRT configuration surface ancestry"))?;
             }
         }
     }
-    let mut shells = ConfigurationIdentitySet::new(
-        "index SLDPRT configuration surface ancestry",
-        "match SLDPRT configuration surface ancestry",
-    );
+    let mut shells = HashSet::new();
     for region in ctx.admit_iter(&ir.model.regions, "scan SLDPRT configuration_surface_carriers values")? {
-        if ctx.contains_hash_set(&regions.ids, &region.id, regions.match_operation)? {
+        if ctx.contains_hash_set(&regions, &region.id, "match SLDPRT configuration surface ancestry")? {
             for id in ctx.admit_iter(&region.shells, "scan SLDPRT configuration_surface_carriers values")? {
-                shells.insert(ctx, id, id.as_str())?;
+                surface_ancestry_storage.with_storage(|| ctx.insert_hash_set(&mut shells, id, "index SLDPRT configuration surface ancestry"))?;
             }
         }
     }
-    let mut faces = ConfigurationIdentitySet::new(
-        "index SLDPRT configuration surface ancestry",
-        "match SLDPRT configuration surface ancestry",
-    );
+    let mut faces = HashSet::new();
     for shell in ctx.admit_iter(&ir.model.shells, "scan SLDPRT configuration_surface_carriers values")? {
-        if ctx.contains_hash_set(&shells.ids, &shell.id, shells.match_operation)? {
+        if ctx.contains_hash_set(&shells, &shell.id, "match SLDPRT configuration surface ancestry")? {
             for id in ctx.admit_iter(shell.faces(), "scan SLDPRT topology members")? {
-                faces.insert(ctx, id, id.as_str())?;
+                surface_ancestry_storage.with_storage(|| ctx.insert_hash_set(&mut faces, id, "index SLDPRT configuration surface ancestry"))?;
             }
         }
     }
-    let mut surface_ids = ConfigurationIdentitySet::new(
-        "index SLDPRT configuration surface ancestry",
-        "match SLDPRT configuration surface ancestry",
-    );
+    let mut surface_ids = HashSet::new();
     for face in ctx.admit_iter(&ir.model.faces, "scan SLDPRT configuration_surface_carriers values")? {
-        if ctx.contains_hash_set(&faces.ids, &face.id, faces.match_operation)? {
-            surface_ids.insert(ctx, &face.surface, face.surface.as_str())?;
+        if ctx.contains_hash_set(&faces, &face.id, "match SLDPRT configuration surface ancestry")? {
+            surface_ancestry_storage.with_storage(|| ctx.insert_hash_set(&mut surface_ids, &face.surface, "index SLDPRT configuration surface ancestry"))?;
         }
     }
     let mut surfaces = Vec::new();
     for surface in ctx.admit_iter(&ir.model.surfaces, "scan SLDPRT configuration_surface_carriers values")? {
-        if ctx.contains_hash_set(&surface_ids.ids, &surface.id, surface_ids.match_operation)? {
+        if ctx.contains_hash_set(&surface_ids, &surface.id, "match SLDPRT configuration surface ancestry")? {
             let work = surfaces
                 .len()
                 .checked_add(1)
