@@ -160,14 +160,13 @@ pub(crate) fn bind_history_classes(
             };
             if class.role() != FeatureInputClassRole::Native {
                 temporary.with_storage(|| {
-                    let group = ctx
-                        .entry_hash_map(
-                            &mut direct_classes_by_name,
-                            name,
-                            "bind SLDPRT history classes",
-                        )?
-                        .or_default();
-                    ctx.push_vec(group, class.name.as_str(), "bind SLDPRT history classes")
+                    ctx.push_hash_group(
+                        &mut direct_classes_by_name,
+                        name,
+                        class.name.as_str(),
+                        "bind SLDPRT history classes",
+                        "bind SLDPRT history classes",
+                    )
                 })?;
             }
         }
