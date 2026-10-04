@@ -1414,8 +1414,8 @@ fn resolve_indexed_marker_candidates<'a>(
     }
     ctx.sort_unstable_by_key(
         &mut pairs,
-            |value| (value[0].id(), value[1].id()),
-            Ord::cmp,
+        |value| (value[0].id(), value[1].id()),
+        Ord::cmp,
         OPERATION,
     )?;
     Ok((copy_endpoint_markers(ctx, &pairs[0])?, false))
@@ -2141,8 +2141,12 @@ pub(super) fn inferred_point_coordinates_by_index(
     }
     ctx.sort_unstable_by_key(
         &mut candidates,
-            |value| (value[0], value[1],),
-            |left, right| left.0.total_cmp(&right.0).then_with(||left.1.total_cmp(&right.1)),
+        |value| (value[0], value[1]),
+        |left, right| {
+            left.0
+                .total_cmp(&right.0)
+                .then_with(|| left.1.total_cmp(&right.1))
+        },
         "sldprt point solver candidates sort",
     )?;
     charge_endpoint_work(ctx, candidates.len(), 64, POINT_SOLVER_OPERATION)?;
@@ -2301,8 +2305,8 @@ fn point_distance_component_has_solution(
     };
     ctx.sort_unstable_by_key(
         &mut unassigned,
-            |value| domain_key(value),
-            Ord::cmp,
+        |value| domain_key(value),
+        Ord::cmp,
         POINT_SOLVER_OPERATION,
     )?;
     point_distance_assignment_exists(ctx, &unassigned, domains, constraints)
@@ -3214,9 +3218,7 @@ pub(super) fn coordinate_circle_radius(
         let mut axes = [points.map(|point| point[0]), points.map(|point| point[1])];
         let mut counts = [1usize; 2];
         for (axis, count) in axes.iter_mut().zip(&mut counts) {
-            ctx.sort_unstable_by(axis,
-            |value| value,
-            f64::total_cmp, OPERATION)?;
+            ctx.sort_unstable_by(axis, |value| value, f64::total_cmp, OPERATION)?;
             for index in 1..axis.len() {
                 if axis[index] != axis[*count - 1] {
                     axis[*count] = axis[index];
@@ -3228,8 +3230,12 @@ pub(super) fn coordinate_circle_radius(
         let (v_min, v_max) = (axes[1][0], axes[1][counts[1] - 1]);
         ctx.sort_unstable_by_key(
             &mut points,
-            |value| (value[0], value[1],),
-            |left, right| left.0.total_cmp(&right.0).then_with(||left.1.total_cmp(&right.1)),
+            |value| (value[0], value[1]),
+            |left, right| {
+                left.0
+                    .total_cmp(&right.0)
+                    .then_with(|| left.1.total_cmp(&right.1))
+            },
             OPERATION,
         )?;
         let point_count = 1 + points.windows(2).filter(|pair| pair[0] != pair[1]).count();
@@ -3963,8 +3969,12 @@ pub(super) fn compact_profile_full_circle(
     }
     ctx.sort_unstable_by_key(
         &mut radials,
-            |value| (value[0], value[1],),
-            |left, right| left.0.total_cmp(&right.0).then_with(||left.1.total_cmp(&right.1)),
+        |value| (value[0], value[1]),
+        |left, right| {
+            left.0
+                .total_cmp(&right.0)
+                .then_with(|| left.1.total_cmp(&right.1))
+        },
         "sldprt ellipse radial points sort",
     )?;
     radials.dedup_by(|left, right| {
@@ -4467,8 +4477,12 @@ fn sort_endpoint_points(
 ) -> Result<(), CodecError> {
     ctx.sort_unstable_by_key(
         points,
-            |value| (value[0], value[1],),
-            |left, right| left.0.total_cmp(&right.0).then_with(||left.1.total_cmp(&right.1)),
+        |value| (value[0], value[1]),
+        |left, right| {
+            left.0
+                .total_cmp(&right.0)
+                .then_with(|| left.1.total_cmp(&right.1))
+        },
         operation,
     )?;
     Ok(())
@@ -4543,12 +4557,7 @@ pub(super) fn sort_endpoint_markers(
     markers: &mut [&SketchInputEntity],
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    ctx.sort_unstable_by_key(
-        markers,
-            |value| value.offset(),
-            Ord::cmp,
-        operation,
-    )?;
+    ctx.sort_unstable_by_key(markers, |value| value.offset(), Ord::cmp, operation)?;
     Ok(())
 }
 
@@ -4558,8 +4567,8 @@ fn ellipse_axis_bounds(
 ) -> Result<Option<[f64; 2]>, CodecError> {
     ctx.sort_unstable_by(
         &mut values,
-            |value| value,
-            f64::total_cmp,
+        |value| value,
+        f64::total_cmp,
         "sldprt ellipse axis bounds sort",
     )?;
     let first = values[0];
@@ -6061,12 +6070,7 @@ pub(super) fn unique_arc_center_marker(
         Some((quantize(center, tolerance), center))
     });
     let mut centers = collect_endpoint_values(ctx, eligible, OPERATION)?;
-    ctx.sort_unstable_by(
-        &mut centers,
-            |value| &value.0,
-            Ord::cmp,
-        OPERATION,
-    )?;
+    ctx.sort_unstable_by(&mut centers, |value| &value.0, Ord::cmp, OPERATION)?;
     centers.dedup_by_key(|(center, _)| *center);
     let [(_, center)] = centers.as_slice() else {
         return Ok(None);

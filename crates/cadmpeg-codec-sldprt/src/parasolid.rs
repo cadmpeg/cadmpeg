@@ -71,7 +71,11 @@ pub(crate) fn extract_streams_with_offsets(
     if !out.is_empty() {
         return Ok(out);
     }
-    if !ctx.contains_bytes(payload, &WRAPPED_MAGIC_PREFIX, "find Parasolid wrapper prefix")? {
+    if !ctx.contains_bytes(
+        payload,
+        &WRAPPED_MAGIC_PREFIX,
+        "find Parasolid wrapper prefix",
+    )? {
         return Ok(out);
     }
 
@@ -447,7 +451,12 @@ pub(crate) fn stream_header(
 ) -> Result<Option<StreamHeader>, CodecError> {
     ctx.charge_work(256, "decode Parasolid stream header")?;
     let window = payload.len().min(64);
-    let Some(sig) = ctx.find_bytes(&payload[..window], b"PS\0\0", "decode Parasolid stream header")? else {
+    let Some(sig) = ctx.find_bytes(
+        &payload[..window],
+        b"PS\0\0",
+        "decode Parasolid stream header",
+    )?
+    else {
         return Ok(None);
     };
     let Some((description_bytes, token, schema_end)) = (|| {
@@ -626,8 +635,8 @@ pub(crate) fn mesh_polyline_from_header(
     }
     ctx.stable_sort_by(
         &mut candidates,
-            |value| &value.0,
-            |left, right| right.cmp(left),
+        |value| &value.0,
+        |left, right| right.cmp(left),
         "sort Parasolid mesh candidates",
     )?;
     let Some((largest_count, _)) = candidates.first() else {

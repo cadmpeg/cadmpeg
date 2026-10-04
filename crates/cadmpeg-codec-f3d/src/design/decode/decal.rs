@@ -135,8 +135,8 @@ pub(crate) fn project_decal_images(
     }
     ctx.stable_sort_by(
         &mut assets[..],
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d design decal 2",
     )?;
     assets.dedup_by(|a, b| a.id == b.id);

@@ -1116,8 +1116,8 @@ pub(in crate::families) fn b2_closed_owner_boundary_edges(
     let mut edges = [first, second, third, fourth];
     ctx.sort_unstable_by(
         &mut edges,
-            |value| &value.slot,
-            Ord::cmp,
+        |value| &value.slot,
+        Ord::cmp,
         "catia b2 owner boundary edges sort",
     )?;
     if edges.windows(2).any(|pair| pair[0].slot == pair[1].slot)
@@ -1138,8 +1138,8 @@ pub(in crate::families) fn b2_closed_owner_boundary_edges(
     });
     ctx.sort_unstable_by(
         &mut edge_keys,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "catia b2 owner boundary edge keys sort",
     )?;
     if edge_keys.windows(2).any(|pair| pair[0] == pair[1]) {
@@ -1157,8 +1157,8 @@ pub(in crate::families) fn b2_closed_owner_boundary_edges(
     ];
     ctx.sort_unstable_by(
         &mut vertices,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "catia b2 owner boundary vertices sort",
     )?;
     Ok((vertices[0] == vertices[1]
@@ -2435,8 +2435,7 @@ fn parse_b2_nurbs_curve(
     knots.extend(std::iter::repeat_with(|| knot_end).take(control_count));
     crate::nurbs::note_refusal(
         ctx,
-        cadmpeg_ir::geometry::nurbs::NurbsPoles3::from_checked_lanes(control_points, Some(weights))
-            .and_then(|poles| NurbsCurve::new(degree, knots, poles, false)),
+        NurbsCurve::from_checked_lanes(ctx, degree, knots, control_points, Some(weights), false)?,
         refusal,
         format_args!("b2 NURBS curve record at byte {}", frame.pos),
     )
@@ -3565,8 +3564,8 @@ pub(in crate::families) fn b2_offset_supports_from_records(
     offsets.extend(extra);
     ctx.sort_unstable_by(
         &mut offsets,
-            |value| &value.pos,
-            Ord::cmp,
+        |value| &value.pos,
+        Ord::cmp,
         "catia_b2_offset_supports_sort",
     )?;
     Ok(offsets)

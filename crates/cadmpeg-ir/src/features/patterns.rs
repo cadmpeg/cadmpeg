@@ -648,7 +648,7 @@ impl<C: cadmpeg_core::decode::cost::DecodeCost> cadmpeg_core::decode::cost::Deco
 
 /// Ordered composite-pattern stages whose combination rules and occurrence
 /// counts compose.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "Vec<PatternStage>", into = "Vec<PatternStage>")]
 pub struct CompositePattern(Vec<PatternStage>);
@@ -908,3 +908,7 @@ impl PatternKind {
 
 #[cfg(test)]
 mod tests;
+
+mod identity_rewrite;
+
+mod serialization;

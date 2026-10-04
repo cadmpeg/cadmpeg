@@ -274,3 +274,5 @@ mod tests {
         assert!(serde_json::from_value::<DesignTorusPrimitive>(wire).is_err());
     }
 }
+
+mod identity_rewrite;

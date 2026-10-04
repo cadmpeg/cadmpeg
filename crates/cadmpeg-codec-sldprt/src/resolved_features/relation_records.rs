@@ -64,8 +64,8 @@ pub(super) fn feature_intervals(
     }
     ctx.sort_unstable_by(
         &mut starts,
-            |value| &value.0,
-            Ord::cmp,
+        |value| &value.0,
+        Ord::cmp,
         "sort SLDPRT feature intervals",
     )?;
     starts.dedup_by_key(|(offset, _)| *offset);
@@ -579,8 +579,8 @@ pub(super) fn relation_instances(
     }
     ctx.sort_unstable_by_key(
         &mut instances,
-            |value| (value.offset,value.ordinal),
-            Ord::cmp,
+        |value| (value.offset, value.ordinal),
+        Ord::cmp,
         "sort SLDPRT relation instances",
     )?;
     for (ordinal, relation) in instances.iter_mut().enumerate() {
@@ -770,8 +770,8 @@ pub(super) fn circle_dimension_handle_driver<'a>(
     let mut scalars = collect_relation_vec(ctx, lane.scalars.iter())?;
     ctx.sort_unstable_by(
         &mut scalars,
-            |value| &value.offset,
-            Ord::cmp,
+        |value| &value.offset,
+        Ord::cmp,
         "sort SLDPRT relation scalars",
     )?;
     let mut names = HashMap::new();
@@ -1116,8 +1116,8 @@ fn feature_entities<'a>(
     )?;
     ctx.sort_unstable_by_key(
         &mut entities,
-            |value| (value.offset(),value.ordinal()),
-            Ord::cmp,
+        |value| (value.offset(), value.ordinal()),
+        Ord::cmp,
         "sort SLDPRT relation feature entities",
     )?;
     Ok(entities)
@@ -1192,8 +1192,8 @@ fn dynamic_point_candidates<'a>(
     }
     ctx.sort_unstable_by(
         &mut candidates,
-            |value| value.id(),
-            Ord::cmp,
+        |value| value.id(),
+        Ord::cmp,
         "sort SLDPRT dynamic point candidates",
     )?;
     Ok(candidates)
@@ -1421,8 +1421,8 @@ fn bind_dynamic_point_relation(
     }
     ctx.sort_unstable_by(
         &mut matches,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "sort SLDPRT dynamic point matches",
     )?;
     matches.dedup();
@@ -1480,8 +1480,8 @@ fn bind_dynamic_point_line_relation(
     )?;
     ctx.sort_unstable_by(
         &mut matches,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "sort SLDPRT dynamic point-line matches",
     )?;
     matches.dedup();

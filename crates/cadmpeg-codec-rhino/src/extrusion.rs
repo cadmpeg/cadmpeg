@@ -464,8 +464,8 @@ fn exact_orientation(
         .checked_add(1)
         .ok_or_else(|| error(offset, "extrusion profile degree is too large"))?;
     let mut basis = ctx.alloc_filled(basis_count, 0.0, "Rhino extrusion profile basis")?;
-    let start = evaluate_profile_point(&curve, domain[0], offset, &mut basis)?;
-    let end = evaluate_profile_point(&curve, domain[1], offset, &mut basis)?;
+    let start = evaluate_profile_point(ctx, &curve, domain[0], offset, &mut basis)?;
+    let end = evaluate_profile_point(ctx, &curve, domain[1], offset, &mut basis)?;
     let sample_parameter = |start: f64, end: f64, fraction: f64, ordinary: f64| {
         if ordinary.is_finite() {
             Ok(ordinary)
@@ -481,12 +481,14 @@ fn exact_orientation(
         }
         let span = domain[1] - domain[0];
         let one_third = evaluate_profile_point(
+            ctx,
             &curve,
             sample_parameter(domain[0], domain[1], 1.0 / 3.0, domain[0] + span / 3.0)?,
             offset,
             &mut basis,
         )?;
         let two_thirds = evaluate_profile_point(
+            ctx,
             &curve,
             sample_parameter(
                 domain[0],
@@ -554,12 +556,12 @@ fn exact_orientation(
                 fraction,
                 span_start + fraction * (span_end - span_start),
             )?;
-            let current = evaluate_profile_point(&curve, parameter, offset, &mut basis)?;
+            let current = evaluate_profile_point(ctx, &curve, parameter, offset, &mut basis)?;
             twice_area += (previous.x - current.x) * (previous.y + current.y);
             previous = current;
         }
     }
-    let final_point = evaluate_profile_point(&curve, domain[1], offset, &mut basis)?;
+    let final_point = evaluate_profile_point(ctx, &curve, domain[1], offset, &mut basis)?;
     twice_area += (previous.x - final_point.x) * (previous.y + final_point.y);
     if !twice_area.is_finite() {
         return Err(error(offset, "extrusion profile orientation is invalid"));
@@ -591,12 +593,13 @@ fn source_periodic(curve: &NurbsCurve) -> bool {
 }
 
 fn evaluate_profile_point(
+    ctx: &DecodeContext<'_>,
     curve: &NurbsCurve,
     parameter: f64,
     offset: usize,
     basis: &mut [f64],
 ) -> Result<Point3, GeometryError> {
-    nurbs_curve_point_at_with_basis(curve, parameter, basis)
+    nurbs_curve_point_at_with_basis(ctx, curve, parameter, basis)
         .map(cadmpeg_ir::features::FinitePoint3::get)
         .map_err(|failure| match failure {
             cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit) => {
@@ -644,20 +647,23 @@ fn transform_nurbs(
     offset: usize,
 ) -> Result<NurbsCurve, GeometryError> {
     let mut curve = curve.try_clone_for_decode(ctx, "Rhino extrusion transformed NURBS")?;
-    curve.try_map_control_points(|_, point| {
-        let transformed = transform_local(
-            point.get(),
-            frame.origin,
-            frame.xaxis,
-            frame.yaxis,
-            frame.zaxis,
-            frame.miter,
-            offset,
-        )?;
-        FinitePoint3::new(transformed).ok_or_else(|| {
-            GeometryError::malformed(offset, "control_points contains a non-finite point")
-        })
-    })?;
+    curve.try_map_control_points(
+        |_, point| {
+            let transformed = transform_local(
+                point.get(),
+                frame.origin,
+                frame.xaxis,
+                frame.yaxis,
+                frame.zaxis,
+                frame.miter,
+                offset,
+            )?;
+            FinitePoint3::new(transformed).ok_or_else(|| {
+                GeometryError::malformed(offset, "control_points contains a non-finite point")
+            })
+        },
+        ctx,
+    )??;
     Ok(curve)
 }
 
@@ -1435,17 +1441,19 @@ pub(crate) mod tests {
         DecodedCurve::leaf(
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     (0..count + 2)
                         .map(|value| {
                             cadmpeg_core::convert::f64_from_index(value)
                                 .expect("fixture index is exactly representable")
                         })
-                        .collect(),
+                        .collect::<Vec<f64>>(),
                     points,
                     None,
                     false,
                 )
+                .expect("fixture constructor admission")
                 .expect("valid polygon curve"),
             )),
             Diagnostics::new(),
@@ -1494,12 +1502,14 @@ pub(crate) mod tests {
         DecodedCurve::leaf(
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     2,
                     vec![0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 4.0],
                     points,
                     Some(weights),
                     false,
                 )
+                .expect("fixture constructor admission")
                 .expect("valid circle curve"),
             )),
             Diagnostics::new(),
@@ -1658,17 +1668,21 @@ pub(crate) mod tests {
             unreachable!()
         };
         curve
-            .try_map_control_points(|index, point| {
-                let mut point = point.get();
-                if index == 1 {
-                    point.z = 1.0;
-                }
-                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                        "control_points contains a non-finite point".into(),
-                    )
-                })
-            })
+            .try_map_control_points(
+                |index, point| {
+                    let mut point = point.get();
+                    if index == 1 {
+                        point.z = 1.0;
+                    }
+                    cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                        cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                            "control_points contains a non-finite point".into(),
+                        )
+                    })
+                },
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("pole edit admission")
             .expect("valid test curve edit");
         assert!(exact_orientation(&ctx, &off_plane, 0).is_err());
     }
@@ -1688,7 +1702,7 @@ pub(crate) mod tests {
             panic!("polygon NURBS fixture");
         };
         curve
-            .edit_knots(|knots| {
+            .edit_knots(&ctx, |knots| {
                 knots.copy_from_slice(&[
                     -f64::MAX,
                     -f64::MAX,
@@ -1699,6 +1713,7 @@ pub(crate) mod tests {
                     f64::MAX,
                 ]);
             })
+            .expect("knot edit admission")
             .expect("wide polygon knot interval");
         assert_eq!(
             exact_orientation(&ctx, &profile, 0).expect("finite orientation"),
@@ -1904,12 +1919,14 @@ pub(crate) mod tests {
     #[test]
     fn extrusion_cap_weights_refuse_collection_limit() {
         let curve = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             Some(vec![1.0, 0.5]),
             false,
         )
+        .expect("fixture constructor admission")
         .expect("valid rational cap profile");
         let frame = cap_frame(
             Vector3::new(1.0, 0.0, 0.0),
@@ -2117,6 +2134,14 @@ pub(crate) mod tests {
                 &mut crate::mesh::MeshBudget::new(),
             )
             .expect_err("cache buffer exceeds zero retained bytes");
+            if let GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(first)) = &refusal {
+                assert_eq!(
+                    first.dimension,
+                    cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                );
+                assert!(matches!(ctx.finish_session(),
+                Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == *first));
+            }
             refusal
         };
         let refusal = run(crate::test_support::retained_limit_at(

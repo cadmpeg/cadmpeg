@@ -48,7 +48,12 @@ fn operand_kind_names_preserve_wire_spelling() {
             "d580",
         ),
     ] {
-        assert_eq!(super::operand_kind_name(&cadmpeg_test_support::service_decode_context(), kind).unwrap().as_str(), expected);
+        assert_eq!(
+            super::operand_kind_name(&cadmpeg_test_support::service_decode_context(), kind)
+                .unwrap()
+                .as_str(),
+            expected
+        );
     }
 }
 
@@ -60,11 +65,23 @@ fn marker_literals_keep_their_wire_spelling() {
         "sldprt:marker-local-id"
     );
     assert_eq!(
-        nonblank_literal!(&cadmpeg_test_support::service_decode_context(), "sldprt:marker-relation:{}", 34).unwrap().as_str(),
+        nonblank_literal!(
+            &cadmpeg_test_support::service_decode_context(),
+            "sldprt:marker-relation:{}",
+            34
+        )
+        .unwrap()
+        .as_str(),
         "sldprt:marker-relation:34"
     );
     assert_eq!(
-        nonblank_literal!(&cadmpeg_test_support::service_decode_context(), "sldprt:marker-geometry:{}", 2).unwrap().as_str(),
+        nonblank_literal!(
+            &cadmpeg_test_support::service_decode_context(),
+            "sldprt:marker-geometry:{}",
+            2
+        )
+        .unwrap()
+        .as_str(),
         "sldprt:marker-geometry:2"
     );
 }

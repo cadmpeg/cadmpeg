@@ -501,9 +501,18 @@ pub(crate) enum DesignOperandOwner {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for DesignOperandOwner {
-    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
-    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
     }
 }
 
@@ -573,9 +582,18 @@ pub(crate) enum AsmHistoricalEntityKind {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for AsmHistoricalEntityKind {
-    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
-    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
     }
 }
 
@@ -624,3 +642,5 @@ cadmpeg_core::named_optional_field!(deserialize_resolved_body_slot, i64, "resolv
 
 #[cfg(test)]
 mod tests;
+
+mod identity_rewrite;

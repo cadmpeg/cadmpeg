@@ -1998,8 +1998,8 @@ pub(super) fn topology_bound_plane(
     }
     ctx.stable_sort_by(
         points.as_mut_slice(),
-            |value| value,
-            |left, right| {
+        |value| value,
+        |left, right| {
             left.iter()
                 .zip(right)
                 .find_map(|(left, right)| {

@@ -354,8 +354,8 @@ fn resolve_operand_marker_excluding<'a>(
     )?;
     ctx.sort_unstable_by_key(
         &mut compatible,
-            |value| value.offset(),
-            Ord::cmp,
+        |value| value.offset(),
+        Ord::cmp,
         "sort SLDPRT compatible operand markers",
     )?;
     let mut ordinal_link_graph = false;
@@ -420,8 +420,8 @@ fn resolve_operand_marker_excluding<'a>(
             };
             ctx.sort_unstable_by(
                 &mut indirect,
-            |value| value.id(),
-            Ord::cmp,
+                |value| value.id(),
+                Ord::cmp,
                 "sort SLDPRT indirect operand markers",
             )?;
             indirect.dedup_by_key(|entity| entity.id());

@@ -321,11 +321,10 @@ impl SldprtNative {
         namespace: &cadmpeg_ir::NativeNamespace,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )?;
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        // A native field can contain 256 containers; reconstruction adds the record root.
+        policy.limits.max_recursion_depth = 257;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
         Self::load_charged(&ctx, namespace)
     }
 
@@ -826,8 +825,8 @@ impl SldprtNative {
             )?;
             ctx.stable_sort_by(
                 &mut history.configurations,
-            |value| &value.ordinal,
-            Ord::cmp,
+                |value| &value.ordinal,
+                Ord::cmp,
                 "sort SLDPRT native records",
             )?;
             if let Some(pair) = history
@@ -852,8 +851,8 @@ impl SldprtNative {
             )?;
             ctx.stable_sort_by(
                 &mut history.features,
-            |value| &value.ordinal,
-            Ord::cmp,
+                |value| &value.ordinal,
+                Ord::cmp,
                 "sort SLDPRT native records",
             )?;
             if let Some(pair) = history
@@ -880,8 +879,8 @@ impl SldprtNative {
             )?;
             ctx.stable_sort_by(
                 &mut lane.classes,
-            |value| &value.ordinal,
-            Ord::cmp,
+                |value| &value.ordinal,
+                Ord::cmp,
                 "sort SLDPRT native records",
             )?;
             lane.names = ctx.try_collect_retained_with(
@@ -891,8 +890,8 @@ impl SldprtNative {
             )?;
             ctx.stable_sort_by(
                 &mut lane.names,
-            |value| &value.ordinal,
-            Ord::cmp,
+                |value| &value.ordinal,
+                Ord::cmp,
                 "sort SLDPRT native records",
             )?;
             lane.scalars = ctx.try_collect_retained_with(
@@ -902,8 +901,8 @@ impl SldprtNative {
             )?;
             ctx.stable_sort_by(
                 &mut lane.scalars,
-            |value| &value.ordinal,
-            Ord::cmp,
+                |value| &value.ordinal,
+                Ord::cmp,
                 "sort SLDPRT native records",
             )?;
             lane.references = ctx.try_collect_retained_with(
@@ -913,8 +912,8 @@ impl SldprtNative {
             )?;
             ctx.stable_sort_by(
                 &mut lane.references,
-            |value| &value.ordinal,
-            Ord::cmp,
+                |value| &value.ordinal,
+                Ord::cmp,
                 "sort SLDPRT native records",
             )?;
             lane.relation_bindings = ctx.try_collect_retained_with(
@@ -926,8 +925,8 @@ impl SldprtNative {
             )?;
             ctx.stable_sort_by(
                 &mut lane.relation_bindings,
-            |value| &value.ordinal,
-            Ord::cmp,
+                |value| &value.ordinal,
+                Ord::cmp,
                 "sort SLDPRT native records",
             )?;
             lane.relation_instances = ctx.try_collect_retained_with(
@@ -939,8 +938,8 @@ impl SldprtNative {
             )?;
             ctx.stable_sort_by(
                 &mut lane.relation_instances,
-            |value| &value.ordinal,
-            Ord::cmp,
+                |value| &value.ordinal,
+                Ord::cmp,
                 "sort SLDPRT native records",
             )?;
             lane.body_selections = ctx.try_collect_retained_with(
@@ -952,8 +951,8 @@ impl SldprtNative {
             )?;
             ctx.stable_sort_by(
                 &mut lane.body_selections,
-            |value| &value.ordinal,
-            Ord::cmp,
+                |value| &value.ordinal,
+                Ord::cmp,
                 "sort SLDPRT native records",
             )?;
             for record in &lane.body_selections {
@@ -978,8 +977,8 @@ impl SldprtNative {
             )?;
             ctx.stable_sort_by(
                 &mut lane.edge_selections,
-            |value| &value.ordinal,
-            Ord::cmp,
+                |value| &value.ordinal,
+                Ord::cmp,
                 "sort SLDPRT native records",
             )?;
             let (mut edge_features, _edge_features_reservation) =
@@ -1057,8 +1056,8 @@ impl SldprtNative {
             )?;
             ctx.stable_sort_by(
                 &mut lane.surface_selections,
-            |value| &value.ordinal,
-            Ord::cmp,
+                |value| &value.ordinal,
+                Ord::cmp,
                 "sort SLDPRT native records",
             )?;
             for record in &lane.surface_selections {
@@ -1083,8 +1082,8 @@ impl SldprtNative {
             )?;
             ctx.stable_sort_by(
                 &mut records,
-            |value| &value.ordinal,
-            Ord::cmp,
+                |value| &value.ordinal,
+                Ord::cmp,
                 "sort SLDPRT native records",
             )?;
             lane.generated_surface_identities = records;
@@ -1106,8 +1105,8 @@ impl SldprtNative {
             )?;
             ctx.stable_sort_by_key(
                 &mut lane.sketch_entities,
-            |value| value.ordinal(),
-            Ord::cmp,
+                super::records::SketchInputEntity::ordinal,
+                Ord::cmp,
                 "sort SLDPRT sketch entity records",
             )?;
         }

@@ -89,46 +89,71 @@ fn only_the_acis_kernel_branches_are_banded() {
                 header: &kernel.metadata,
             })),
         ] {
-            let (host, kernel) = layers(&cadmpeg_test_support::service_decode_context(), &asm).unwrap();
+            let (host, kernel) =
+                layers(&cadmpeg_test_support::service_decode_context(), &asm).unwrap();
             assert_eq!(host.admission(), &Admission::Admitted, "{version:?}");
             assert_eq!(kernel.admission(), &Admission::Admitted, "{version:?}");
         }
 
-        let (host, matched) = layers(&cadmpeg_test_support::service_decode_context(), &StreamEvidence::Binary {
-            family: Family::Acis,
-            header: &kernel,
-            stream: Some(RecordStreamStart(0)),
-        }).unwrap();
+        let (host, matched) = layers(
+            &cadmpeg_test_support::service_decode_context(),
+            &StreamEvidence::Binary {
+                family: Family::Acis,
+                header: &kernel,
+                stream: Some(RecordStreamStart(0)),
+            },
+        )
+        .unwrap();
         assert_eq!(host.admission(), &Admission::Admitted, "{version:?}");
         if verified {
             assert_eq!(matched.admission(), &Admission::Admitted, "{version:?}");
-            assert!(dialect_loss(&cadmpeg_test_support::service_decode_context(), &matched).unwrap().is_none(), "{version:?}");
+            assert!(
+                dialect_loss(&cadmpeg_test_support::service_decode_context(), &matched)
+                    .unwrap()
+                    .is_none(),
+                "{version:?}"
+            );
         } else {
             assert!(
                 matches!(matched.admission(), Admission::Unverified { .. }),
                 "{version:?}"
             );
             assert_eq!(
-                matched.using(&cadmpeg_test_support::service_decode_context()).unwrap(),
+                matched
+                    .using(&cadmpeg_test_support::service_decode_context())
+                    .unwrap(),
                 Some(DialectId::parse(nearest).expect("test id has dialect grammar")),
                 "{version:?}"
             );
-            let loss = dialect_loss(&cadmpeg_test_support::service_decode_context(), &matched).unwrap().expect("the recovery is charged");
+            let loss = dialect_loss(&cadmpeg_test_support::service_decode_context(), &matched)
+                .unwrap()
+                .expect("the recovery is charged");
             assert_eq!(loss.code, SatLossCode::SourceDialectUnverified.kind());
             assert!(loss.message.contains(nearest), "{}", loss.message);
         }
 
-        let (host, matched) = layers(&cadmpeg_test_support::service_decode_context(), &StreamEvidence::Text(Some(TextEvidence {
-            branch: sat::Terminator::Acis,
-            header: &kernel.metadata,
-        }))).unwrap();
+        let (host, matched) = layers(
+            &cadmpeg_test_support::service_decode_context(),
+            &StreamEvidence::Text(Some(TextEvidence {
+                branch: sat::Terminator::Acis,
+                header: &kernel.metadata,
+            })),
+        )
+        .unwrap();
         assert_eq!(host.admission(), &Admission::Admitted, "{version:?}");
         if verified {
             assert_eq!(matched.admission(), &Admission::Admitted, "{version:?}");
-            assert!(dialect_loss(&cadmpeg_test_support::service_decode_context(), &matched).unwrap().is_none(), "{version:?}");
+            assert!(
+                dialect_loss(&cadmpeg_test_support::service_decode_context(), &matched)
+                    .unwrap()
+                    .is_none(),
+                "{version:?}"
+            );
         } else {
             assert_eq!(matched.admission(), &Admission::Residual, "{version:?}");
-            let loss = dialect_loss(&cadmpeg_test_support::service_decode_context(), &matched).unwrap().expect("the recovery is charged");
+            let loss = dialect_loss(&cadmpeg_test_support::service_decode_context(), &matched)
+                .unwrap()
+                .expect("the recovery is charged");
             assert_eq!(loss.code, SatLossCode::SourceDialectUnverified.kind());
             assert!(
                 !loss.message.contains("acis:save-format"),
@@ -165,7 +190,8 @@ fn a_stream_that_stops_at_its_own_discriminant_is_refused() {
         ),
         (StreamEvidence::Text(None), "sat:text"),
     ] {
-        let (matched, _) = layers(&cadmpeg_test_support::service_decode_context(), &evidence).unwrap();
+        let (matched, _) =
+            layers(&cadmpeg_test_support::service_decode_context(), &evidence).unwrap();
         assert_eq!(matched.dialect().as_str(), id);
         assert_eq!(matched.admission(), &Admission::Refused, "{id}");
     }
@@ -220,13 +246,16 @@ fn the_recovery_loss_is_charged_exactly_on_the_unverified_admission() {
         })),
         StreamEvidence::Text(None),
     ] {
-        let (_, matched) = layers(&cadmpeg_test_support::service_decode_context(), &evidence).unwrap();
+        let (_, matched) =
+            layers(&cadmpeg_test_support::service_decode_context(), &evidence).unwrap();
         assert_eq!(
             matches!(
                 matched.admission(),
                 Admission::Unverified { .. } | Admission::Residual
             ),
-            dialect_loss(&cadmpeg_test_support::service_decode_context(), &matched).unwrap().is_some(),
+            dialect_loss(&cadmpeg_test_support::service_decode_context(), &matched)
+                .unwrap()
+                .is_some(),
             "{:?}",
             matched.admission()
         );
@@ -349,7 +378,11 @@ fn cases() -> Vec<Case> {
             id: "sat:acis-binary",
             kernel_id: "acis:save-format-binary-other",
             kernel_admission: Admission::Unverified {
-                using: Grammar::of(&cadmpeg_test_support::service_decode_context(), &cadmpeg_asm::dialect::ACIS_SAVE_FORMAT_218).unwrap(),
+                using: Grammar::of(
+                    &cadmpeg_test_support::service_decode_context(),
+                    &cadmpeg_asm::dialect::ACIS_SAVE_FORMAT_218,
+                )
+                .unwrap(),
             },
         },
         Case {

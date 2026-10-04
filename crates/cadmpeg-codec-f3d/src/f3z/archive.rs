@@ -350,8 +350,8 @@ fn model_root_member(
     }
     ctx.stable_sort_by(
         &mut candidates,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "sort F3Z model candidates",
     )?;
     candidates.dedup();

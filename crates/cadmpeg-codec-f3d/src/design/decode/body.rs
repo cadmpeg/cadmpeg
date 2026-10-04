@@ -260,8 +260,8 @@ pub(crate) fn decode_body_bounds(
     }
     ctx.stable_sort_by(
         &mut out[..],
-            |value| value.id(),
-            Ord::cmp,
+        |value| value.id(),
+        Ord::cmp,
         "sort f3d design body 1",
     )?;
     Ok(out)
@@ -329,7 +329,9 @@ pub(super) fn decode_stream(
     let mut counters: HashMap<(ConstructionRecipeKind, Option<&str>), u32> = HashMap::new();
     for &(name, kind) in RECIPES {
         let mut cursor = 0;
-        while let Some(offset) = ctx.find_bytes_from(bytes, name, cursor, "find F3D construction recipe")? {
+        while let Some(offset) =
+            ctx.find_bytes_from(bytes, name, cursor, "find F3D construction recipe")?
+        {
             cursor = offset + 1;
             if kind == ConstructionRecipeKind::Face
                 && offset >= 8
@@ -404,13 +406,13 @@ pub(super) fn decode_stream(
     }
     ctx.stable_sort_by_key(
         &mut out[..],
-            |value| {
-                let recipe = value;
-                {
-                    recipe.record_index.map(|index| index.value)
-                }
-            },
-            Ord::cmp,
+        |value| {
+            let recipe = value;
+            {
+                recipe.record_index.map(|index| index.value)
+            }
+        },
+        Ord::cmp,
         "sort f3d design body 2",
     )?;
     Ok(())
@@ -1049,9 +1051,12 @@ pub(crate) fn design_model_blob_names(
         let mut names = Vec::new();
         ctx.reserve_vec(&mut names, archive_counts.len(), "f3d archive BREP names")?;
         names.extend(archive_counts.into_keys());
-        ctx.stable_sort_by(&mut names[..],
+        ctx.stable_sort_by(
+            &mut names[..],
             |value| value,
-            Ord::cmp, "sort f3d design body 3")?;
+            Ord::cmp,
+            "sort f3d design body 3",
+        )?;
         return Ok(names);
     }
     if carrier_counts != archive_counts {
@@ -1061,8 +1066,8 @@ pub(crate) fn design_model_blob_names(
     }
     ctx.stable_sort_by(
         &mut model_names[..],
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "sort f3d design body 4",
     )?;
     model_names.dedup();
@@ -1261,7 +1266,10 @@ pub(crate) fn decode_design_body_bindings(
                 let record =
                     DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire {
                         id,
-                        stream: ctx.validate_nonblank_text(ctx.copy_retained_text(&entry.name, "f3d body-binding stream")?, "validate stream")?,
+                        stream: ctx.validate_nonblank_text(
+                            ctx.copy_retained_text(&entry.name, "f3d body-binding stream")?,
+                            "validate stream",
+                        )?,
                         pair_count,
                         pair_ordinal: ordinal,
                         asm_body_key: binding.asm_key,
@@ -1284,8 +1292,8 @@ pub(crate) fn decode_design_body_bindings(
     }
     ctx.stable_sort_by(
         &mut out[..],
-            |value| value.id(),
-            Ord::cmp,
+        |value| value.id(),
+        Ord::cmp,
         "sort f3d design body 5",
     )?;
     Ok(out)
@@ -1316,11 +1324,11 @@ pub(crate) fn bind_body_bounds(
         ctx.stable_sort_by_key(
             &mut matches[..],
             |value| {
-                    let binding = value;
-                    {
-                        binding.asm_body_key_offset()
-                    }
-                },
+                let binding = value;
+                {
+                    binding.asm_body_key_offset()
+                }
+            },
             Ord::cmp,
             "sort f3d design body 6",
         )?;
@@ -1450,9 +1458,9 @@ fn typed_browser_node_hidden_flags(
         ctx.stable_sort_by_key(
             &mut linked[..],
             |value| {
-                    let node = value;
-                    node.record_index
-                },
+                let node = value;
+                node.record_index
+            },
             Ord::cmp,
             "sort f3d design body 7",
         )?;

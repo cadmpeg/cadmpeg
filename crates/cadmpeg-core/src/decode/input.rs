@@ -45,16 +45,21 @@ impl DecodeContext<'_> {
                 .charge_input(u64_from_index(read), "read input prefix")?;
             self.charge_collection_items(u64_from_index(read), "input byte slots")?;
             let copied = &chunk[..read];
-            self.reserve_precharged_bytes(bytes, copied.len(), "input prefix storage", |storage| {
-                self.budget.refuse(
-                    ResourceDimension::InputBytes,
-                    ResourceFailure::AllocationFailed,
-                    self.policy().limits.max_input_bytes,
-                    self.budget.input_bytes(),
-                    storage,
-                    "input prefix storage",
-                )
-            })?;
+            self.reserve_precharged_bytes(
+                bytes,
+                copied.len(),
+                "input prefix storage",
+                |storage| {
+                    self.budget.refuse(
+                        ResourceDimension::InputBytes,
+                        ResourceFailure::AllocationFailed,
+                        self.policy().limits.max_input_bytes,
+                        self.budget.input_bytes(),
+                        storage,
+                        "input prefix storage",
+                    )
+                },
+            )?;
             self.charge_work(u64_from_index(copied.len()), "copy input prefix")?;
             bytes.extend_from_slice(copied);
         }
@@ -148,9 +153,12 @@ mod tests {
                 .expect("empty root");
             let mut bytes = vec![b'p'];
             let capacity = bytes.capacity();
-            let error = ctx.extend_input_prefix(&mut OverreportedCount(reported), &mut bytes, 2)
+            let error = ctx
+                .extend_input_prefix(&mut OverreportedCount(reported), &mut bytes, 2)
                 .expect_err("count exceeds the one-byte read window");
-            assert!(matches!(error, CodecError::Io(error) if error.kind() == std::io::ErrorKind::InvalidData));
+            assert!(
+                matches!(error, CodecError::Io(error) if error.kind() == std::io::ErrorKind::InvalidData)
+            );
             assert_eq!(bytes, b"p");
             assert_eq!(bytes.capacity(), capacity);
             assert_eq!(ctx.budget.input_bytes(), 0);
@@ -164,11 +172,15 @@ mod tests {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_input_bytes = 0;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
             let mut bytes = Vec::new();
-            let error = ctx.complete_input(&mut OverreportedCount(reported), &mut bytes)
+            let error = ctx
+                .complete_input(&mut OverreportedCount(reported), &mut bytes)
                 .expect_err("count exceeds the one-byte end probe");
-            assert!(matches!(error, CodecError::Io(error) if error.kind() == std::io::ErrorKind::InvalidData));
+            assert!(
+                matches!(error, CodecError::Io(error) if error.kind() == std::io::ErrorKind::InvalidData)
+            );
             assert!(bytes.is_empty());
             assert_eq!(bytes.capacity(), 0);
             assert_eq!(ctx.budget.input_bytes(), 0);
@@ -186,8 +198,12 @@ mod tests {
         let mut reader = Cursor::new(b"ab");
         let mut bytes = ctx.read_input_prefix(&mut reader, 1).expect("first byte");
         let capacity = bytes.capacity();
-        let CodecError::ResourceLimit(limit) = ctx.extend_input_prefix(&mut reader, &mut bytes, 2)
-            .expect_err("old allocation overlaps the new allocation") else { panic!("resource refusal") };
+        let CodecError::ResourceLimit(limit) = ctx
+            .extend_input_prefix(&mut reader, &mut bytes, 2)
+            .expect_err("old allocation overlaps the new allocation")
+        else {
+            panic!("resource refusal")
+        };
         assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
         assert_eq!(limit.operation, "input prefix storage");
         assert_eq!(limit.additional, 1);
@@ -207,12 +223,17 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let mut reader = Cursor::new(b"ab");
         let mut bytes = ctx.read_input_prefix(&mut reader, 1).expect("first byte");
-        ctx.extend_input_prefix(&mut reader, &mut bytes, 2).expect("second byte");
+        ctx.extend_input_prefix(&mut reader, &mut bytes, 2)
+            .expect("second byte");
         assert_eq!(bytes, b"ab");
         assert_eq!(ctx.budget.input_bytes(), 2);
         assert!(ctx.reserve_scoped(1, "released overlap").is_ok());
-        let CodecError::ResourceLimit(limit) = ctx.charge_work(1, "work probe")
-            .expect_err("exact work total") else { panic!("resource refusal") };
+        let CodecError::ResourceLimit(limit) = ctx
+            .charge_work(1, "work probe")
+            .expect_err("exact work total")
+        else {
+            panic!("resource refusal")
+        };
         assert_eq!(limit.used, 7);
     }
 
@@ -226,8 +247,12 @@ mod tests {
         let mut reader = Cursor::new(b"ab");
         let mut bytes = ctx.read_input_prefix(&mut reader, 1).expect("first byte");
         let capacity = bytes.capacity();
-        let CodecError::ResourceLimit(limit) = ctx.extend_input_prefix(&mut reader, &mut bytes, 2)
-            .expect_err("the old allocation move needs another unit") else { panic!("resource refusal") };
+        let CodecError::ResourceLimit(limit) = ctx
+            .extend_input_prefix(&mut reader, &mut bytes, 2)
+            .expect_err("the old allocation move needs another unit")
+        else {
+            panic!("resource refusal")
+        };
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(limit.operation, "input prefix storage");
         assert_eq!(limit.used, 5);
@@ -257,15 +282,22 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let mut reader = Cursor::new(b"a");
         let mut bytes = Vec::new();
-        let CodecError::ResourceLimit(first) = ctx.complete_input(&mut reader, &mut bytes)
-            .expect_err("iteration refusal") else { panic!("resource refusal") };
+        let CodecError::ResourceLimit(first) = ctx
+            .complete_input(&mut reader, &mut bytes)
+            .expect_err("iteration refusal")
+        else {
+            panic!("resource refusal")
+        };
         assert_eq!(first.dimension, ResourceDimension::WorkUnits);
         assert_eq!(first.operation, "complete input iteration");
         assert_eq!(reader.position(), 0);
         assert!(bytes.is_empty());
         assert_eq!(bytes.capacity(), 0);
-        let CodecError::ResourceLimit(repeated) = ctx.charge_work(1, "later")
-            .expect_err("original refusal") else { panic!("resource refusal") };
+        let CodecError::ResourceLimit(repeated) =
+            ctx.charge_work(1, "later").expect_err("original refusal")
+        else {
+            panic!("resource refusal")
+        };
         assert_eq!(first, repeated);
     }
 

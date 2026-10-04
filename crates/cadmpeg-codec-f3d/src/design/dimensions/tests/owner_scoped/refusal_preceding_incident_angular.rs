@@ -93,7 +93,11 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
     )
     .unwrap()
     .expect("angular parameter")
-    .into_record(&cadmpeg_test_support::service_decode_context(), "Design/BulkStream.dat", 100)
+    .into_record(
+        &cadmpeg_test_support::service_decode_context(),
+        "Design/BulkStream.dat",
+        100,
+    )
     .unwrap()
     .expect("located parameter");
     let parameter_id =

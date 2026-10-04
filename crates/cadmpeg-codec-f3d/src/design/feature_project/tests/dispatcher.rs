@@ -1021,12 +1021,25 @@ fn loft_path_preserves_complete_historical_edge_selection() {
             crate::design::feature_project::loft_path_from_edge_selection(
                 decode_ctx,
                 "group",
-                EdgeSelection::historical(state.clone(), vec![edge.clone()], "selection".into())
-                    .unwrap(),
+                EdgeSelection::historical(
+                    state.clone(),
+                    vec![edge.clone()],
+                    "selection".into(),
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .expect("selection storage is admitted")
+                .unwrap(),
             )
         })
         .unwrap(),
-        PathRef::historical_edges(state.clone(), vec![edge.clone()], "selection".into()).unwrap()
+        PathRef::historical_edges(
+            state.clone(),
+            vec![edge.clone()],
+            "selection".into(),
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .expect("selection storage is admitted")
+        .unwrap()
     );
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| {
@@ -1038,7 +1051,9 @@ fn loft_path_preserves_complete_historical_edge_selection() {
                     vec![edge],
                     vec!["operand".into()],
                     "selection".into(),
+                    &cadmpeg_test_support::service_decode_context(),
                 )
+                .expect("selection storage is admitted")
                 .unwrap(),
             )
         })
@@ -1439,8 +1454,14 @@ fn merged_historical_edge_refuses_collection_limit() {
     let state =
         FeatureInputTopologyId::mint("f3d:history-input:state#100").expect("identity grammar");
     let edge = HistoricalEdgeId::mint("f3d:history-input:edge#100:1").expect("identity grammar");
-    let selection = EdgeSelection::historical(state, vec![edge], scope.id.clone())
-        .expect("historical edge selection");
+    let selection = EdgeSelection::historical(
+        state,
+        vec![edge],
+        scope.id.clone(),
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("selection storage is admitted")
+    .expect("historical edge selection");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;

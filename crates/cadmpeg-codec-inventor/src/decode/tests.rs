@@ -468,7 +468,7 @@ fn an_unverified_acis_carrier_is_read_and_marked() {
     assert_eq!(
         layer
             .using(&cadmpeg_test_support::service_decode_context())
-            .unwrap(),
+            .expect("service lookup"),
         Some(cadmpeg_core::dialect_id!("acis:save-format-218"))
     );
     assert_eq!(layer.declared()[DECLARED_SAVE_FORMAT_MAJOR], "700");

@@ -65,7 +65,11 @@ pub fn numeric_word(ctx: &DecodeContext, mut word: u64) {
     std::hint::black_box(digits);
 }
 
-pub fn hash_bucket_retention(ctx: &DecodeContext, values: &mut std::collections::HashMap<String, Vec<String>>, other: &std::collections::HashMap<String, Vec<String>>) -> Result<(), ()> {
+pub fn hash_bucket_retention(
+    ctx: &DecodeContext,
+    values: &mut std::collections::HashMap<String, Vec<String>>,
+    other: &std::collections::HashMap<String, Vec<String>>,
+) -> Result<(), ()> {
     ctx.charge_work(u64::try_from(values.capacity()).map_err(|_| ())?, "scan")?;
     values.retain(|_, _| true);
     values.retain(|_, _| true); // finding: uncharged_decode_work
@@ -76,24 +80,35 @@ pub fn hash_bucket_retention(ctx: &DecodeContext, values: &mut std::collections:
     Ok(())
 }
 
-pub fn mapped_loop_refusals(ctx: &DecodeContext, bytes: &[u8], flag: bool) -> Result<(), &'static str> {
+pub fn mapped_loop_refusals(
+    ctx: &DecodeContext,
+    bytes: &[u8],
+    flag: bool,
+) -> Result<(), &'static str> {
     for byte in bytes {
         ctx.charge_work(1, "first").map_err(|_| "refusal")?;
         std::hint::black_box(byte);
     }
     for byte in bytes {
-        ctx.charge_work(1, "nested mappings").map_err(|_| "refusal").map_err(|error| error)?;
+        ctx.charge_work(1, "nested mappings")
+            .map_err(|_| "refusal")
+            .map_err(|error| error)?;
         std::hint::black_box(byte);
     }
-    for byte in bytes { // finding: uncharged_decode_work
+    for byte in bytes {
+        // finding: uncharged_decode_work
         std::hint::black_box(byte);
         ctx.charge_work(1, "late").map_err(|_| "refusal")?;
     }
-    for byte in bytes { // finding: uncharged_decode_work
-        if flag { ctx.charge_work(1, "conditional").map_err(|_| "refusal")?; }
+    for byte in bytes {
+        // finding: uncharged_decode_work
+        if flag {
+            ctx.charge_work(1, "conditional").map_err(|_| "refusal")?;
+        }
         std::hint::black_box(byte);
     }
-    for byte in bytes { // finding: uncharged_decode_work
+    for byte in bytes {
+        // finding: uncharged_decode_work
         ctx.charge_work(0, "zero").map_err(|_| "refusal")?;
         std::hint::black_box(byte);
     }

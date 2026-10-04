@@ -375,7 +375,7 @@ pub(crate) fn transfer_parameters(
                             let mut output_dependencies =
                                 cadmpeg_ir::features::DistinctMembers::default();
                             for dependency in dependencies {
-                                output_dependencies.insert_for_decode(
+                                output_dependencies.insert(
                                     ctx,
                                     dependency,
                                     "catia_formula_output_dependencies",
@@ -628,8 +628,8 @@ pub(crate) fn transfer_parameters(
         ctx.collect_vec(candidates.into_values(), "catia_formula_ordered_parameters")?;
     ctx.stable_sort_by(
         &mut parameters,
-            |value| &value.source_order,
-            Ord::cmp,
+        |value| &value.source_order,
+        Ord::cmp,
         "catia_formula_ordered_parameters_sort",
     )?;
     for (ordinal, candidate) in parameters.iter_mut().enumerate() {
@@ -1195,7 +1195,7 @@ fn collect_legacy_parameters(
                 ctx.copy_retained_text(evaluation.expression, "catia_legacy_formula_expression")?;
             let mut dependencies = cadmpeg_ir::features::DistinctMembers::default();
             for id in evaluation.dependencies {
-                dependencies.insert_for_decode(ctx, id, "catia_legacy_formula_dependencies")?;
+                dependencies.insert(ctx, id, "catia_legacy_formula_dependencies")?;
             }
             candidate.parameter.expression = expression;
             candidate.parameter.dependencies = dependencies;
@@ -1784,7 +1784,7 @@ fn relation_program_output_candidate(
     let mut output_dependencies = cadmpeg_ir::features::DistinctMembers::default();
     for dependency in &dependencies {
         if !output_dependencies.contains(dependency) {
-            output_dependencies.insert_for_decode(
+            output_dependencies.insert(
                 ctx,
                 dependency
                     .try_clone_for_decode(ctx, "catia_relation_program_output_dependency_id")?,
@@ -1944,7 +1944,7 @@ fn copy_design_parameter(
     if !source.dependencies.is_empty() {
         dependencies.reserve_for_decode(ctx, source.dependencies.len(), operation)?;
         for dependency in &source.dependencies {
-            dependencies.insert_for_decode(
+            dependencies.insert(
                 ctx,
                 dependency.try_clone_for_decode(ctx, operation)?,
                 operation,
@@ -1954,8 +1954,11 @@ fn copy_design_parameter(
     let mut properties = BTreeMap::new();
     for (key, value) in &source.properties {
         let key = ctx.copy_retained_text(key.as_str(), operation)?;
-        let key = cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")?
-            .ok_or_else(|| cadmpeg_core::CodecError::malformed("blank CATIA parameter property"))?;
+        let key =
+            cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")?
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("blank CATIA parameter property")
+                })?;
         let value = ctx.copy_retained_text(value, operation)?;
         ctx.insert_btree_map(&mut properties, key, value, operation)?;
     }
@@ -2051,7 +2054,9 @@ fn insert_parameter_property(
     let operation = "catia_formula_property";
     let key = ctx.copy_retained_text(key, operation)?;
     let key = cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")?
-        .ok_or_else(|| cadmpeg_core::CodecError::malformed("empty CATIA formula property key"))?;
+        .ok_or_else(|| {
+        cadmpeg_core::CodecError::malformed("empty CATIA formula property key")
+    })?;
     let value = ctx.format_retained(value, operation)?;
     ctx.insert_btree_map(properties, key, value, operation)?;
     Ok(())
@@ -4294,10 +4299,15 @@ mod parser_tests {
     #[test]
     fn formula_design_parameter_copy_refuses_nested_admission() {
         let mut parameter = unset_candidate(FormulaParameterType::String).parameter;
-        parameter.dependencies.insert(
-            ParameterId::mint("synthetic:test:id#dependency".to_string())
-                .expect("identity grammar"),
-        );
+        parameter
+            .dependencies
+            .insert(
+                &cadmpeg_test_support::service_decode_context(),
+                ParameterId::mint("synthetic:test:id#dependency".to_string())
+                    .expect("identity grammar"),
+                "insert fixture member",
+            )
+            .expect("member insertion admission");
         parameter.properties.insert(
             cadmpeg_core::nonblank_literal!("source"),
             "value".to_string(),

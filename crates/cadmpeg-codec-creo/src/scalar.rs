@@ -155,10 +155,9 @@ pub(crate) fn double_xar_tables(
     const LABEL: &[u8] = b"double_xar\0";
     let mut tables = Vec::new();
     let mut search = 0;
-    loop {
-        let Some(offset) = ctx.find_bytes_from(data, LABEL, search, "creo double_xar discovery")? else {
-            break;
-        };
+    while let Some(offset) =
+        ctx.find_bytes_from(data, LABEL, search, "creo double_xar discovery")?
+    {
         let count_offset = offset + LABEL.len();
         if data.get(count_offset) != Some(&0xf8) {
             search = count_offset;
@@ -2422,7 +2421,12 @@ mod tests {
     #[test]
     fn duplicate_scalar_image_hashing_refuses_after_the_first_image() {
         let images = [0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x46, 0x08, 0, 0, 0, 0, 0, 0];
-        let error = with_recursive_limits(&images, 128, 47, |ctx| {
+        // Discovery and first-image hashing precede both hash-key passes and one four-pass tail node insertion.
+        let node_bytes = 11 * (std::mem::size_of::<[u8; 6]>() + std::mem::size_of::<Option<u8>>())
+            + 16 * std::mem::size_of::<usize>()
+            + 2 * std::mem::align_of::<usize>();
+        let used = 32 + 2 * 8 + 4 * cadmpeg_core::decode::u64_from_index(node_bytes);
+        let error = with_recursive_limits(&images, 128, used + 16 - 1, |ctx| {
             ScalarCache::from_section_checked(ctx, &images)
         })
         .expect_err("duplicate hashing still consumes work");
@@ -2432,7 +2436,7 @@ mod tests {
         assert_eq!(resource.operation, "creo scalar cache image hashing");
         assert_eq!(
             (resource.used, resource.additional, resource.limit),
-            (32, 16, 47)
+            (used, 16, used + 16 - 1)
         );
     }
 

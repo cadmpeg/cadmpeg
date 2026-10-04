@@ -804,8 +804,8 @@ fn real_polynomial_roots(
     }
     ctx.stable_sort_by(
         roots.as_mut_slice(),
-            |value| &value.value,
-            f64::total_cmp,
+        |value| &value.value,
+        f64::total_cmp,
         "creo real polynomial roots roots ordering",
     )?;
     Ok(roots)

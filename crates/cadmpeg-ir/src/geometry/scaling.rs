@@ -21,8 +21,6 @@ use crate::scalar::{NonZeroLength, PositiveLength, PositiveReal};
 /// A unit scaling that a solved carrier refuses.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ScaleRefusal {
-    /// Storage or work exceeded the operation limit.
-    Resource(cadmpeg_core::decode::ResourceLimit),
     /// A scaled analytic field is refused; the text names the field and its
     /// condition.
     Field(&'static str),
@@ -49,15 +47,6 @@ impl From<cadmpeg_core::CodecError> for ScalingError {
         Self::Resource(error)
     }
 }
-impl ScaleRefusal {
-    fn from_codec(error: cadmpeg_core::CodecError) -> Self {
-        match error {
-            cadmpeg_core::CodecError::ResourceLimit(limit) => Self::Resource(limit),
-            error => Self::ControlPoints(NurbsError::Structure(error.to_string())),
-        }
-    }
-}
-
 /// `point` times `scale`, refused with `field` when a coordinate overflows.
 fn scaled_point(
     point: FinitePoint3,
@@ -94,16 +83,7 @@ impl SolvedSurfaceGeometry {
     /// before a minor one. A placement scales its basis before its
     /// translation and keeps its nesting depth, because the scaled basis has
     /// the variant chain of the basis.
-    pub fn scaled(&self, scale: PositiveReal) -> Result<Self, ScaleRefusal> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .map_err(ScaleRefusal::from_codec)?;
-        Self::scaled_for_decode(self, &ctx, scale).map_err(ScaleRefusal::from_codec)?
-    }
-
-    /// Copy and scale a borrowed carrier through the caller's context.
-    pub fn scaled_for_decode(
+    pub fn scaled(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         scale: PositiveReal,
@@ -121,16 +101,7 @@ impl SolvedCurveGeometry {
     /// its basis before its translation and keeps its nesting depth, because
     /// the scaled basis has the variant chain of the basis. A composite curve
     /// holds references to other curves and no length of its own.
-    pub fn scaled(&self, scale: PositiveReal) -> Result<Self, ScaleRefusal> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .map_err(ScaleRefusal::from_codec)?;
-        Self::scaled_for_decode(self, &ctx, scale).map_err(ScaleRefusal::from_codec)?
-    }
-
-    /// Copy and scale a borrowed carrier through the caller's context.
-    pub fn scaled_for_decode(
+    pub fn scaled(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         scale: PositiveReal,

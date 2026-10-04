@@ -2276,8 +2276,8 @@ pub(super) fn canonical_profile_loci(
     // Source order breaks equal geometric and identity keys without sort scratch.
     ctx.sort_unstable_by(
         &mut indexed,
-            |value| value,
-            |(left_index, left_point, left_locus), (right_index, right_point, right_locus)| {
+        |value| value,
+        |(left_index, left_point, left_locus), (right_index, right_point, right_locus)| {
             quantize(*left_point, QUANTUM)
                 .cmp(&quantize(*right_point, QUANTUM))
                 .then_with(|| locus_key(left_locus).cmp(&locus_key(right_locus)))
@@ -2455,12 +2455,7 @@ fn unique_repaired_entity_pair(
             super::transforms::copy_sketch_entity_identity(ctx, known, OPERATION)?,
             partner,
         ];
-        ctx.stable_sort_by(
-            &mut pair,
-            |value| value,
-            Ord::cmp,
-            OPERATION,
-        )?;
+        ctx.stable_sort_by(&mut pair, |value| value, Ord::cmp, OPERATION)?;
         let [first, second] = pair;
         let pair = (first, second);
         if selected.as_ref().is_some_and(|selected| selected != &pair) {
@@ -3492,12 +3487,7 @@ fn dynamic_line_operand_candidates(
     }
     entities.truncate(write);
     if entities.len() > 1 {
-        ctx.sort_unstable_by(
-            &mut entities,
-            |value| value,
-            Ord::cmp,
-            OPERATION,
-        )?;
+        ctx.sort_unstable_by(&mut entities, |value| value, Ord::cmp, OPERATION)?;
         entities.dedup();
     }
     Ok(entities)
@@ -3757,12 +3747,7 @@ fn dynamic_marker_line_candidates(
             candidates.push(entity);
         }
     }
-    ctx.sort_unstable_by(
-        &mut candidates,
-            |value| value,
-            Ord::cmp,
-        OPERATION,
-    )?;
+    ctx.sort_unstable_by(&mut candidates, |value| value, Ord::cmp, OPERATION)?;
     candidates.dedup();
     Ok(candidates)
 }
@@ -4428,9 +4413,24 @@ fn dynamic_relation_marker<'a>(
     }
     let mut ordinal =
         collect_relation_marker_candidates(ctx, relation, markers_by_id, direct_kind)?;
-    ctx.stable_sort_by(&mut ordinal, |value| value.id(), Ord::cmp, "sort SLDPRT ordinal operand markers")?;
-        ctx.stable_sort_by_key(&mut ordinal, |value| value.ordinal(), Ord::cmp, "sort SLDPRT ordinal operand markers")?;
-        ctx.stable_sort_by_key(&mut ordinal, |value| value.offset(), Ord::cmp, "sort SLDPRT ordinal operand markers")?;
+    ctx.stable_sort_by(
+        &mut ordinal,
+        |value| value.id(),
+        Ord::cmp,
+        "sort SLDPRT ordinal operand markers",
+    )?;
+    ctx.stable_sort_by_key(
+        &mut ordinal,
+        |value| value.ordinal(),
+        Ord::cmp,
+        "sort SLDPRT ordinal operand markers",
+    )?;
+    ctx.stable_sort_by_key(
+        &mut ordinal,
+        |value| value.offset(),
+        Ord::cmp,
+        "sort SLDPRT ordinal operand markers",
+    )?;
     Ok(ordinal
         .get(usize::from(operand.entity_index))
         .map(|marker| marker.id()))
@@ -5016,8 +5016,8 @@ pub(super) fn single_marker_line_entity(
     )?;
     ctx.sort_unstable_by(
         &mut entities,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "sort SLDPRT single marker line entities",
     )?;
     entities.dedup();
@@ -5352,8 +5352,8 @@ fn sort_profile_loci(
     // Equal sort keys identify equal locus values.
     ctx.sort_unstable_by(
         loci.as_mut_slice(),
-            |value| value,
-            |left, right| locus_key(left).cmp(&locus_key(right)),
+        |value| value,
+        |left, right| locus_key(left).cmp(&locus_key(right)),
         operation,
     )?;
     loci.dedup();

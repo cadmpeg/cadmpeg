@@ -180,12 +180,14 @@ fn support_sides_move_pcurve_storage() {
     use cadmpeg_ir::math::Point2;
 
     let pcurve = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
         None,
         false,
     )
+    .expect("fixture pcurve construction admission")
     .unwrap();
     let knot_address = pcurve.knots().as_slice().as_ptr();
     let sides = into_support_sides(
@@ -217,12 +219,14 @@ fn reversed_nurbs_carrier_copy_refuses_collection_limit() {
     policy.limits.max_collection_items = 3;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let curve = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         None,
         false,
     )
+    .expect("fixture constructor admission")
     .unwrap();
     let mut carriers = Carriers::default();
     carriers
@@ -1163,12 +1167,14 @@ fn procedural_curve_admission_failures_keep_the_carrier() {
             ProceduralCurveSource::Cached {
                 construction: Box::new(ProceduralCurveConstruction::Subset((
                     NurbsCurve::from_lanes(
+                        &cadmpeg_test_support::service_decode_context(),
                         1,
                         vec![0.0, 0.0, 1.0, 1.0],
                         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
                         None,
                         false,
                     )
+                    .expect("fixture constructor admission")
                     .unwrap(),
                     [2.0, 1.0],
                 ))),
@@ -1293,12 +1299,14 @@ fn failed_procedural_curves_discard_only_their_candidate_children() {
                         base_v_range: [0.0, 1.0],
                         base_range: [0.0, 1.0],
                         base: NurbsCurve::from_lanes(
+                            &cadmpeg_test_support::service_decode_context(),
                             1,
                             vec![0.0, 0.0, 1.0, 1.0],
                             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
                             None,
                             false,
                         )
+                        .expect("fixture constructor admission")
                         .unwrap(),
                         distance,
                         shift: 0.0,

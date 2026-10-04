@@ -71,7 +71,11 @@ impl From<DesignGuidText> for String {
 pub(crate) struct DesignRelaxedGuidText(cadmpeg_ir::ids::IdentityKey);
 
 impl cadmpeg_core::decode::cost::DecodeCost for DesignRelaxedGuidText {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         cadmpeg_core::decode::cost::DecodeCost::decode_cost(self.as_str(), ctx, operation)
     }
 }
@@ -320,12 +324,7 @@ impl DesignMeshTextureTable {
         let operation = "order F3D mesh texture resources";
         let mut resources = ctx.collection_vec(self.resources.len(), operation)?;
         resources.extend(&self.resources);
-        ctx.stable_sort_by(
-            &mut resources,
-            |value| &value.ordinal,
-            Ord::cmp,
-            operation,
-        )?;
+        ctx.stable_sort_by(&mut resources, |value| &value.ordinal, Ord::cmp, operation)?;
         Ok(resources)
     }
     fn flags_count_offset(&self) -> u64 {
@@ -1815,3 +1814,5 @@ impl<const LENGTH: u64> From<DesignMeshFixedRecord<LENGTH>> for DesignMeshRecord
 mod tests;
 
 mod serialize;
+
+mod identity_rewrite;

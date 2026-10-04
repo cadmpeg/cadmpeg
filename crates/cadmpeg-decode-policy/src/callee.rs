@@ -16,10 +16,15 @@ impl<'tcx> Analysis<'_, 'tcx> {
             },
             _ => self.substitute(self.typeck.node_args(expression.hir_id)),
         };
-        let arguments = self.tcx.mk_args(&arguments.iter().map(|argument| match argument.kind() {
-            ty::GenericArgKind::Type(value) => types::reveal_opaque(self.tcx, value).into(),
-            _ => argument,
-        }).collect::<Vec<_>>());
+        let arguments = self.tcx.mk_args(
+            &arguments
+                .iter()
+                .map(|argument| match argument.kind() {
+                    ty::GenericArgKind::Type(value) => types::reveal_opaque(self.tcx, value).into(),
+                    _ => argument,
+                })
+                .collect::<Vec<_>>(),
+        );
         self.tcx
             .try_normalize_erasing_regions(self.typing_env(), ty::Unnormalized::new_wip(arguments))
             .ok()
@@ -61,12 +66,28 @@ impl<'tcx> Analysis<'_, 'tcx> {
     }
 
     fn admitted_source_step(&self, expression: &'tcx Expr<'tcx>, definition: DefId) -> bool {
-        if !matches!(self.tcx.item_name(definition).as_str(), "next" | "next_back" | "size_hint") { return false; }
-        let Some((_, args)) = self.call(expression) else { return false; };
-        let Some(receiver) = args.first() else { return false; };
-        let ExprKind::Field(base, field) = receiver.kind else { return false; };
-        field.name.as_str() == "source" && types::admitted_iterator(self.tcx, self.expr_ty(base))
-            && self.tcx.crate_name(self.typeck.hir_owner.def_id.to_def_id().krate).as_str() == "cadmpeg_core"
+        if !matches!(
+            self.tcx.item_name(definition).as_str(),
+            "next" | "next_back" | "size_hint"
+        ) {
+            return false;
+        }
+        let Some((_, args)) = self.call(expression) else {
+            return false;
+        };
+        let Some(receiver) = args.first() else {
+            return false;
+        };
+        let ExprKind::Field(base, field) = receiver.kind else {
+            return false;
+        };
+        field.name.as_str() == "source"
+            && types::admitted_iterator(self.tcx, self.expr_ty(base))
+            && self
+                .tcx
+                .crate_name(self.typeck.hir_owner.def_id.to_def_id().krate)
+                .as_str()
+                == "cadmpeg_core"
     }
 
     pub(crate) fn checked_body(&self, definition: DefId) -> bool {
@@ -78,24 +99,49 @@ impl<'tcx> Analysis<'_, 'tcx> {
     }
 
     fn closed_local_trait(&self, trait_id: DefId) -> bool {
-        let Some(local) = trait_id.as_local() else { return false; };
-        if !self.tcx.effective_visibilities(()).is_exported(local) { return true; }
-        self.tcx.explicit_super_clauses_of(trait_id).iter_identity_copied().any(|entry| {
-            let (clause, _) = entry.skip_norm_wip();
-            let ty::ClauseKind::Trait(predicate) = clause.kind().skip_binder() else { return false; };
-            let Some(seal) = predicate.trait_ref.def_id.as_local() else { return false; };
-            if self.tcx.effective_visibilities(()).is_exported(seal) { return false; }
-            let mut implementations = self.tcx.all_impls(seal.to_def_id()).peekable();
-            implementations.peek().is_some() && implementations.all(|id| {
-                let value = self.tcx.impl_trait_ref(id).instantiate_identity().skip_norm_wip().self_ty();
-                !value.has_non_region_param() && !value.has_aliases()
-                    && !value.has_escaping_bound_vars()
+        let Some(local) = trait_id.as_local() else {
+            return false;
+        };
+        if !self.tcx.effective_visibilities(()).is_exported(local) {
+            return true;
+        }
+        self.tcx
+            .explicit_super_clauses_of(trait_id)
+            .iter_identity_copied()
+            .any(|entry| {
+                let (clause, _) = entry.skip_norm_wip();
+                let ty::ClauseKind::Trait(predicate) = clause.kind().skip_binder() else {
+                    return false;
+                };
+                let Some(seal) = predicate.trait_ref.def_id.as_local() else {
+                    return false;
+                };
+                if self.tcx.effective_visibilities(()).is_exported(seal) {
+                    return false;
+                }
+                let mut implementations = self.tcx.all_impls(seal.to_def_id()).peekable();
+                implementations.peek().is_some()
+                    && implementations.all(|id| {
+                        let value = self
+                            .tcx
+                            .impl_trait_ref(id)
+                            .instantiate_identity()
+                            .skip_norm_wip()
+                            .self_ty();
+                        !value.has_non_region_param()
+                            && !value.has_aliases()
+                            && !value.has_escaping_bound_vars()
+                    })
             })
-        })
     }
 
     pub(crate) fn checked_call(&self, expression: &'tcx Expr<'tcx>, definition: DefId) -> bool {
-        if self.admitted_source_step(expression, definition) || self.closed_scalar_default(expression) || self.core_iterator_metadata(expression, definition) { return true; }
+        if self.admitted_source_step(expression, definition)
+            || self.closed_scalar_default(expression)
+            || self.core_iterator_metadata(expression, definition)
+        {
+            return true;
+        }
         if self
             .implementation(expression, definition)
             .is_some_and(|id| self.checked_body(id))

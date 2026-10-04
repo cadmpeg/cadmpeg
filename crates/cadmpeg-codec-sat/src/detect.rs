@@ -227,7 +227,9 @@ pub(crate) fn inspect(
             crate::dialect::layers(ctx, &evidence)?
         }
     };
-    let losses = crate::dialect::dialect_loss(ctx, &kernel)?.into_iter().collect();
+    let losses = crate::dialect::dialect_loss(ctx, &kernel)?
+        .into_iter()
+        .collect();
     Ok(ContainerSummary::classified(
         cadmpeg_core::dialect::DialectLayers::of(matched)
             .with_for_decode(ctx, kernel, "collect SAT dialect layers")

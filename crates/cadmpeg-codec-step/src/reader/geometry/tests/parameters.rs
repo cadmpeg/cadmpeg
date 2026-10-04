@@ -8,7 +8,7 @@ use crate::reader::geometry::{
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::nurbs_curve_parameter_near_point;
-use cadmpeg_ir::eval::nurbs_curve_point_at;
+
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
     pcurve::{PcurveGeometry, PcurveNurbs, PcurveNurbsPoles},
@@ -20,6 +20,8 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use cadmpeg_ir::transform::{Transform, Transform2};
 use std::collections::{BTreeMap, BTreeSet};
+
+const EPS_ENDPOINT_WITNESS: f64 = 1.0e-6;
 
 fn source_curve_refusal(
     collection_limit: u64,
@@ -258,6 +260,7 @@ fn parameter_inference_edge_curve_refuses_retained_limit() {
 #[test]
 fn periodic_nurbs_surface_parameter_periods_keep_usize_counts() {
     let surface = NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 2.0, 2.0], true),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], true),
         NurbsSurfaceLanes::new(
@@ -270,6 +273,7 @@ fn periodic_nurbs_surface_parameter_periods_keep_usize_counts() {
         ),
         false,
     )
+    .expect("fixture constructor admission")
     .expect("periodic NURBS surface");
     assert_eq!(
         nurbs_surface_parameter_domain(1, surface.u_knots(), surface.u_count()),
@@ -285,12 +289,14 @@ fn periodic_nurbs_surface_parameter_periods_keep_usize_counts() {
 fn periodic_curve_trim_shifts_a_wide_finite_seam_endpoint() {
     let max = f64::MAX;
     let curve = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![-max, -max, max, max],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         None,
         true,
     )
+    .expect("fixture constructor admission")
     .expect("wide periodic curve");
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve));
     assert_eq!(
@@ -303,12 +309,14 @@ fn periodic_curve_trim_shifts_a_wide_finite_seam_endpoint() {
 fn periodic_edge_range_keeps_a_finite_sweep_across_a_wide_seam() {
     let max = f64::MAX;
     let curve = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![-max, -max, max, max],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         None,
         true,
     )
+    .expect("fixture constructor admission")
     .expect("wide periodic curve");
     let start = FiniteReal::new(max * 0.5).expect("finite start");
     let end = FiniteReal::new(-max).expect("finite end");
@@ -322,6 +330,7 @@ fn periodic_edge_range_keeps_a_finite_sweep_across_a_wide_seam() {
 fn periodic_pcurve_trim_shifts_a_wide_finite_seam_endpoint() {
     let max = f64::MAX;
     let nurbs = PcurveNurbs::new(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![-max, -max, max, max],
         PcurveNurbsPoles::Polynomial {
@@ -329,6 +338,7 @@ fn periodic_pcurve_trim_shifts_a_wide_finite_seam_endpoint() {
         },
         true,
     )
+    .expect("fixture pcurve construction admission")
     .expect("wide periodic pcurve");
     let geometry = PcurveGeometry::Nurbs { nurbs };
     assert_eq!(
@@ -405,6 +415,7 @@ fn periodic_edge_range_reduces_finite_endpoints_separately_when_difference_overf
 #[test]
 fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
     let nurbs = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         3,
         vec![0.0, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 1.0],
         vec![
@@ -419,25 +430,54 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
         None,
         false,
     )
+    .expect("fixture constructor admission")
     .unwrap();
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone()));
-    let start_point = nurbs_curve_point_at(&nurbs, 0.0).expect("start point");
-    let end_point = nurbs_curve_point_at(&nurbs, 1.0).expect("end point");
+    let start_point = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &nurbs,
+        0.0,
+    )
+    .expect("start point");
+    let end_point = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &nurbs,
+        1.0,
+    )
+    .expect("end point");
     let start_seed = curve_endpoint_seed(geometry.solved().expect("solved carrier"), false, 0.0);
-    let start = nurbs_curve_parameter_near_point(&nurbs, start_point.get(), 1.0e-6, start_seed)
-        .expect("resource allocation did not fail")
-        .expect("start witness")
-        .get();
-    let start_seed_end = nurbs_curve_parameter_near_point(&nurbs, end_point.get(), 1.0e-6, start)
-        .expect("resource allocation did not fail")
-        .expect("unanchored end witness")
-        .get();
+    let start = nurbs_curve_parameter_near_point(
+        &cadmpeg_test_support::service_decode_context(),
+        &nurbs,
+        start_point.get(),
+        EPS_ENDPOINT_WITNESS,
+        start_seed,
+    )
+    .expect("resource allocation did not fail")
+    .expect("start witness")
+    .get();
+    let start_seed_end = nurbs_curve_parameter_near_point(
+        &cadmpeg_test_support::service_decode_context(),
+        &nurbs,
+        end_point.get(),
+        EPS_ENDPOINT_WITNESS,
+        start,
+    )
+    .expect("resource allocation did not fail")
+    .expect("unanchored end witness")
+    .get();
     assert!((start_seed_end - 1.0).abs() > 0.1);
     let end_seed = curve_endpoint_seed(geometry.solved().expect("solved carrier"), true, start);
-    let end = nurbs_curve_parameter_near_point(&nurbs, end_point.get(), 1.0e-6, end_seed)
-        .expect("resource allocation did not fail")
-        .expect("end witness")
-        .get();
+    let end = nurbs_curve_parameter_near_point(
+        &cadmpeg_test_support::service_decode_context(),
+        &nurbs,
+        end_point.get(),
+        EPS_ENDPOINT_WITNESS,
+        end_seed,
+    )
+    .expect("resource allocation did not fail")
+    .expect("end witness")
+    .get();
 
     assert!(start.abs() < 1.0e-12);
     assert!((end - 1.0).abs() < 1.0e-12);
@@ -588,6 +628,7 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
         },
     ]);
     let _attached = ir.model.add_procedural_surface(
+        &cadmpeg_ir::document::admission::StandardAdmission,
         &sweep,
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:procedural-surface#sweep-construction")
@@ -603,6 +644,7 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
         ),
     );
     let _attached = ir.model.add_procedural_surface(
+        &cadmpeg_ir::document::admission::StandardAdmission,
         &revolution,
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:procedural-surface#revolution-construction")
@@ -685,7 +727,9 @@ fn directrix_parameter_units_follow_step_curve_equations() {
                     .expect("nonempty polyline fixture"),
             },
             0.0,
+            &cadmpeg_test_support::service_decode_context(),
         )
+        .expect("polyline construction admission")
         .unwrap(),
     ));
 
@@ -759,6 +803,7 @@ fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
         source_object: None,
     });
     let _attached = ir.model.add_procedural_surface(
+        &cadmpeg_ir::document::admission::StandardAdmission,
         &surface,
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:procedural-surface#sweep-construction")
@@ -817,6 +862,7 @@ fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
         source_object: None,
     });
     let _attached = ir.model.add_procedural_surface(
+        &cadmpeg_ir::document::admission::StandardAdmission,
         &surface_id,
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:procedural-surface#construction")
@@ -863,8 +909,18 @@ fn anisotropic_circle_scaling_preserves_its_native_parameterization() {
     assert!(scaled.try_scale_coordinates([2.0, 3.0]).is_ok());
     assert!(matches!(scaled, PcurveGeometry::Harmonic(_)));
     for parameter in [0.0, 0.25, 1.0, 2.0] {
-        let expected = cadmpeg_ir::eval::pcurve_uv(&original, parameter).unwrap();
-        let actual = cadmpeg_ir::eval::pcurve_uv(&scaled, parameter).unwrap();
+        let expected = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &original,
+            parameter,
+        )
+        .unwrap();
+        let actual = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &scaled,
+            parameter,
+        )
+        .unwrap();
         assert!((actual.u - expected.u * 2.0).abs() < 1.0e-12);
         assert!((actual.v - expected.v * 3.0).abs() < 1.0e-12);
     }
@@ -888,8 +944,18 @@ fn anisotropic_replica_scaling_conjugates_the_parent_map() {
     let mut scaled = original.clone();
     assert!(scaled.try_scale_coordinates([2.0, 3.0]).is_ok());
     for parameter in [0.0, 0.5, 1.0] {
-        let expected = cadmpeg_ir::eval::pcurve_uv(&original, parameter).unwrap();
-        let actual = cadmpeg_ir::eval::pcurve_uv(&scaled, parameter).unwrap();
+        let expected = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &original,
+            parameter,
+        )
+        .unwrap();
+        let actual = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &scaled,
+            parameter,
+        )
+        .unwrap();
         assert!((actual.u - expected.u * 2.0).abs() < 1.0e-12);
         assert!((actual.v - expected.v * 3.0).abs() < 1.0e-12);
     }
@@ -920,8 +986,18 @@ fn anisotropic_parabola_scaling_scales_both_axes_and_keeps_the_parameter() {
         "{scaled:?}"
     );
     for parameter in [0.0, 0.25, 1.0, 2.0] {
-        let expected = cadmpeg_ir::eval::pcurve_uv(&original, parameter).unwrap();
-        let actual = cadmpeg_ir::eval::pcurve_uv(&scaled, parameter).unwrap();
+        let expected = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &original,
+            parameter,
+        )
+        .unwrap();
+        let actual = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &scaled,
+            parameter,
+        )
+        .unwrap();
         assert_eq!(actual, Point2::new(expected.u * 2.0, expected.v * 3.0));
     }
 }
@@ -1121,6 +1197,7 @@ fn numerical_followup_periodic_edge_preserves_small_domain_phase() {
     use cadmpeg_ir::math::Point3;
     for d in [1e-12, 1.0, 1e12] {
         let curve = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![-0.25 * d, 0., 0.25 * d, 0.5 * d, 0.75 * d, d, 1.25 * d],
             vec![
@@ -1133,6 +1210,7 @@ fn numerical_followup_periodic_edge_preserves_small_domain_phase() {
             None,
             true,
         )
+        .expect("fixture constructor admission")
         .unwrap();
         let [start, end] =
             [0.8 * d, 0.9 * d].map(|value| FiniteReal::new(value).expect("finite parameter"));

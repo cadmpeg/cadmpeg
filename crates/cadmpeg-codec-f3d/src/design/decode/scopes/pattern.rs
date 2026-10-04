@@ -607,8 +607,13 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
         }
         if let Err(error) = ctx.stable_sort_by_key(
             &mut angle_candidates[..],
-            |value| (value.0.get(), value.1, value.2,),
-            |left, right| left.0.total_cmp(&right.0).then_with(||left.1.cmp(&right.1)).then_with(||left.2.cmp(&right.2)),
+            |value| (value.0.get(), value.1, value.2),
+            |left, right| {
+                left.0
+                    .total_cmp(&right.0)
+                    .then_with(|| left.1.cmp(&right.1))
+                    .then_with(|| left.2.cmp(&right.2))
+            },
             "sort f3d design pattern 2",
         ) {
             return Some(Err(error));

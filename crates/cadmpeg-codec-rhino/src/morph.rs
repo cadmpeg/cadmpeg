@@ -527,7 +527,9 @@ fn insert_property(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let key = ctx.format_retained(key, "Rhino morph property key")?;
     let key = cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")?
-        .ok_or_else(|| cadmpeg_core::CodecError::malformed("blank generated Rhino morph key"))?;
+        .ok_or_else(|| {
+        cadmpeg_core::CodecError::malformed("blank generated Rhino morph key")
+    })?;
     let value = ctx.format_retained(value, "Rhino morph property value")?;
     ctx.insert_btree_map(properties, key, value, "Rhino morph property entries")?;
     Ok(())
@@ -838,9 +840,11 @@ pub(crate) fn project(
                 format_args!("captive_{index}_object"),
                 "Rhino morph property key",
             )?;
-            let key = cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")?.ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed("blank generated Rhino morph key")
-            })?;
+            let key =
+                cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")?
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("blank generated Rhino morph key")
+                    })?;
             ctx.insert_btree_map(&mut parameters, key, record, "Rhino morph property entries")?;
         }
     }
@@ -1059,6 +1063,7 @@ mod tests {
     #[test]
     fn morph_projection_refuses_property_and_captive_limits() {
         let curve = super::NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![
@@ -1068,6 +1073,7 @@ mod tests {
             None,
             false,
         )
+        .expect("fixture constructor admission")
         .expect("valid test curve");
         let morph = super::Morph {
             source_range: 0..1,

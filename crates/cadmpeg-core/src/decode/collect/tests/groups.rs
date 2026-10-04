@@ -268,8 +268,11 @@ fn operation_record_index_refuses_work_limit() {
 fn admit_retained_btree_record_refuses_one_below_need_before_allocation() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        crate::decode::u64_from_index(std::mem::size_of::<(String, u16)>() + 3) - 1;
+    // One node has eleven key/value lanes, sixteen pointer widths and two alignment widths.
+    let node_bytes = 11 * (std::mem::size_of::<String>() + std::mem::size_of::<u16>())
+        + 16 * std::mem::size_of::<usize>()
+        + 2 * std::mem::align_of::<String>();
+    policy.limits.max_retained_bytes = crate::decode::u64_from_index(node_bytes + 3) - 1;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test operation succeeds");
     assert!(

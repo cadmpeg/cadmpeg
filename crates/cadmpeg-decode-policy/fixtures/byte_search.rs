@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 pub struct DecodeContext;
 impl DecodeContext {
-    pub fn charge_work(&self, _count: u64, _operation: &str) -> Result<(), ()> { Ok(()) }
+    pub fn charge_work(&self, _count: u64, _operation: &str) -> Result<(), ()> {
+        Ok(())
+    }
 }
 
 pub fn decode(ctx: &DecodeContext, haystack: &[u8], needle: &[u8], other: &[u8]) -> Result<(), ()> {

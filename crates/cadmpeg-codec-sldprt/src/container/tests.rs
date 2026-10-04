@@ -765,7 +765,8 @@ fn xml_utf16_replacement_admits_exact_scoped_bytes() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_materialized_bytes = temporary;
-        policy.limits.max_work_units = 10;
+        // Five source bytes, two two-byte UTF-16 scans and three replacement UTF-8 bytes are admitted.
+        policy.limits.max_work_units = 5 + 2 * 2 + 3;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let result =
             container::xml_text_charged(&ctx, &[0xff, 0xfe, 0, 0xd8, 0x5a], "XML replacement test");

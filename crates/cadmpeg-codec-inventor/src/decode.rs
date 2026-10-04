@@ -281,14 +281,18 @@ fn decode_container<'a>(
                         if is_preview(ctx, &section.fmtid, property.id, property_name.as_deref())? {
                             if let Some((bytes, media_type)) = preview_bytes(&property.value) {
                                 let ordinal = ir.model.assets.len();
-                                project_preview_asset(
+                                let asset = project_preview_asset(
                                     ctx,
-                                    &mut ir.model.assets,
                                     &mut admitted_entities,
                                     ordinal,
                                     &native_id,
                                     bytes,
                                     media_type,
+                                )?;
+                                ctx.push_vec(
+                                    &mut ir.model.assets,
+                                    asset,
+                                    "collect Inventor preview asset",
                                 )?;
                             }
                         }
@@ -711,7 +715,7 @@ fn decode_container<'a>(
             annotation_records: kernel_annotations,
         },
     ) = transfer_into_ir(ctx, &mut ir, "inventor", kernel_brep)?;
-    ir.set_native_unknowns("inventor", &[])?;
+    ir.set_native_unknowns(ctx, "inventor", &[])?;
     let geometry_transferred =
         !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());
     let body_ids = ctx.collect_indexed_vec(
@@ -1563,8 +1567,8 @@ fn admit_kernel_annotation(
         "retain Inventor annotation stream name",
     )?;
     let name = cadmpeg_ir::StreamName::try_from(name).map_err(CodecError::malformed)?;
-    let stream = StreamHandle::new_for_decode(ctx, name, "collect Inventor kernel provenance")?;
-    annotations.note_for_decode(
+    let stream = StreamHandle::new(ctx, name, "collect Inventor kernel provenance")?;
+    annotations.note(
         ctx,
         &record.id,
         &stream,
@@ -1573,7 +1577,7 @@ fn admit_kernel_annotation(
     )?;
     for field in ctx.admit_iter(&record.derived_fields, "visit Inventor decode items")? {
         annotations
-            .derived_for_decode(ctx, &record.id, field)
+            .derived(ctx, &record.id, field)
             .map_err(CodecError::from)?;
     }
     Ok(())
@@ -1661,13 +1665,12 @@ fn project_property_set_issue(
 
 fn project_preview_asset(
     ctx: &DecodeContext<'_>,
-    assets: &mut Vec<Asset>,
     admitted_entities: &mut u64,
     ordinal: usize,
     native_id: &str,
     bytes: &[u8],
     media_type: &str,
-) -> Result<(), CodecError> {
+) -> Result<Asset, CodecError> {
     let next_entities = admitted_entities.checked_add(1).ok_or_else(|| {
         ctx.refuse_codec_limit("Inventor preview entity count", u64::MAX - 1, u64::MAX)
     })?;
@@ -1676,25 +1679,37 @@ fn project_preview_asset(
         admitted_entities,
         "admit Inventor preview asset entity",
     )?;
-    let mut key_storage = ctx.reserve_scoped(0, "format Inventor preview ordinal")?;
-    let key = key_storage.with_storage(|| {
-        ctx.format_retained(
-            format_args!("preview-{ordinal}"),
-            "retain Inventor preview identity key",
-        )
+    let ordinal_digits = decimal_digits(ordinal)?;
+    let key_len = "preview-".len().checked_add(ordinal_digits).ok_or_else(|| {
+        ctx.refuse_codec_limit("format Inventor preview identity key", u64::MAX - 1, u64::MAX)
     })?;
-    let id = ctx.format_retained(
-        format_args!("inventor:document:asset#{key}"),
+    let id_len = "inventor:document:asset#".len().checked_add(key_len).ok_or_else(|| {
+        ctx.refuse_codec_limit("format Inventor preview asset id", u64::MAX - 1, u64::MAX)
+    })?;
+    let identity_work = ordinal_digits
+        .checked_add(key_len)
+        .and_then(|work| work.checked_add(id_len))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("format Inventor preview asset identity", u64::MAX - 1, u64::MAX)
+        })?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(identity_work),
+        "format Inventor preview asset identity",
+    )?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(id_len),
         "retain Inventor preview asset id",
     )?;
-    let validation_work = id.len().checked_add(key.len()).ok_or_else(|| {
-        ctx.refuse_codec_limit("validate Inventor preview identity", u64::MAX, u64::MAX)
-    })?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(validation_work),
-        "validate Inventor preview identity",
-    )?;
-    let id = AssetId::mint(id).map_err(CodecError::malformed)?;
+    let id = {
+        let _key_storage = ctx.reserve_scoped(
+            cadmpeg_core::decode::u64_from_index(key_len),
+            "retain Inventor preview identity key",
+        )?;
+        AssetId::compose(
+            &cadmpeg_ir::identity_namespace!("inventor", "document", "asset"),
+            cadmpeg_ir::identity_key!("preview-").then(ordinal),
+        )
+    };
     ctx.charge_retained(
         cadmpeg_core::decode::u64_from_index(native_id.len()),
         "retain Inventor preview source id",
@@ -1725,8 +1740,7 @@ fn project_preview_asset(
         },
         Some(native_id.to_owned()),
     )?;
-    ctx.push_vec(assets, asset, "collect Inventor preview asset")?;
-    Ok(())
+    Ok(asset)
 }
 
 fn project_protein_state(

@@ -415,8 +415,8 @@ pub(in super::super) fn transfer_feature_dimensions(
     }
     ctx.stable_sort_by_key(
         candidates.as_mut_slice(),
-            |value| (value.1.offset, value.1.identity.id(), value.2),
-            Ord::cmp,
+        |value| (value.1.offset, value.1.identity.id(), value.2),
+        Ord::cmp,
         "creo transfer feature dimensions candidates ordering",
     )?;
     let mut keys = Vec::new();

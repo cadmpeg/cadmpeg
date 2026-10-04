@@ -61,9 +61,18 @@ pub(crate) enum ConstructionRecipeKind {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for ConstructionRecipeKind {
-    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
-    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
     }
 }
 
@@ -267,3 +276,5 @@ pub(crate) struct ConstructionRecipeSelector {
 
 #[cfg(test)]
 mod tests;
+
+mod identity_rewrite;

@@ -29,9 +29,18 @@ const SYMMETRY_FRAME_EPS: f64 = 1.0e-9;
 struct HalfEdgeId(usize);
 
 impl cadmpeg_core::decode::cost::DecodeCost for HalfEdgeId {
-    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
-    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
     }
 }
 
@@ -740,7 +749,8 @@ fn build_secondary_layouts(
         grip_points,
     } = *context;
     let live_vertices = vertex_ir.iter().flatten().count();
-    let mut layouts = ctx.collect_indexed_vec(live_vertices, "f3d subd secondary layouts", |_| Ok(None))?;
+    let mut layouts =
+        ctx.collect_indexed_vec(live_vertices, "f3d subd secondary layouts", |_| Ok(None))?;
     let mut has_cg = ctx.alloc_filled(
         vertex_live.len(),
         false,
@@ -862,7 +872,7 @@ fn build_secondary_layouts(
         let vertex_ir = vertex_ir[vertex]
             .ok_or_else(|| malformed(ctx, name, "derived-grip vertex is deleted"))?;
         layouts[index_from_u32(vertex_ir)] = Some(
-            SubdVertexGripLayout::new(direction, wedges)
+            SubdVertexGripLayout::new(direction, wedges, ctx)?
                 .map_err(|error| malformed(ctx, name, error))?,
         );
     }
@@ -1699,14 +1709,14 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 sweep,
                 maps,
             } => (
-                SubdSymmetryKind::radial_from_parts(segments, sweep, maps)
+                SubdSymmetryKind::radial_from_parts(segments, sweep, maps, ctx)?
                     .map_err(|error| malformed(ctx, name, error))?,
                 Vec::new(),
                 Vec::new(),
                 Vec::new(),
             ),
         };
-        let symmetry = SubdSymmetry::new(kind, plane, face_pairs, edge_pairs, vertex_pairs)
+        let symmetry = SubdSymmetry::new(kind, plane, face_pairs, edge_pairs, vertex_pairs, ctx)?
             .map_err(|error| malformed(ctx, name, error))?;
         ctx.push_vec(&mut symmetries, symmetry, "project T-spline symmetries")?;
     }
@@ -1922,7 +1932,11 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             scheme: SubdScheme::CatmullClark,
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::F3d,
-                object_id: cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.copy_retained_text(name, "retain T-spline source object ID")?, "validate nonblank text")?
+                object_id: cadmpeg_core::text::NonBlankString::for_decode(
+                    ctx,
+                    ctx.copy_retained_text(name, "retain T-spline source object ID")?,
+                    "validate nonblank text",
+                )?
                 .ok_or_else(|| malformed(ctx, name, "source object_id must not be empty"))?,
                 name: None,
                 color: None,
@@ -1930,7 +1944,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 layer: None,
                 instance_path: Vec::new(),
             }),
-            cage: cadmpeg_ir::subd::SubdCage::new(vertices, edges, faces, symmetries)
+            cage: cadmpeg_ir::subd::SubdCage::new(vertices, edges, faces, symmetries, ctx)?
                 .map_err(|error| malformed(ctx, name, error))?,
         },
         unknown_record_kinds,

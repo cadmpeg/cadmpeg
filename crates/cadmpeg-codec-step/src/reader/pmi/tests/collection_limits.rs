@@ -482,7 +482,11 @@ fn target_slot_refusal(operation: &'static str) -> CodecError {
     super::super::push_target(
         &mut Vec::new(),
         cadmpeg_ir::pmi::PmiTarget::ShapeAspect {
-            source_id: crate::reader::step_source_id(&cadmpeg_test_support::service_decode_context(), 1).unwrap(),
+            source_id: crate::reader::step_source_id(
+                &cadmpeg_test_support::service_decode_context(),
+                1,
+            )
+            .unwrap(),
         },
         &ctx,
         operation,

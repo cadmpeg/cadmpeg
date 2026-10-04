@@ -32,25 +32,34 @@ fn plane() -> (cadmpeg_ir::CadIr, SurfaceId) {
 #[test]
 fn numerical_0922b_pcurve_knot_units() {
     let (ir, id) = plane();
-    let index = ModelIndex::new_model_only(&ir);
+    let index = ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
     for d in [1., 1e9] {
         let p = PcurveGeometry::Nurbs {
             nurbs: PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0., 0., d, d],
                 vec![Point2::new(0., 0.), Point2::new(1., 0.)],
                 None,
                 false,
             )
+            .expect("fixture pcurve construction admission")
             .unwrap(),
         };
         let seeds = with_context(|ctx| {
             pcurve_selection_seeds(&index, &id, &p, &ir.model.surfaces[0].geometry, ctx)
         })
         .expect("seed collection fits policy");
-        let r = pcurve_surface_closest(&index, &id, &p, Point3::new(0.3, 0., 0.), &seeds)
-            .expect("resource allocation did not fail")
-            .unwrap();
+        let r = pcurve_surface_closest(
+            &cadmpeg_test_support::service_decode_context(),
+            &index,
+            &id,
+            &p,
+            Point3::new(0.3, 0., 0.),
+            &seeds,
+        )
+        .expect("resource allocation did not fail")
+        .unwrap();
         println!("STEP d{d:e}, result{r:?}, x={}", r.1 / d);
         assert!(r.0 < 1e-14);
         assert!((r.1 / d - 0.3).abs() < 1e-14);
@@ -60,9 +69,10 @@ fn numerical_0922b_pcurve_knot_units() {
 #[test]
 fn pcurve_selection_keeps_interior_knots_and_seeds_in_a_wide_finite_domain() {
     let (ir, id) = plane();
-    let index = ModelIndex::new_model_only(&ir);
+    let index = ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
     let pcurve = PcurveGeometry::Nurbs {
         nurbs: PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![-f64::MAX, -f64::MAX, 0.0, f64::MAX, f64::MAX],
             vec![
@@ -73,6 +83,7 @@ fn pcurve_selection_keeps_interior_knots_and_seeds_in_a_wide_finite_domain() {
             None,
             false,
         )
+        .expect("fixture pcurve construction admission")
         .unwrap(),
     };
     let mut fractions = Vec::new();
@@ -97,6 +108,7 @@ fn periodic_surface_selection_keeps_quarter_seeds_across_a_wide_domain() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     let id = SurfaceId::mint("test:audit:surface#wide-periodic").expect("surface id");
     let surface = cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![-max, -max, max, max], true),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -108,6 +120,7 @@ fn periodic_surface_selection_keeps_quarter_seeds_across_a_wide_domain() {
         ),
         false,
     )
+    .expect("fixture constructor admission")
     .expect("wide periodic surface");
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
         id: id.clone(),
@@ -121,7 +134,7 @@ fn periodic_surface_selection_keeps_quarter_seeds_across_a_wide_domain() {
         )
         .expect("line pcurve"),
     );
-    let index = ModelIndex::new_model_only(&ir);
+    let index = ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
     let seeds = with_context(|ctx| {
         pcurve_selection_seeds(&index, &id, &pcurve, &ir.model.surfaces[0].geometry, ctx)
     })
@@ -149,7 +162,7 @@ fn pcurve_locus_accepts_a_wide_finite_line_parameter_interval() {
         )),
         source_object: None,
     });
-    let index = ModelIndex::new_model_only(&ir);
+    let index = ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
     let (exchange, _) = crate::test_support::with_service_context(
         include_bytes!("../../../../tests/fixtures/ap214_sheet.p21"),
         crate::parse::parse_inner,
@@ -205,7 +218,7 @@ fn pcurve_locus_fractions_refuse_collection_limit() {
         )),
         source_object: None,
     });
-    let index = ModelIndex::new_model_only(&ir);
+    let index = ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#54=LINE('',#55,#56);#55=DUMMY();#56=DUMMY();ENDSEC;END-ISO-10303-21;";
     let (exchange, _) =
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
@@ -260,15 +273,24 @@ fn pcurve_locus_finds_an_interior_curve_branch_near_the_float_limit() {
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(1, knots, controls, None, false)
-                .expect("finite many-span curve"),
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                1,
+                knots,
+                controls,
+                None,
+                false,
+            )
+            .expect("fixture constructor admission")
+            .expect("finite many-span curve"),
         )),
         source_object: None,
     });
-    let index = ModelIndex::new_model_only(&ir);
+    let index = ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
     let midpoint = lower.midpoint(upper);
     for x in [0.5, 0.6] {
         assert!(curve_parameter_near_point(
+            &cadmpeg_test_support::service_decode_context(),
             &index,
             &curve_id,
             Point3::new(x, 0.0, 0.0),
@@ -320,20 +342,29 @@ fn pcurve_locus_finds_an_interior_curve_branch_near_the_float_limit() {
 #[test]
 fn numerical_0922b_pcurve_retains_finite_seed_when_step_overflows() {
     let (ir, id) = plane();
-    let index = ModelIndex::new_model_only(&ir);
+    let index = ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
     let pcurve = PcurveGeometry::Nurbs {
         nurbs: PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0., 0., 1., 1.],
             vec![Point2::new(0., 0.), Point2::new(1e-200, 0.)],
             None,
             false,
         )
+        .expect("fixture pcurve construction admission")
         .unwrap(),
     };
     assert_eq!(
-        mapped_pcurve_closest(&index, &id, &pcurve, Point3::new(1e200, 0., 0.), 0.)
-            .expect("resource allocation did not fail"),
+        mapped_pcurve_closest(
+            &cadmpeg_test_support::service_decode_context(),
+            &index,
+            &id,
+            &pcurve,
+            Point3::new(1e200, 0., 0.),
+            0.
+        )
+        .expect("resource allocation did not fail"),
         Some((1e200, 0.))
     );
 }
@@ -357,7 +388,7 @@ fn a_declared_pcurve_fit_with_an_overflowing_end_is_measured_at_its_finite_end()
     // On the plane at x = MAX, the line end u = MAX has no finite point and
     // the start u = -MAX maps to the model origin.
     let (ir, id) = plane_at(f64::MAX);
-    let index = ModelIndex::new_model_only(&ir);
+    let index = ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
     let pcurve = PcurveGeometry::Line(
         cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
             Point2::new(0., 0.),
@@ -367,6 +398,7 @@ fn a_declared_pcurve_fit_with_an_overflowing_end_is_measured_at_its_finite_end()
     );
     assert_eq!(
         pcurve_declared_endpoint_fit_directed(
+            &cadmpeg_test_support::service_decode_context(),
             &index,
             &id,
             &pcurve,
@@ -386,7 +418,7 @@ fn the_mapped_pcurve_search_halves_a_step_whose_point_overflows() {
     // at t = 1.2e153 lands at about 7.25e153; halving it returns the search
     // to the finite range.
     let (ir, id) = plane_at(1.78e308);
-    let index = ModelIndex::new_model_only(&ir);
+    let index = ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
     let parabola = PcurveGeometry::Parabola(
         cadmpeg_ir::geometry::pcurve::ParabolaPcurve::try_new(
             Point2::new(0., 0.),
@@ -402,9 +434,16 @@ fn the_mapped_pcurve_search_halves_a_step_whose_point_overflows() {
         target_parameter,
         0.,
     );
-    let (error, parameter) = mapped_pcurve_closest(&index, &id, &parabola, target, 1e152)
-        .expect("resource allocation did not fail")
-        .unwrap();
+    let (error, parameter) = mapped_pcurve_closest(
+        &cadmpeg_test_support::service_decode_context(),
+        &index,
+        &id,
+        &parabola,
+        target,
+        1e152,
+    )
+    .expect("resource allocation did not fail")
+    .unwrap();
     assert!(
         (parameter / target_parameter - 1.).abs() < 1e-6,
         "{parameter}"
@@ -433,7 +472,7 @@ fn a_declared_pcurve_fit_with_an_overflowing_placed_end_misses_by_an_infinite_di
         )
         .unwrap(),
     ));
-    let index = ModelIndex::new_model_only(&ir);
+    let index = ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
     let pcurve = PcurveGeometry::Line(
         cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
             Point2::new(0., 0.),
@@ -443,6 +482,7 @@ fn a_declared_pcurve_fit_with_an_overflowing_placed_end_misses_by_an_infinite_di
     );
     assert_eq!(
         pcurve_declared_endpoint_fit_directed(
+            &cadmpeg_test_support::service_decode_context(),
             &index,
             &id,
             &pcurve,
@@ -460,7 +500,7 @@ fn a_declared_pcurve_fit_with_an_overflowing_line_end_is_measured_at_its_finite_
     // The line reaches u = MAX + MAX at its end, which the plane maps to no
     // finite point, and u = 0 at its start, which it maps to the origin.
     let (ir, id) = plane();
-    let index = ModelIndex::new_model_only(&ir);
+    let index = ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
     let pcurve = PcurveGeometry::Line(
         cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
             Point2::new(f64::MAX, 0.),
@@ -470,6 +510,7 @@ fn a_declared_pcurve_fit_with_an_overflowing_line_end_is_measured_at_its_finite_
     );
     assert_eq!(
         pcurve_declared_endpoint_fit_directed(
+            &cadmpeg_test_support::service_decode_context(),
             &index,
             &id,
             &pcurve,
@@ -479,5 +520,96 @@ fn a_declared_pcurve_fit_with_an_overflowing_line_end_is_measured_at_its_finite_
         )
         .expect("resource allocation did not fail"),
         Some(0.)
+    );
+}
+
+#[test]
+fn pcurve_selection_helpers_preserve_session_depth_refusal() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let (ir, id) = plane();
+    let index = ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+    let pcurve = PcurveGeometry::Line(
+        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+        )
+        .expect("valid line"),
+    );
+    for seeded in [false, true] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let target = Point3::new(0.5, 0.0, 0.0);
+        let limit = if seeded {
+            pcurve_surface_closest(&ctx, &index, &id, &pcurve, target, &[0.0])
+        } else {
+            mapped_pcurve_closest(&ctx, &index, &id, &pcurve, target, 0.0)
+        }
+        .expect_err("first seed or inverse step charges work");
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!((limit.limit, limit.used, limit.additional), (0, 0, 1));
+        assert_eq!(
+            limit.operation,
+            if seeded {
+                "step pcurve seed visit"
+            } else {
+                "step pcurve inverse step"
+            }
+        );
+        assert_eq!(
+            ctx.charge_work_limit(0, "observe selection refusal"),
+            Err(limit)
+        );
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let limit = pcurve_selection_uv(&ctx, &pcurve, 0.5).expect_err("first evaluator frame refuses");
+    assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
+    assert_eq!((limit.limit, limit.used, limit.additional), (0, 0, 1));
+    assert_eq!(
+        ctx.charge_work_limit(0, "observe selection refusal"),
+        Err(limit)
+    );
+    for directed in [false, true] {
+        let result = if directed {
+            pcurve_declared_endpoint_fit_directed(
+                &ctx,
+                &index,
+                &id,
+                &pcurve,
+                [0.0, 1.0],
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+            )
+        } else {
+            pcurve_declared_endpoint_fit(
+                &ctx,
+                &index,
+                &id,
+                &pcurve,
+                [0.0, 1.0],
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+            )
+        };
+        assert_eq!(result, Err(limit));
+    }
+    assert_eq!(
+        pcurve_surface_closest(&ctx, &index, &id, &pcurve, Point3::new(0.5, 0.0, 0.0), &[]),
+        Err(limit)
+    );
+    assert_eq!(
+        mapped_pcurve_closest(
+            &ctx,
+            &index,
+            &id,
+            &pcurve,
+            Point3::new(0.5, 0.0, 0.0),
+            f64::NAN
+        ),
+        Err(limit)
     );
 }

@@ -448,10 +448,11 @@ parser_vector_limit_test!(
     VECTOR_SOURCE,
     "step_parse_section_ids"
 );
+// Map insertion admits node storage and the collection item with one operation.
 parser_vector_limit_test!(
     record_table_refuses_collection_limit,
     VECTOR_SOURCE,
-    "step_parse_record_table_items"
+    "step_parse_record_table_storage"
 );
 parser_vector_limit_test!(
     data_section_vector_refuses_collection_limit,
@@ -925,14 +926,19 @@ fn reference_anchor_copy_is_charged_before_building_bindings() {
 #[test]
 fn parser_propagates_binary_lexeme_resource_refusal() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM(\"0A1F2\");ENDSEC;END-ISO-10303-21;";
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_materialized_bytes =
-        4 + cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<String>() + "AP242".len());
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)
-        .expect("root fits the test policy");
-    let error = crate::parse::parse_with_context(source, &ctx)
-        .expect_err("binary lexeme must refuse before its digit allocation");
+    // Admit preceding lexer and container operations before this exact named gate.
+    let limit = crate::test_support::resource_refusal_at(
+        source,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "step_binary_lexeme_temp",
+        |source, ctx| {
+            ctx.with_scoped_storage("temporary parser result", || {
+                crate::parse::parse_with_context(source, ctx)
+            })
+            .map(|_| ())
+        },
+    );
+    let error = cadmpeg_core::CodecError::ResourceLimit(limit);
     assert!(
         matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes && limit.operation == "step_binary_lexeme_temp"),
         "{error:?}"
@@ -1060,25 +1066,19 @@ fn parser_accounts_for_anchor_tag_collection_storage() {
 #[test]
 fn anchor_materialization_uses_the_decode_session_budget() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<a>=(1,2,3,4,5,6,7,8);ENDSEC;DATA;#1=ITEM(<a>);ENDSEC;END-ISO-10303-21;";
-    let mut materialization_limit = None;
-    for max_work_units in 1..=1024 {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_work_units = max_work_units;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)
-                .expect("root fits the test policy");
-        let error = crate::parse::parse_with_context(source, &ctx)
-            .expect_err("anchor materialization must consume shared work");
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-            continue;
-        };
-        if limit.operation == "step_anchor_materialization" {
-            materialization_limit = Some(limit);
-            break;
-        }
-    }
-    let limit = materialization_limit.expect("anchor materialization must have a budget gate");
+    // Admit preceding lexer and container operations before this exact named gate.
+    let limit = crate::test_support::resource_refusal_at(
+        source,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "step_anchor_materialization",
+        |source, ctx| {
+            ctx.with_scoped_storage("temporary parser result", || {
+                crate::parse::parse_with_context(source, ctx)
+            })
+            .map(|_| ())
+        },
+    );
+
     assert_eq!(
         limit.dimension,
         cadmpeg_core::decode::ResourceDimension::WorkUnits
@@ -1092,25 +1092,19 @@ fn local_reference_materialization_uses_the_decode_session_budget() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;3');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<a>=(1,2,3,4,5,6,7,8);ENDSEC;REFERENCE;@2=<#a>;ENDSEC;DATA;#1=ITEM(@2);ENDSEC;END-ISO-10303-21;";
     crate::test_support::with_service_context(source, crate::parse::parse_inner)
         .expect("local-reference fixture must parse");
-    let mut materialization_limit = None;
-    for max_work_units in 1..=2048 {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_work_units = max_work_units;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)
-                .expect("root fits the test policy");
-        let error = crate::parse::parse_with_context(source, &ctx)
-            .expect_err("local reference materialization must consume shared work");
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-            continue;
-        };
-        if limit.operation == "step_reference_materialization" {
-            materialization_limit = Some(limit);
-            break;
-        }
-    }
-    let limit = materialization_limit.expect("local references must have a budget gate");
+    // Admit preceding lexer and container operations before this exact named gate.
+    let limit = crate::test_support::resource_refusal_at(
+        source,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "step_reference_materialization",
+        |source, ctx| {
+            ctx.with_scoped_storage("temporary parser result", || {
+                crate::parse::parse_with_context(source, ctx)
+            })
+            .map(|_| ())
+        },
+    );
+
     assert_eq!(
         limit.dimension,
         cadmpeg_core::decode::ResourceDimension::WorkUnits

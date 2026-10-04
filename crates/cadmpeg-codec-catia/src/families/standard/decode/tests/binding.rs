@@ -76,9 +76,7 @@ fn standard_topology_identity_refuses_retained_limit() {
     .expect("service profile admits loop identity");
     assert_eq!(admitted.as_str(), "catia:standard:loop#0:0");
 }
-use cadmpeg_ir::eval::curve_point;
-use cadmpeg_ir::eval::pcurve_uv;
-use cadmpeg_ir::eval::surface_point;
+
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::nurbs::NurbsSurface;
 use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
@@ -238,6 +236,7 @@ fn standard_endpoint_filter_propagates_arc_collection_refusal() {
 
 fn unit_square_surface() -> NurbsSurface {
     NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -249,6 +248,7 @@ fn unit_square_surface() -> NurbsSurface {
         ),
         false,
     )
+    .expect("fixture constructor admission")
     .expect("valid unit-square surface")
 }
 
@@ -304,13 +304,28 @@ fn owner_carrier_candidate_requires_parameter_and_model_space_containment() {
         [[0.3, 0.8], [0.2, 0.8], [-0.1, 0.1]],
     );
 
-    assert_eq!(owner_matches_a5_carrier(&admitted, &surface), Ok(true));
     assert_eq!(
-        owner_matches_a5_carrier(&outside_parameter_domain, &surface),
+        owner_matches_a5_carrier(
+            &cadmpeg_test_support::service_decode_context(),
+            &admitted,
+            &surface
+        ),
+        Ok(true)
+    );
+    assert_eq!(
+        owner_matches_a5_carrier(
+            &cadmpeg_test_support::service_decode_context(),
+            &outside_parameter_domain,
+            &surface
+        ),
         Ok(false)
     );
     assert_eq!(
-        owner_matches_a5_carrier(&clipped_model_bounds, &surface),
+        owner_matches_a5_carrier(
+            &cadmpeg_test_support::service_decode_context(),
+            &clipped_model_bounds,
+            &surface
+        ),
         Ok(false)
     );
 }
@@ -1128,8 +1143,18 @@ fn reverse_angular_interval_becomes_an_increasing_nurbs_domain() {
     };
     assert!(nurbs.knots().windows(2).all(|pair| pair[0] <= pair[1]));
     assert_eq!(range, [-std::f64::consts::PI, 0.0]);
-    let start = pcurve_uv(&arc, range[0]).expect("start evaluation");
-    let end = pcurve_uv(&arc, range[1]).expect("end evaluation");
+    let start = cadmpeg_ir::eval::decode::pcurve_uv(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &arc,
+        range[0],
+    )
+    .expect("start evaluation");
+    let end = cadmpeg_ir::eval::decode::pcurve_uv(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &arc,
+        range[1],
+    )
+    .expect("end evaluation");
     assert!((start.u + 2.0).abs() < 1.0e-12);
     assert!(start.v.abs() < 1.0e-12);
     assert!((end.u - 2.0).abs() < 1.0e-12);
@@ -1239,24 +1264,34 @@ fn cylinder_generator_direction_requires_compatible_support_axes() {
 #[test]
 fn unknown_surface_membership_stays_open_but_nurbs_membership_is_geometric() {
     assert!(point_on_standard_face(
+        &cadmpeg_test_support::service_decode_context(),
         Point3::new(100.0, -50.0, 7.0),
         &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         None,
     )
     .expect("surface evaluator accepts the fixture"));
     let nurbs = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(unit_square_surface()));
-    assert!(
-        point_on_standard_face(Point3::new(0.5, 0.5, 0.0), &nurbs, None,)
-            .expect("surface evaluator accepts the fixture")
-    );
-    assert!(
-        !point_on_standard_face(Point3::new(0.5, 0.5, 0.1), &nurbs, None,)
-            .expect("surface evaluator accepts the fixture")
-    );
-    assert!(
-        !point_on_standard_face(Point3::new(100.0, -50.0, 7.0), &nurbs, None,)
-            .expect("surface evaluator accepts the fixture")
-    );
+    assert!(point_on_standard_face(
+        &cadmpeg_test_support::service_decode_context(),
+        Point3::new(0.5, 0.5, 0.0),
+        &nurbs,
+        None,
+    )
+    .expect("surface evaluator accepts the fixture"));
+    assert!(!point_on_standard_face(
+        &cadmpeg_test_support::service_decode_context(),
+        Point3::new(0.5, 0.5, 0.1),
+        &nurbs,
+        None,
+    )
+    .expect("surface evaluator accepts the fixture"));
+    assert!(!point_on_standard_face(
+        &cadmpeg_test_support::service_decode_context(),
+        Point3::new(100.0, -50.0, 7.0),
+        &nurbs,
+        None,
+    )
+    .expect("surface evaluator accepts the fixture"));
 }
 
 #[test]
@@ -1448,6 +1483,7 @@ fn cached_face_point_membership_matches_the_source_predicate() {
     assert!(membership[0].iter().enumerate().all(|(point, cached)| {
         *cached
             == point_on_standard_face(
+                &ctx,
                 ir.model.points[point].position().get(),
                 &ir.model.surfaces[0].geometry,
                 None,
@@ -1511,18 +1547,27 @@ fn freeform_face_bounds_constrain_unknown_surface_endpoints() {
         sphere_radius: crate::test_support::test_b5::nonnegative_length(3.5),
     };
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
-    assert!(
-        point_on_standard_face(Point3::new(2.0, 4.0, 6.0), &surface, Some(bounds),)
-            .expect("surface evaluator accepts the fixture")
-    );
-    assert!(
-        !point_on_standard_face(Point3::new(3.01, 3.0, 4.0), &surface, Some(bounds),)
-            .expect("surface evaluator accepts the fixture")
-    );
-    assert!(
-        !point_on_standard_face(Point3::new(3.0, 5.0, 7.0), &surface, Some(bounds),)
-            .expect("surface evaluator accepts the fixture")
-    );
+    assert!(point_on_standard_face(
+        &cadmpeg_test_support::service_decode_context(),
+        Point3::new(2.0, 4.0, 6.0),
+        &surface,
+        Some(bounds),
+    )
+    .expect("surface evaluator accepts the fixture"));
+    assert!(!point_on_standard_face(
+        &cadmpeg_test_support::service_decode_context(),
+        Point3::new(3.01, 3.0, 4.0),
+        &surface,
+        Some(bounds),
+    )
+    .expect("surface evaluator accepts the fixture"));
+    assert!(!point_on_standard_face(
+        &cadmpeg_test_support::service_decode_context(),
+        Point3::new(3.0, 5.0, 7.0),
+        &surface,
+        Some(bounds),
+    )
+    .expect("surface evaluator accepts the fixture"));
 }
 
 #[test]
@@ -1780,8 +1825,19 @@ fn standard_plane_circle_pcurve_preserves_contained_carrier() {
     )
     .expect("contained plane circle pcurve");
     let mapped = range.map(|parameter| {
-        let uv = pcurve_uv(&geometry, parameter).expect("plane circle pcurve endpoint");
-        surface_point(&surface, uv.u, uv.v).expect("plane circle surface endpoint")
+        let uv = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &geometry,
+            parameter,
+        )
+        .expect("plane circle pcurve endpoint");
+        cadmpeg_ir::eval::decode::surface_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &surface,
+            uv.u,
+            uv.v,
+        )
+        .expect("plane circle surface endpoint")
     });
     assert!(mapped[0].distance(start) <= 1.0e-9);
     assert!(mapped[1].distance(end) <= 1.0e-9);
@@ -1834,14 +1890,78 @@ fn standard_plane_full_circle_pcurve_preserves_closed_carrier() {
     assert_eq!(nurbs.control_points().len(), 9);
     assert_eq!(nurbs.weights().map(|weights| weights.len()), Some(9));
     for parameter in [range[0], range[1]] {
-        let uv = pcurve_uv(&geometry, parameter).expect("closed pcurve endpoint");
-        let point = surface_point(&surface, uv.u, uv.v).expect("closed surface endpoint");
+        let uv = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &geometry,
+            parameter,
+        )
+        .expect("closed pcurve endpoint");
+        let point = cadmpeg_ir::eval::decode::surface_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &surface,
+            uv.u,
+            uv.v,
+        )
+        .expect("closed surface endpoint");
         assert!(point.distance(start) <= 1.0e-9);
     }
-    let midpoint_uv = pcurve_uv(&geometry, std::f64::consts::PI).expect("closed pcurve midpoint");
-    let midpoint =
-        surface_point(&surface, midpoint_uv.u, midpoint_uv.v).expect("closed surface midpoint");
+    let midpoint_uv = cadmpeg_ir::eval::decode::pcurve_uv(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &geometry,
+        std::f64::consts::PI,
+    )
+    .expect("closed pcurve midpoint");
+    let midpoint = cadmpeg_ir::eval::decode::surface_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &surface,
+        midpoint_uv.u,
+        midpoint_uv.v,
+    )
+    .expect("closed surface midpoint");
     assert!(midpoint.distance(Point3::new(-radius, 0.0, 0.0)) <= 1.0e-9);
 }
 
 mod curve_bindings;
+
+#[test]
+fn owner_carrier_helper_preserves_session_depth_refusal() {
+    let surface = unit_square_surface();
+    let tail = owner_tail(
+        [0.25, 0.25],
+        [0.75, 0.75],
+        [[0.2, 0.8], [0.2, 0.8], [-0.1, 0.1]],
+    );
+    crate::test_support::with_work_limit(0, |ctx| {
+        let limit = owner_matches_a5_carrier(ctx, &tail, &surface)
+            .expect_err("control traversal refuses work");
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::WorkUnits
+        );
+        assert_eq!((limit.limit, limit.used, limit.additional), (0, 0, 1));
+        assert_eq!(limit.operation, "IR homogeneous pole traversal");
+        assert_eq!(
+            ctx.charge_work_limit(0, "observe owner work refusal"),
+            Err(limit)
+        );
+    });
+    crate::test_support::with_depth_limit(0, |ctx| {
+        assert_eq!(owner_matches_a5_carrier(ctx, &tail, &surface), Ok(true));
+        let original = ctx
+            .enter_nested_limit("owner test outer frame")
+            .expect_err("outer frame refuses");
+        let limit = owner_matches_a5_carrier(ctx, &tail, &surface)
+            .expect_err("first evaluator frame refuses");
+        assert_eq!(limit, original);
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::RecursionDepth
+        );
+        assert_eq!((limit.limit, limit.used, limit.additional), (0, 0, 1));
+        assert_eq!(
+            ctx.charge_work_limit(0, "observe owner refusal"),
+            Err(limit)
+        );
+        assert_eq!(owner_matches_a5_carrier(ctx, &tail, &surface), Err(limit));
+    });
+}

@@ -148,10 +148,11 @@ pub(super) fn copy_projected_feature_properties(
     let mut copied = BTreeMap::new();
     for (key, value) in properties {
         ctx.charge_work(1, operation)?;
-        let key = cadmpeg_core::text::NonBlankString::for_decode(ctx, copy_projected_feature_text(
+        let key = cadmpeg_core::text::NonBlankString::for_decode(
             ctx,
-            key.as_str(),
-        )?, "validate nonblank text")?
+            copy_projected_feature_text(ctx, key.as_str())?,
+            "validate nonblank text",
+        )?
         .ok_or_else(|| CodecError::malformed("blank SLDPRT projected feature property"))?;
         let value = copy_projected_feature_text(ctx, value)?;
         ctx.insert_btree_map(&mut copied, key, value, operation)?;
@@ -172,8 +173,7 @@ impl FeatureProjection {
     ) -> Result<(), CodecError> {
         model.features = self.features;
         for (child, parent) in self.regeneration_parents {
-            let error = match model.set_feature_regeneration_parent_for_decode(ctx, &child, &parent)
-            {
+            let error = match model.set_feature_regeneration_parent(ctx, &child, &parent) {
                 Ok(()) => continue,
                 Err(CodecError::Malformed(error)) => error,
                 Err(error) => return Err(error),
@@ -419,7 +419,7 @@ pub(crate) fn project_feature_model(
                     children, ..
                 }) = definition
                 {
-                    result = children.insert_for_decode(ctx, child, "collect SLDPRT tree children");
+                    result = children.insert(ctx, child, "collect SLDPRT tree children");
                 }
             });
         result?;
@@ -791,7 +791,7 @@ pub(super) fn bind_offset_plane_references(
                 cadmpeg_core::decode::u64_from_index(feature.dependencies.as_slice().len()),
                 "bind SLDPRT offset plane dependencies",
             )?;
-            feature.dependencies.insert_for_decode(
+            feature.dependencies.insert(
                 ctx,
                 reference_id,
                 "bind SLDPRT offset plane dependencies",
@@ -985,7 +985,7 @@ pub(super) fn bind_offset_plane_references(
                 cadmpeg_core::decode::u64_from_index(features[index].dependencies.as_slice().len()),
                 "bind SLDPRT offset plane dependencies",
             )?;
-            features[index].dependencies.insert_for_decode(
+            features[index].dependencies.insert(
                 ctx,
                 reference,
                 "bind SLDPRT offset plane dependencies",
@@ -1085,7 +1085,7 @@ fn bind_native_construction_features(
                         cadmpeg_core::decode::u64_from_index(dependencies.as_slice().len()),
                         "bind SLDPRT native construction references",
                     )?;
-                    dependencies.insert_for_decode(
+                    dependencies.insert(
                         ctx,
                         copy_projected_feature_id(ctx, target)?,
                         "bind SLDPRT native construction dependencies",
@@ -1465,7 +1465,7 @@ fn project_feature_dependencies(
             if dependency == &owner || dependencies.contains(dependency) {
                 continue;
             }
-            dependencies.insert_for_decode(
+            dependencies.insert(
                 ctx,
                 copy_projected_feature_id(ctx, dependency)?,
                 "collect SLDPRT feature dependencies",
@@ -1520,8 +1520,12 @@ pub(crate) fn project_configurations_charged(
                     cadmpeg_core::decode::u64_from_index(key.as_str().len()),
                     OPERATION,
                 )?;
-                let key = cadmpeg_core::text::NonBlankString::for_decode(ctx, copy(key.as_str())?, "validate nonblank text")?
-                    .ok_or_else(|| CodecError::malformed("blank SLDPRT configuration property"))?;
+                let key = cadmpeg_core::text::NonBlankString::for_decode(
+                    ctx,
+                    copy(key.as_str())?,
+                    "validate nonblank text",
+                )?
+                .ok_or_else(|| CodecError::malformed("blank SLDPRT configuration property"))?;
                 let value = copy(value)?;
                 ctx.insert_btree_map(&mut properties, key, value, OPERATION)?;
             }

@@ -30,6 +30,7 @@ fn wide_pcurve_domain_keeps_its_finite_midpoint_seed() {
         id: "test:model:pcurve#wide-domain".try_into().unwrap(),
         geometry: PcurveGeometry::Nurbs {
             nurbs: crate::geometry::pcurve::PcurveNurbs::new(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![-f64::MAX, -f64::MAX, f64::MAX * 0.5, f64::MAX * 0.5],
                 crate::geometry::pcurve::PcurveNurbsPoles::Polynomial {
@@ -37,17 +38,24 @@ fn wide_pcurve_domain_keeps_its_finite_midpoint_seed() {
                 },
                 false,
             )
+            .expect("fixture pcurve construction admission")
             .unwrap(),
         },
         metadata: PcurveMetadata::default(),
     };
-    assert!(super::pcurve_parameter_seeds(&pcurve).contains(&(-f64::MAX * 0.25)));
+    assert!(super::pcurve_parameter_seeds(
+        &cadmpeg_test_support::service_decode_context(),
+        &pcurve
+    )
+    .unwrap()
+    .contains(&(-f64::MAX * 0.25)));
 }
 
 #[test]
 fn large_surface_domain_keeps_its_finite_midpoint_pcurve_seed() {
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             crate::geometry::nurbs::NurbsSurfaceAxis::new(
                 1,
                 vec![f64::MAX * 0.75, f64::MAX * 0.75, f64::MAX, f64::MAX],
@@ -63,6 +71,7 @@ fn large_surface_domain_keeps_its_finite_midpoint_pcurve_seed() {
             ),
             false,
         )
+        .expect("fixture constructor admission")
         .unwrap(),
     ));
     let surface_id = SurfaceId::mint("test:model:surface#large-domain").unwrap();
@@ -72,7 +81,7 @@ fn large_surface_domain_keeps_its_finite_midpoint_pcurve_seed() {
         geometry: surface.clone(),
         source_object: None,
     });
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
     let pcurve = Pcurve {
         id: "test:model:pcurve#large-surface-domain".try_into().unwrap(),
         geometry: PcurveGeometry::Line(
@@ -90,9 +99,14 @@ fn large_surface_domain_keeps_its_finite_midpoint_pcurve_seed() {
         geometry: &surface,
     };
     let midpoint = (f64::MAX * 0.75).midpoint(f64::MAX);
-    assert!(pcurve_parameter_seeds_on_surface(&context, &pcurve)
-        .iter()
-        .any(|seed| seed.get() == midpoint));
+    assert!(pcurve_parameter_seeds_on_surface(
+        &cadmpeg_test_support::service_decode_context(),
+        &context,
+        &pcurve
+    )
+    .unwrap()
+    .iter()
+    .any(|seed| seed.get() == midpoint));
 }
 
 macro_rules! procedural_surface {
@@ -198,7 +212,14 @@ fn mapped_surface_curve_with_pcurve(pcurve: PcurveGeometry, mapping: [f64; 2]) -
        },
        cache_fit_tolerance: None,
     };
-    ir.model.add_procedural_curve(&curve, construction).unwrap();
+    ir.model
+        .add_procedural_curve(
+            &crate::document::admission::StandardAdmission,
+            &curve,
+            construction,
+        )
+        .unwrap()
+        .unwrap();
     ir
 }
 
@@ -366,11 +387,13 @@ fn untrimmed_surface_curve() -> CadIr {
         face: "test:model:face#face".try_into().expect("valid identity"),
         boundary: crate::topology::LoopBoundary::Ring(
             crate::topology::LoopRing::new(
+                &cadmpeg_test_support::service_decode_context(),
                 vec!["test:model:coedge#coedge"
                     .try_into()
                     .expect("valid identity")],
                 Vec::new(),
             )
+            .expect("fixture ring admission")
             .expect("valid loop ring"),
         ),
     });
@@ -394,12 +417,20 @@ fn untrimmed_surface_curve() -> CadIr {
 #[test]
 fn procedural_support_endpoints_honor_the_per_side_parameter_mapping() {
     let mut findings = Vec::new();
-    check_procedural_support_consistency(&mapped_surface_curve([2.0, 3.0]), &mut findings)
-        .expect("resource allocation did not fail");
+    check_procedural_support_consistency(
+        &cadmpeg_test_support::service_decode_context(),
+        &mapped_surface_curve([2.0, 3.0]),
+        &mut findings,
+    )
+    .expect("resource allocation did not fail");
     assert!(findings.is_empty());
 
-    check_procedural_support_consistency(&mapped_surface_curve([3.0, 2.0]), &mut findings)
-        .expect("resource allocation did not fail");
+    check_procedural_support_consistency(
+        &cadmpeg_test_support::service_decode_context(),
+        &mapped_surface_curve([3.0, 2.0]),
+        &mut findings,
+    )
+    .expect("resource allocation did not fail");
     assert_eq!(findings.len(), 1);
     assert!(findings[0].message.contains("support side 0"));
 }
@@ -407,8 +438,12 @@ fn procedural_support_endpoints_honor_the_per_side_parameter_mapping() {
 #[test]
 fn surface_offset_support_constrains_the_embedded_base_curve() {
     let mut findings = Vec::new();
-    check_procedural_support_consistency(&mapped_surface_offset(), &mut findings)
-        .expect("resource allocation did not fail");
+    check_procedural_support_consistency(
+        &cadmpeg_test_support::service_decode_context(),
+        &mapped_surface_offset(),
+        &mut findings,
+    )
+    .expect("resource allocation did not fail");
     assert!(findings.is_empty());
 
     let mut context_first = mapped_surface_offset();
@@ -449,8 +484,12 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
             None => definition.clear_legacy_cache(),
         }
     });
-    check_procedural_support_consistency(&context_first, &mut findings)
-        .expect("resource allocation did not fail");
+    check_procedural_support_consistency(
+        &cadmpeg_test_support::service_decode_context(),
+        &context_first,
+        &mut findings,
+    )
+    .expect("resource allocation did not fail");
     assert!(findings.is_empty());
 
     let mut ir = mapped_surface_offset();
@@ -464,8 +503,12 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
     origin.y = 2.0;
     let origin = crate::features::FinitePoint3::new(origin).unwrap();
     *line_curve = crate::geometry::analytic::LineCurve::new(origin, direction);
-    check_procedural_support_consistency(&ir, &mut findings)
-        .expect("resource allocation did not fail");
+    check_procedural_support_consistency(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut findings,
+    )
+    .expect("resource allocation did not fail");
     assert_eq!(findings.len(), 2);
     assert!(findings
         .iter()
@@ -479,8 +522,12 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
 fn untrimmed_pcurve_uses_a_vertex_derived_parameter_interval() {
     let ir = untrimmed_surface_curve();
     let mut findings = Vec::new();
-    super::check_pcurve_surface_consistency(&ir, &mut findings)
-        .expect("resource allocation did not fail");
+    super::check_pcurve_surface_consistency(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut findings,
+    )
+    .expect("resource allocation did not fail");
     assert!(findings.is_empty(), "{findings:#?}");
 
     let mut mismatched = ir;
@@ -497,8 +544,12 @@ fn untrimmed_pcurve_uses_a_vertex_derived_parameter_interval() {
         2.0,
     )
     .unwrap();
-    super::check_pcurve_surface_consistency(&mismatched, &mut findings)
-        .expect("resource allocation did not fail");
+    super::check_pcurve_surface_consistency(
+        &cadmpeg_test_support::service_decode_context(),
+        &mismatched,
+        &mut findings,
+    )
+    .expect("resource allocation did not fail");
     assert_eq!(findings.len(), 1);
     assert!(findings[0].message.contains("pcurve mapped through"));
 }
@@ -524,9 +575,11 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
     };
     ir.model
         .add_procedural_surface(
+            &crate::document::admission::StandardAdmission,
             &SurfaceId::mint("test:model:surface#surface").expect("valid identity"),
             construction,
         )
+        .unwrap()
         .unwrap();
     ir.model.points[0].set_position(
         crate::features::FinitePoint3::new(Point3::new(1.0, 2.0, 0.0))
@@ -572,8 +625,12 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
     .unwrap();
 
     let mut findings = Vec::new();
-    super::check_pcurve_surface_consistency(&ir, &mut findings)
-        .expect("resource allocation did not fail");
+    super::check_pcurve_surface_consistency(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut findings,
+    )
+    .expect("resource allocation did not fail");
     assert!(findings.is_empty(), "{findings:#?}");
 }
 
@@ -582,6 +639,7 @@ fn untrimmed_nurbs_pcurve_uses_its_own_endpoint_parameters() {
     let mut ir = untrimmed_surface_curve();
     ir.model.pcurves[0].geometry = PcurveGeometry::Nurbs {
         nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
@@ -592,11 +650,16 @@ fn untrimmed_nurbs_pcurve_uses_its_own_endpoint_parameters() {
             Some(vec![1.0, 2.0_f64.sqrt() / 2.0, 1.0]),
             false,
         )
+        .expect("fixture pcurve construction admission")
         .unwrap(),
     };
     let mut findings = Vec::new();
-    super::check_pcurve_surface_consistency(&ir, &mut findings)
-        .expect("resource allocation did not fail");
+    super::check_pcurve_surface_consistency(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut findings,
+    )
+    .expect("resource allocation did not fail");
     assert!(findings.is_empty(), "{findings:#?}");
 }
 
@@ -626,8 +689,12 @@ fn stale_trimmed_pcurve_range_can_use_a_vertex_derived_interval() {
         .unwrap(),
     );
     let mut findings = Vec::new();
-    super::check_pcurve_surface_consistency(&ir, &mut findings)
-        .expect("resource allocation did not fail");
+    super::check_pcurve_surface_consistency(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut findings,
+    )
+    .expect("resource allocation did not fail");
     assert!(findings.is_empty(), "{findings:#?}");
 }
 
@@ -639,6 +706,7 @@ fn raw_nurbs_domain_is_not_treated_as_edge_trim() {
             .expect("valid identity"),
         geometry: PcurveGeometry::Nurbs {
             nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 2,
                 vec![-1.0, 0.0, 0.0, 1.0, 1.0, 2.0],
                 vec![
@@ -649,16 +717,28 @@ fn raw_nurbs_domain_is_not_treated_as_edge_trim() {
                 None,
                 false,
             )
+            .expect("fixture pcurve construction admission")
             .unwrap(),
         },
         metadata: PcurveMetadata::default(),
     };
     assert_eq!(
-        pcurve_parameter_domain(&pcurve.geometry)
-            .map(crate::topology::IncreasingParameterInterval::endpoints),
+        pcurve_parameter_domain(
+            &cadmpeg_test_support::service_decode_context(),
+            &pcurve.geometry
+        )
+        .unwrap()
+        .map(crate::topology::IncreasingParameterInterval::endpoints),
         Some([0.0, 1.0])
     );
-    assert!(pcurve_parameter_ranges(&pcurve, None, None).is_none());
+    assert!(pcurve_parameter_ranges(
+        &cadmpeg_test_support::service_decode_context(),
+        &pcurve,
+        None,
+        None
+    )
+    .unwrap()
+    .is_none());
 }
 
 #[test]
@@ -669,19 +749,22 @@ fn collapsed_trimmed_pcurve_falls_back_to_its_basis_domain() {
             true,
             Box::new(PcurveGeometry::Nurbs {
                 nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
                     None,
                     true,
                 )
+                .expect("fixture pcurve construction admission")
                 .unwrap(),
             }),
         )
         .unwrap(),
     );
     assert_eq!(
-        pcurve_parameter_domain(&geometry)
+        pcurve_parameter_domain(&cadmpeg_test_support::service_decode_context(), &geometry)
+            .unwrap()
             .map(crate::topology::IncreasingParameterInterval::endpoints),
         Some([0.0, 1.0])
     );
@@ -694,6 +777,7 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
     // surface domain supplies an interior seed on the same branch.
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             crate::geometry::nurbs::NurbsSurfaceAxis::new(
                 2,
@@ -717,6 +801,7 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
             ),
             false,
         )
+        .expect("fixture constructor admission")
         .unwrap(),
     ));
     let surface_id =
@@ -727,7 +812,7 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
         geometry: surface.clone(),
         source_object: None,
     });
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
     let pcurve = Pcurve {
         id: "test:model:pcurve#pcurve"
             .try_into()
@@ -746,14 +831,15 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
         surface_id: &surface_id,
         geometry: &surface,
     };
-    let seeds = pcurve_parameter_seeds_on_surface(&context, &pcurve);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let seeds = pcurve_parameter_seeds_on_surface(&ctx, &context, &pcurve).unwrap();
     assert!(seeds.iter().any(|seed| seed.get() == 0.5));
 
     let ranges = edge_pcurve_parameter_ranges(
+        &ctx,
         &context,
         None,
-        Point3::new(1.0, 0.0, 0.5625),
-        Point3::new(1.0, 0.0, 0.0625),
+        [Point3::new(1.0, 0.0, 0.5625), Point3::new(1.0, 0.0, 0.0625)],
         &pcurve,
         &pcurve,
         1.0e-12,
@@ -940,7 +1026,14 @@ fn edge_endpoint_mismatch_is_flagged() {
         },
         cache_fit_tolerance: Some(0.99),
     };
-    ir.model.add_procedural_curve(&curve, procedural).unwrap();
+    ir.model
+        .add_procedural_curve(
+            &crate::document::admission::StandardAdmission,
+            &curve,
+            procedural,
+        )
+        .unwrap()
+        .unwrap();
     let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(
         report
@@ -978,6 +1071,7 @@ fn pcurve_surface_mismatch_is_flagged() {
             id: crate::ids::PcurveId::mint("synthetic:cube:pcurve#0").expect("valid identity"),
             geometry: crate::geometry::pcurve::PcurveGeometry::Nurbs {
                 nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![
@@ -987,6 +1081,7 @@ fn pcurve_surface_mismatch_is_flagged() {
                     None,
                     false,
                 )
+                .expect("fixture pcurve construction admission")
                 .unwrap(),
             },
             metadata: PcurveMetadata::general(
@@ -1051,6 +1146,7 @@ fn pcurve_surface_mismatch_is_flagged() {
                 .expect("valid identity"),
             geometry: crate::geometry::pcurve::PcurveGeometry::Nurbs {
                 nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![
@@ -1060,6 +1156,7 @@ fn pcurve_surface_mismatch_is_flagged() {
                     None,
                     false,
                 )
+                .expect("fixture pcurve construction admission")
                 .unwrap(),
             },
             metadata: PcurveMetadata::default(),
@@ -1101,7 +1198,12 @@ fn pcurve_surface_mismatch_is_flagged() {
     };
     procedural
         .model
-        .add_procedural_surface(&surface, construction)
+        .add_procedural_surface(
+            &crate::document::admission::StandardAdmission,
+            &surface,
+            construction,
+        )
+        .unwrap()
         .unwrap();
     let procedural_report =
         validate_neutral(&procedural, Vec::new()).expect("resource allocation did not fail");
@@ -1145,6 +1247,7 @@ fn pcurve_surface_mismatch_is_flagged() {
                 .expect("valid identity"),
             geometry: crate::geometry::pcurve::PcurveGeometry::Nurbs {
                 nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![-10.0, -10.0, 0.0, 0.0],
                     vec![
@@ -1154,6 +1257,7 @@ fn pcurve_surface_mismatch_is_flagged() {
                     None,
                     false,
                 )
+                .expect("fixture pcurve construction admission")
                 .unwrap(),
             },
             metadata: PcurveMetadata::default(),
@@ -1205,6 +1309,7 @@ fn pcurve_surface_mismatch_is_flagged() {
 fn nurbs_surface_leaf() -> SolvedSurfaceGeometry {
     SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             crate::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -1216,6 +1321,7 @@ fn nurbs_surface_leaf() -> SolvedSurfaceGeometry {
             ),
             false,
         )
+        .expect("fixture constructor admission")
         .unwrap(),
     )
 }
@@ -1234,12 +1340,14 @@ fn placed_nurbs_surface(placements: usize) -> Result<SolvedSurfaceGeometry, &'st
 fn nurbs_pcurve_leaf() -> PcurveGeometry {
     PcurveGeometry::Nurbs {
         nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
             None,
             false,
         )
+        .expect("fixture pcurve construction admission")
         .unwrap(),
     }
 }
@@ -1257,12 +1365,19 @@ fn placed_pcurve(placements: usize, leaf: PcurveGeometry) -> Result<PcurveGeomet
 
 #[test]
 fn surface_parameter_domains_stop_at_the_admitted_nesting_depth() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_recursion_depth =
+        cadmpeg_core::decode::u64_from_index(crate::geometry::MAX_GEOMETRY_NESTING + 1);
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let accepted =
         placed_nurbs_surface(crate::geometry::MAX_GEOMETRY_NESTING).expect("admitted nesting");
-    assert!(super::solved_surface_parameter_domains(&accepted).is_some());
+    assert!(super::solved_surface_parameter_domains(&ctx, &accepted)
+        .unwrap()
+        .is_some());
 
-    // The walk has no depth gate because the carrier one placement deeper
-    // cannot be built: `PlacedSurface::try_new` refuses it.
+    // Constructor admission also rejects a carrier beyond the inline bound.
     assert_eq!(
         placed_nurbs_surface(crate::geometry::MAX_GEOMETRY_NESTING + 1),
         Err("PlacedSurface.basis nests past the admitted inline basis depth")
@@ -1271,6 +1386,12 @@ fn surface_parameter_domains_stop_at_the_admitted_nesting_depth() {
 
 #[test]
 fn pcurve_trim_range_stops_at_the_admitted_nesting_depth() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_recursion_depth =
+        cadmpeg_core::decode::u64_from_index(crate::geometry::MAX_GEOMETRY_NESTING + 1);
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let trimmed = PcurveGeometry::Trimmed(
         crate::geometry::pcurve::TrimmedPcurve::try_new(
             [0.25, 0.75],
@@ -1283,20 +1404,23 @@ fn pcurve_trim_range_stops_at_the_admitted_nesting_depth() {
     let accepted = placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING - 1, trimmed.clone())
         .expect("admitted nesting");
     assert_eq!(
-        super::pcurve_geometry_trim_range(&accepted),
+        super::pcurve_geometry_trim_range(&ctx, &accepted).unwrap(),
         Some([0.25, 0.75])
     );
 
-    // The walk has no depth gate because the carrier one placement deeper
-    // cannot be built: `PlacedPcurve::try_new` refuses it.
+    // Constructor admission also rejects a carrier beyond the inline bound.
     assert_eq!(
         placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING, trimmed),
         Err("PlacedPcurve.basis nests past the admitted inline basis depth")
     );
 }
 
+mod finding_admission;
+mod index_admission;
+mod inverse_admission;
 mod overflowing_arms;
 mod parameter_scaling;
+mod parameter_storage;
 
 /// A plane whose points at `u` beyond `2^970` overflow: its origin is the
 /// largest finite x coordinate.
@@ -1316,8 +1440,12 @@ fn a_support_side_whose_points_overflow_misses_its_contract_by_nan() {
     let mut ir = mapped_surface_curve([1.0e300, 2.0e300]);
     ir.model.surfaces[0].geometry = overflowing_plane();
     let mut findings = Vec::new();
-    check_procedural_support_consistency(&ir, &mut findings)
-        .expect("resource allocation did not fail");
+    check_procedural_support_consistency(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut findings,
+    )
+    .expect("resource allocation did not fail");
     assert_eq!(findings.len(), 1, "{findings:?}");
     assert_eq!(
         findings[0].message,
@@ -1364,7 +1492,12 @@ fn a_coedge_pcurve_whose_mapped_points_overflow_misses_the_vertices_by_nan() {
     }];
     let coedge_id = coedge.id.as_str().to_owned();
     let mut findings = Vec::new();
-    check_pcurve_surface_consistency(&ir, &mut findings).expect("resource allocation did not fail");
+    check_pcurve_surface_consistency(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut findings,
+    )
+    .expect("resource allocation did not fail");
     assert!(
         findings.iter().any(|finding| {
             finding.entity.as_deref() == Some(coedge_id.as_str())
@@ -1398,7 +1531,7 @@ fn the_mapped_pcurve_search_halves_a_step_whose_point_overflows() {
         geometry: surface.clone(),
         source_object: None,
     });
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
     let context = SurfacePcurveContext {
         index: &index,
         surface_id: &surface_id,
@@ -1420,10 +1553,17 @@ fn the_mapped_pcurve_search_halves_a_step_whose_point_overflows() {
         0.0,
     );
     let seed = crate::scalar::FiniteReal::new(1.0e152).expect("finite seed");
-    let parameter = mapped_pcurve_parameter_near_point(&context, &parabola, target, seed, 1.0e300)
-        .expect("resource allocation did not fail")
-        .expect("the halved step reaches the target")
-        .get();
+    let parameter = mapped_pcurve_parameter_near_point(
+        &cadmpeg_test_support::service_decode_context(),
+        &context,
+        &parabola,
+        target,
+        seed,
+        1.0e300,
+    )
+    .expect("resource allocation did not fail")
+    .expect("the halved step reaches the target")
+    .get();
     assert!(
         (parameter / target_parameter - 1.0).abs() < 1.0e-6,
         "{parameter}"
@@ -1452,7 +1592,7 @@ fn the_mapped_pcurve_search_without_a_domain_ends_where_a_step_leaves_the_finite
         geometry: surface.clone(),
         source_object: None,
     });
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
     let context = SurfacePcurveContext {
         index: &index,
         surface_id: &surface_id,
@@ -1465,6 +1605,7 @@ fn the_mapped_pcurve_search_without_a_domain_ends_where_a_step_leaves_the_finite
     let seed = crate::scalar::FiniteReal::new(-1.0e308).expect("finite seed");
     assert_eq!(
         mapped_pcurve_parameter_near_point(
+            &cadmpeg_test_support::service_decode_context(),
             &context,
             &line,
             Point3::new(-1.0e308, 0.0, 0.0),
@@ -1476,6 +1617,7 @@ fn the_mapped_pcurve_search_without_a_domain_ends_where_a_step_leaves_the_finite
     );
     assert_eq!(
         mapped_pcurve_parameter_near_point(
+            &cadmpeg_test_support::service_decode_context(),
             &context,
             &line,
             Point3::new(-4.0e307, 0.0, 0.0),
@@ -1509,7 +1651,7 @@ fn the_mapped_pcurve_search_accepts_a_matching_seed_whose_pcurve_has_no_tangent(
         geometry: surface.clone(),
         source_object: None,
     });
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
     let context = SurfacePcurveContext {
         index: &index,
         surface_id: &surface_id,
@@ -1524,10 +1666,16 @@ fn the_mapped_pcurve_search_accepts_a_matching_seed_whose_pcurve_has_no_tangent(
         crate::geometry::pcurve::LinePcurve::try_new(Point2::new(5.0, 0.0), Point2::new(0.0, 1.0))
             .unwrap(),
     )));
-    assert!(crate::eval::pcurve_tangent(&pcurve, 0.5).is_err());
+    assert!(crate::eval::pcurve_tangent(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &pcurve,
+        0.5
+    )
+    .is_err());
     let seed = crate::scalar::FiniteReal::new(0.5).expect("finite seed");
     assert_eq!(
         mapped_pcurve_parameter_near_point(
+            &cadmpeg_test_support::service_decode_context(),
             &context,
             &pcurve,
             Point3::new(3.0, 0.5, 0.0),
@@ -1537,4 +1685,126 @@ fn the_mapped_pcurve_search_accepts_a_matching_seed_whose_pcurve_has_no_tangent(
         .expect("resource allocation did not fail"),
         Some(seed)
     );
+}
+
+#[test]
+fn solved_surface_parameter_domains_preserves_session_depth_and_work_refusals() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let geometry = placed_nurbs_surface(2).unwrap();
+    for (dimension, cap, held_frame) in [
+        (ResourceDimension::RecursionDepth, 0, false),
+        (ResourceDimension::RecursionDepth, 2, false),
+        (ResourceDimension::RecursionDepth, 2, true),
+        (ResourceDimension::WorkUnits, 0, false),
+        (ResourceDimension::WorkUnits, 2, false),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = cap,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+            _ => unreachable!(),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let guard = held_frame.then(|| ctx.enter_nested_limit("caller frame").unwrap());
+        let limit = super::solved_surface_parameter_domains(&ctx, &geometry).unwrap_err();
+        assert_eq!(limit.dimension, dimension);
+        assert_eq!(limit.limit, cap);
+        assert_eq!(limit.used, cap);
+        assert_eq!(limit.additional, 1);
+        assert_eq!(
+            limit.operation,
+            match dimension {
+                ResourceDimension::RecursionDepth => "surface parameter domain nesting",
+                _ => "surface parameter domain visit",
+            }
+        );
+        drop(guard);
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+        );
+    }
+}
+
+#[test]
+fn pcurve_geometry_trim_range_preserves_session_depth_and_work_refusals() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let geometry = placed_pcurve(2, nurbs_pcurve_leaf()).unwrap();
+    for (dimension, cap, held_frame) in [
+        (ResourceDimension::RecursionDepth, 0, false),
+        (ResourceDimension::RecursionDepth, 2, false),
+        (ResourceDimension::RecursionDepth, 2, true),
+        (ResourceDimension::WorkUnits, 0, false),
+        (ResourceDimension::WorkUnits, 2, false),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = cap,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+            _ => unreachable!(),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let guard = held_frame.then(|| ctx.enter_nested_limit("caller frame").unwrap());
+        let limit = super::pcurve_geometry_trim_range(&ctx, &geometry).unwrap_err();
+        assert_eq!(limit.dimension, dimension);
+        assert_eq!(limit.limit, cap);
+        assert_eq!(limit.used, cap);
+        assert_eq!(limit.additional, 1);
+        assert_eq!(
+            limit.operation,
+            match dimension {
+                ResourceDimension::RecursionDepth => "pcurve trim range nesting",
+                _ => "pcurve trim range visit",
+            }
+        );
+        drop(guard);
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+        );
+    }
+}
+
+#[test]
+fn pcurve_seed_storage_preserves_caller_refusals() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let pcurve = Pcurve {
+        id: "test:model:pcurve#seed".try_into().unwrap(),
+        geometry: PcurveGeometry::Line(
+            crate::geometry::pcurve::LinePcurve::try_new(
+                Point2::new(0.0, 0.0),
+                Point2::new(1.0, 0.0),
+            )
+            .unwrap(),
+        ),
+        metadata: PcurveMetadata::default(),
+    };
+    for dimension in [
+        ResourceDimension::MaterializedBytes,
+        ResourceDimension::CollectionItems,
+        ResourceDimension::WorkUnits,
+        ResourceDimension::RecursionDepth,
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 0,
+            _ => panic!("test dimension"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let Err(CodecError::ResourceLimit(limit)) = super::pcurve_parameter_seeds(&ctx, &pcurve)
+        else {
+            panic!("seed storage must refuse");
+        };
+        assert_eq!(limit.dimension, dimension);
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+        );
+    }
 }

@@ -692,17 +692,21 @@ fn f3z_nested_member_reference_obeys_session_depth_limit() {
         ],
     );
     let mut options = DecodeOptions::default();
-    // Redirections has six container levels. The root fits; a member adds one.
+    // The session ceiling includes member frames and decoded entity reconstruction.
     options.policy.limits.max_recursion_depth = 6;
     let error = F3dCodec
-        .decode(&mut Cursor::new(archive), &options)
+        .decode(&mut Cursor::new(archive.clone()), &options)
         .expect_err("nested member redirections exceed the selected depth");
     assert!(matches!(
         error,
         cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RecursionDepth
-                && limit.operation == "parse F3D redirections JSON"
+                && limit.limit == 6 && limit.used == 6 && limit.additional == 1
+                && limit.reason == cadmpeg_core::decode::ResourceFailure::BudgetExceeded
     ));
+    F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .expect("the nested member graph fits the complete session policy");
 }
 
 #[test]

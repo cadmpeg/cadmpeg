@@ -47,9 +47,12 @@ fn rm_appearance_result(
             let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
             let mut appearances = BTreeMap::new();
             let mut reservation = ctx.reserve_scoped(0, "NX RM appearance identity lookup")?;
-            let stream = cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!(
-                "nx:container"
-            ));
+            let stream = cadmpeg_ir::annotations::StreamHandle::new(
+                &cadmpeg_test_support::service_decode_context(),
+                cadmpeg_ir::stream_name!("nx:container"),
+                "fixture stream handle",
+            )
+            .unwrap();
             ensure_rm_color_appearance(
                 ctx,
                 &mut ir,
@@ -582,11 +585,17 @@ fn rm_face_colors_refuse_output_retained_limit() {
 
 #[test]
 fn rm_face_colors_refuse_definition_lookup_work_limit() {
-    let error = face_color_projection_result(
-        |policy| policy.limits.max_work_units = 1317,
-        FaceColorRoute::Colors,
-    )
-    .unwrap_err();
+    // Admit color index construction before refusing the definition lookup.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX RM face color definition lookup",
+        |cap| {
+            face_color_projection_result(
+                |policy| policy.limits.max_work_units = cap,
+                FaceColorRoute::Colors,
+            )
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits

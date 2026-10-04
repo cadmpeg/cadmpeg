@@ -285,7 +285,11 @@ impl From<LostEdgeReference> for LostEdgeReferenceWire {
 pub(crate) struct DesignVisualToken(cadmpeg_ir::ids::IdentityKey);
 
 impl cadmpeg_core::decode::cost::DecodeCost for DesignVisualToken {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         cadmpeg_core::decode::cost::DecodeCost::decode_cost(&self.0, ctx, operation)
     }
 }
@@ -534,3 +538,5 @@ impl From<DesignMaterialAssignment> for DesignMaterialAssignmentWire {
 
 #[cfg(test)]
 mod tests;
+
+mod identity_rewrite;

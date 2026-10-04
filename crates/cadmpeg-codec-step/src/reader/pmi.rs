@@ -1756,8 +1756,12 @@ fn copy_pmi_target(
         },
         PmiTarget::ShapeAspect { source_id } => {
             let copy = ctx.copy_retained_text(source_id.as_str(), operation)?;
-            let source_id = cadmpeg_core::text::NonBlankString::for_decode(ctx, copy, "validate nonblank text")?
-                .ok_or_else(|| CodecError::malformed("STEP PMI target has a blank source ID"))?;
+            let source_id = cadmpeg_core::text::NonBlankString::for_decode(
+                ctx,
+                copy,
+                "validate nonblank text",
+            )?
+            .ok_or_else(|| CodecError::malformed("STEP PMI target has a blank source ID"))?;
             PmiTarget::ShapeAspect { source_id }
         }
     })

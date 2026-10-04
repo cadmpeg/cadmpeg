@@ -498,10 +498,33 @@ fn feature_result_topology_arena_refuses_collection_limit() {
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo model feature result topologies"),
+            && resource.operation == "creo feature result member distinctness"),
         "{error:?}"
     );
     assert!(ir.model.feature_result_topologies.is_empty());
+    let cadmpeg_core::CodecError::ResourceLimit(first) = error else {
+        unreachable!()
+    };
+    assert!(matches!(ctx.finish_session(),
+        Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first));
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        "creo model feature result topologies",
+        |ctx| {
+            let mut candidate = ir.clone();
+            let result = super::emit_feature_result_topologies(ctx, &scan, &mut candidate);
+            if result.is_err() {
+                assert!(candidate.model.feature_result_topologies.is_empty());
+            }
+            result
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo model feature result topologies")
+    );
 }
 
 fn result_surface_limit_error(limit: u64, by_feature: bool, operation: &'static str) {
@@ -913,7 +936,10 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
         ))
         .expect("service profile admits the result topology")
         .expect("complete result topology")
-        .faces().iter().map(|value| value.as_str()).collect::<Vec<_>>(),
+        .faces()
+        .iter()
+        .map(cadmpeg_core::text::NonBlankString::as_str)
+        .collect::<Vec<_>>(),
         vec!["surface#98", "surface#145"]
     );
     assert_eq!(
@@ -926,7 +952,10 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
         ))
         .expect("service profile admits the result topology")
         .expect("complete result topology")
-        .edges().iter().map(|value| value.as_str()).collect::<Vec<_>>(),
+        .edges()
+        .iter()
+        .map(cadmpeg_core::text::NonBlankString::as_str)
+        .collect::<Vec<_>>(),
         vec!["curve#77"]
     );
 

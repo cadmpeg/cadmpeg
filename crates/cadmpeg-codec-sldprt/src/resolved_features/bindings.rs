@@ -370,8 +370,8 @@ pub(crate) fn bind_pattern_inputs(
                         )?;
                         ctx.sort_unstable_by(
                             &mut seeds,
-            |value| value,
-            Ord::cmp,
+                            |value| value,
+                            Ord::cmp,
                             "sort SLDPRT pattern input seeds",
                         )?;
                         seeds.dedup();
@@ -684,7 +684,7 @@ pub(crate) fn bind_pattern_inputs(
         };
         if !model_features[index].dependencies.contains(&seed) {
             let dependency = copy_feature_binding_id(ctx, &seed)?;
-            model_features[index].dependencies.insert_for_decode(
+            model_features[index].dependencies.insert(
                 ctx,
                 dependency,
                 "collect SLDPRT pattern dependencies",
@@ -726,7 +726,7 @@ pub(crate) fn bind_pattern_inputs(
             continue;
         };
         if !model_features[index].dependencies.contains(&dependency) {
-            model_features[index].dependencies.insert_for_decode(
+            model_features[index].dependencies.insert(
                 ctx,
                 dependency,
                 "collect SLDPRT pattern dependencies",
@@ -870,7 +870,7 @@ pub(crate) fn bind_pattern_inputs(
         for seed in &seeds {
             if !model_features[index].dependencies.contains(seed) {
                 let dependency = copy_feature_binding_id(ctx, seed)?;
-                model_features[index].dependencies.insert_for_decode(
+                model_features[index].dependencies.insert(
                     ctx,
                     dependency,
                     "collect SLDPRT pattern dependencies",
@@ -1309,7 +1309,7 @@ pub(crate) fn bind_sweep_adjacent_profiles(
                 .dependencies
                 .contains(&profile_dependency)
         {
-            model_features[index].dependencies.insert_for_decode(
+            model_features[index].dependencies.insert(
                 ctx,
                 profile_dependency,
                 "collect SLDPRT sweep profile dependencies",
@@ -1317,7 +1317,7 @@ pub(crate) fn bind_sweep_adjacent_profiles(
         }
         if let Some(dependency) = path_dependency {
             if !model_features[index].dependencies.contains(&dependency) {
-                model_features[index].dependencies.insert_for_decode(
+                model_features[index].dependencies.insert(
                     ctx,
                     dependency,
                     "collect SLDPRT sweep profile dependencies",
@@ -1350,7 +1350,10 @@ fn copy_feature_binding_sketch_id(
     SketchId::mint(text).map_err(cadmpeg_core::CodecError::malformed)
 }
 
-fn reserve_feature_binding_map<K: Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost, V>(
+fn reserve_feature_binding_map<
+    K: Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost,
+    V,
+>(
     ctx: &DecodeContext<'_>,
     values: &mut HashMap<K, V>,
     operation: &'static str,
@@ -1733,8 +1736,8 @@ pub(super) fn bind_detached_legacy_sketch_objects(
     )?;
     ctx.sort_unstable_by(
         &mut owners,
-            |value| &value.0,
-            Ord::cmp,
+        |value| &value.0,
+        Ord::cmp,
         "sort SLDPRT detached sketch owners",
     )?;
     if starts.len() != owners.len() {
@@ -1800,8 +1803,8 @@ pub(super) fn spatial_relation_manager_ranges_charged(
     }
     ctx.sort_unstable_by(
         &mut ranges,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "sort SLDPRT spatial relation ranges",
     )?;
     ranges.dedup();

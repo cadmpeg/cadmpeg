@@ -278,18 +278,16 @@ pub(super) fn b5_support_endpoints(
     }
     let lifted = range.map(
         |parameter| -> Result<Option<[f64; 3]>, cadmpeg_core::CodecError> {
-            let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, pcurve, parameter.get())?,
-            )?
+            let Some(uv) =
+                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                    cadmpeg_ir::eval::decode::pcurve_uv(ctx, pcurve, parameter.get()),
+                )?)?
             else {
                 return Ok(None);
             };
             // A non-finite support point is compared as a finite one is.
-            let point = match cadmpeg_ir::eval::decode::surface_point_for_decode(
-                ctx,
-                &surface.geometry,
-                uv.u,
-                uv.v,
+            let point = match cadmpeg_ir::eval::decode::outer_refusal(
+                cadmpeg_ir::eval::decode::surface_point(ctx, &surface.geometry, uv.u, uv.v),
             )? {
                 Ok(point) => point.get(),
                 Err(failure) => match failure.non_finite()? {
@@ -321,7 +319,11 @@ pub(super) fn b5_supports_follow_curve(
     };
     let solved = range.map(|parameter| -> Result<_, cadmpeg_core::CodecError> {
         Ok(cadmpeg_ir::eval::finite_or_refusal(
-            cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, &curve.geometry, parameter)?,
+            cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(
+                ctx,
+                &curve.geometry,
+                parameter,
+            ))?,
         )?)
     });
     let [start, end] = solved;
@@ -348,7 +350,7 @@ pub(super) fn b5_supports_follow_curve(
 /// definitions, returning the map from native edge id to emitted [`EdgeId`].
 pub(super) fn emit_edges(
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     graph: &B5Graph,
     payload: &cadmpeg_ir::ids::UnknownId,
     plan: &mut TransferPlan,
@@ -505,11 +507,9 @@ pub(super) fn emit_edges(
             let owner = curve_id
                 .try_clone_for_decode(admission.context(), "catia_b5_edge_procedural_owner_id")?;
             admission.charge()?;
-            let _attached = ir.model.add_procedural_curve_for_decode(
-                admission.context(),
-                &owner,
-                procedural,
-            )?;
+            let _attached =
+                ir.model
+                    .add_procedural_curve(admission.context(), &owner, procedural)?;
         }
         annotate(
             admission.context(),

@@ -317,7 +317,7 @@ fn standard_duplicate_choices_refuse_before_search_branch() {
 
 #[test]
 fn standard_duplicate_search_refuses_work_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
     assert_eq!(
@@ -325,16 +325,13 @@ fn standard_duplicate_search_refuses_work_limit() {
             .expect("service resource budget"),
         Some(vec![[0, 1], [0, 1], [0, 1]])
     );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    // Three units of identity work, three incident-face sorts of two 16-byte pairs
-    // (2 + 16 * 3 * 8 each) and one unresolved-edge sort of one 8-byte index (1 + 8 * 2 * 8)
-    // precede the scan.
-    policy.limits.max_work_units = 3 + 3 * (2 + 16 * 3 * 8) + (1 + 8 * 2 * 8);
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("fixture fits input limit");
+    // Admit copies, degree-row growth, sorting and fills before the first duplicate-choice visit.
+    let refusal = crate::test_support::with_work_refusal(
+        "catia_standard_duplicate_choice_scan",
+        duplicate_face_slot_fixture,
+    );
     assert!(matches!(
-        duplicate_face_slot_fixture(&ctx),
+        refusal,
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::WorkUnits
                 && limit.operation == "catia_standard_duplicate_choice_scan"
@@ -1167,7 +1164,9 @@ fn incidence_cycles_refuse_work_limit_before_unseen_scan() {
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 1154;
+    // One prior set item, eight scalar-key hash reads and the two-row sort precede the unseen scan.
+    let index_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>());
+    policy.limits.max_work_units = 1 + 8 * index_bytes + 4 + 10 * index_bytes * 3 * 8;
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("fixture fits the input limit");
     let result = incidence_cycles(&ctx, &[0, 1], &[[0, 1], [1, 0]]);

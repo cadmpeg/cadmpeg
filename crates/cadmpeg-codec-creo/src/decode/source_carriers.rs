@@ -595,7 +595,7 @@ impl SourceUnitCarriers {
         }
 
         ir.model
-            .add_procedural_surface_for_decode(ctx, owner, procedural)?
+            .add_procedural_surface(ctx, owner, procedural)?
             .map_err(CodecError::malformed)
     }
 
@@ -611,7 +611,7 @@ impl SourceUnitCarriers {
         }
 
         ir.model
-            .add_procedural_curve_for_decode(ctx, owner, procedural)?
+            .add_procedural_curve(ctx, owner, procedural)?
             .map_err(CodecError::malformed)
     }
 
@@ -667,6 +667,7 @@ mod tests {
     fn source_sketch_geometry_refuses_nurbs_copy_limit() {
         let geometry = SketchGeometry::nurbs(
             cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                 vec![
@@ -677,6 +678,7 @@ mod tests {
                 None,
                 false,
             )
+            .expect("fixture pcurve construction admission")
             .expect("source NURBS"),
         );
         let arena = DecodeArena::new();
@@ -2570,12 +2572,14 @@ mod tests {
         for rational in [false, true] {
             let geometry = SketchGeometry::nurbs(
                 cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![cadmpeg_ir::math::Point2::new(0.0, 0.0); 2],
                     rational.then(|| vec![1.0, 2.0]),
                     false,
                 )
+                .expect("fixture pcurve construction admission")
                 .expect("curve"),
             );
             for cap in [3, 5] {
@@ -2598,38 +2602,5 @@ mod tests {
         }
     }
 
-    #[test]
-    fn pcurve_normalization_propagates_owned_scaling_work_refusal() {
-        let mut pcurve = admission_pcurve();
-        pcurve.geometry = cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
-            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-                1,
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![cadmpeg_ir::math::Point2::new(1.0, 2.0); 2],
-                None,
-                false,
-            )
-            .expect("curve"),
-        };
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 2;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let mut ir = CadIr::empty();
-        assert!(
-            matches!(SourceUnitCarriers::push_pcurve(&ctx, &mut ir, pcurve.clone(), Some([2.0, 3.0])),
-            Err(CodecError::ResourceLimit(resource)) if resource.operation == "IR pcurve pole coordinate scaling work")
-        );
-        assert!(ir.model.pcurves.is_empty());
-        let mut expected = pcurve.clone();
-        expected
-            .geometry
-            .try_scale_coordinates([2.0, 3.0])
-            .expect("reference");
-        crate::decode::with_test_decode_ctx(|ctx| {
-            SourceUnitCarriers::push_pcurve(ctx, &mut ir, pcurve, Some([2.0, 3.0]))
-        })
-        .expect("service");
-        assert_eq!(ir.model.pcurves, vec![expected]);
-    }
+    mod pcurve_work;
 }

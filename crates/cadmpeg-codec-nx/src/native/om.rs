@@ -713,8 +713,17 @@ pub(super) enum ExpressionUnit {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for ExpressionUnit {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        match self { Self::Native(text) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8, text), ctx, operation), _ => Ok(1) }
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::Native(text) => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8, text), ctx, operation)
+            }
+            _ => Ok(1),
+        }
     }
 }
 
@@ -1039,7 +1048,8 @@ impl TryFrom<ExpressionWire> for ParameterFormula {
                 .map(|value| FiniteReal::new(value).ok_or("expression value must be finite"))
                 .transpose()?,
             source_entry: wire.source_entry,
-            source_table: cadmpeg_core::text::NonBlankString::try_from(wire.source_table).ok()
+            source_table: cadmpeg_core::text::NonBlankString::try_from(wire.source_table)
+                .ok()
                 .ok_or("source_table must not be empty")?,
             source_offset: wire.source_offset,
         })
@@ -6245,7 +6255,11 @@ pub(super) fn expressions(
                 cadmpeg_core::decode::u64_from_index(table_offset),
                 "NX expression source table",
             )?;
-            let Some(source_table) = cadmpeg_core::text::NonBlankString::for_decode(ctx, source_table_text, "validate nonblank text")?
+            let Some(source_table) = cadmpeg_core::text::NonBlankString::for_decode(
+                ctx,
+                source_table_text,
+                "validate nonblank text",
+            )?
             else {
                 continue;
             };

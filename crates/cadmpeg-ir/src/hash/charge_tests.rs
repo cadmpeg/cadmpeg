@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{canonical_json_sha256, canonical_json_sha256_with_charge};
+use super::canonical_json_sha256;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
@@ -10,11 +10,15 @@ fn canonical_hash_byte_charge_preserves_digest() {
         ("escaped", "a\\b\"c\n".repeat(4096)),
         ("unicode", "æΩ🎛".repeat(4096)),
     ]);
-    let expected = canonical_json_sha256(&value).unwrap();
+    let expected = canonical_json_sha256(
+        &cadmpeg_test_support::service_decode_context(),
+        &value,
+        "canonical hash fixture",
+    )
+    .unwrap();
     let ctx = cadmpeg_test_support::service_decode_context();
-    let actual: Result<String, CodecError> = canonical_json_sha256_with_charge(&value, |bytes| {
-        ctx.charge_work(bytes, "test canonical hash bytes")
-    });
+    let actual: Result<String, CodecError> =
+        canonical_json_sha256(&ctx, &value, "test canonical hash bytes").map_err(Into::into);
     assert_eq!(actual.unwrap(), expected);
 }
 
@@ -25,10 +29,57 @@ fn canonical_hash_byte_charge_propagates_resource_refusal() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result: Result<String, CodecError> = canonical_json_sha256_with_charge(&value, |bytes| {
-        ctx.charge_work(bytes, "test canonical hash bytes")
-    });
+    let result: Result<String, CodecError> =
+        canonical_json_sha256(&ctx, &value, "test canonical hash bytes").map_err(Into::into);
     assert!(
         matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "test canonical hash bytes")
     );
+}
+
+#[test]
+fn canonical_hash_admits_buffer_output_work_and_depth_with_the_original_refusal() {
+    for dimension in [
+        ResourceDimension::MaterializedBytes,
+        ResourceDimension::RetainedBytes,
+        ResourceDimension::WorkUnits,
+        ResourceDimension::RecursionDepth,
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 0,
+            _ => panic!("canonical hash refusal dimensions"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error: CodecError =
+            canonical_json_sha256(&ctx, &"text", "canonical hash dimension fixture")
+                .unwrap_err()
+                .into();
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("hash must preserve resource refusal");
+        };
+        assert_eq!(limit.dimension, dimension);
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+        );
+    }
+}
+
+#[test]
+fn canonical_hash_releases_its_buffer_before_the_next_digest() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 8192;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let first = canonical_json_sha256(&ctx, &"text", "canonical hash buffer fixture").unwrap();
+    let second = canonical_json_sha256(&ctx, &"text", "canonical hash buffer fixture").unwrap();
+    assert_eq!(first, second);
+    let storage = ctx
+        .reserve_scoped(8192, "canonical hash buffer released")
+        .unwrap();
+    drop(storage);
+    ctx.finish_session().unwrap();
 }

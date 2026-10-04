@@ -1663,8 +1663,11 @@ fn terminal_repeated_radial_circle_pairs<'a>(
     }
     ctx.sort_unstable_by_key(
         &mut pairs,
-            |value| { let (left, _) = value; left.offset() },
-            Ord::cmp,
+        |value| {
+            let (left, _) = value;
+            left.offset()
+        },
+        Ord::cmp,
         MARKER_CIRCLE_OPERATION,
     )?;
     Ok(Some(pairs))
@@ -2405,8 +2408,11 @@ pub(crate) fn project_marker_dimensioned_circles(
             )?;
             ctx.sort_unstable_by_key(
                 &mut roster,
-            |value| { let (left, _) = value; left.offset() },
-            Ord::cmp,
+                |value| {
+                    let (left, _) = value;
+                    left.offset()
+                },
+                Ord::cmp,
                 OPERATION,
             )?;
             // Only this suffix can have exactly one witness per dimension.
@@ -2577,12 +2583,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                     .filter(|marker| marker.feature_ref.as_deref() == Some(native_ref))
                     .filter(|marker| marker.coordinates_m.is_some()),
             )?;
-            ctx.sort_unstable_by_key(
-                &mut roster,
-            |value| value.offset(),
-            Ord::cmp,
-                OPERATION,
-            )?;
+            ctx.sort_unstable_by_key(&mut roster, |value| value.offset(), Ord::cmp, OPERATION)?;
             for (parameter, radius) in &radial_dimensions {
                 let Some(pairs) = terminal_repeated_radial_circle_pairs(
                     ctx,
@@ -2762,8 +2763,11 @@ pub(crate) fn project_marker_dimensioned_circles(
                 )?;
                 ctx.sort_unstable_by_key(
                     &mut roster,
-            |value| { let (left, _) = value; left.offset() },
-            Ord::cmp,
+                    |value| {
+                        let (left, _) = value;
+                        left.offset()
+                    },
+                    Ord::cmp,
                     OPERATION,
                 )?;
                 let Some((radial, [ru, rv])) = roster.get(radial_index).copied() else {
@@ -2806,8 +2810,11 @@ pub(crate) fn project_marker_dimensioned_circles(
                 }
                 ctx.sort_unstable_by_key(
                     &mut candidates,
-            |value| { let (left_center, left_marker, _, _) = value; (*left_center,left_marker.offset()) },
-            Ord::cmp,
+                    |value| {
+                        let (left_center, left_marker, _, _) = value;
+                        (*left_center, left_marker.offset())
+                    },
+                    Ord::cmp,
                     OPERATION,
                 )?;
                 charge_marker_circle_work(ctx, candidates.len(), 64)?;

@@ -29,6 +29,15 @@ const EPS_EXAMPLES_DIRECTED_SUBD_SUM_E9: f64 = 1.0e-9;
 /// Failure while assembling a hand-built example document.
 #[derive(Debug, thiserror::Error)]
 pub enum ExampleError {
+    /// A cache constructor rejected its payload.
+    #[error(transparent)]
+    Cache(#[from] crate::geometry::CacheContractError),
+    /// A resource policy refused example ordering.
+    #[error(transparent)]
+    Resource(#[from] cadmpeg_core::CodecError),
+    /// A procedural constructor rejected its payload.
+    #[error(transparent)]
+    Procedural(#[from] crate::geometry::ProceduralGeometryError),
     /// An analytic or topological geometry constructor rejected its payload.
     #[error("example geometry is invalid: {0}")]
     Geometry(&'static str),
@@ -65,6 +74,12 @@ type FaceDef = (
 
 /// A `10 mm` axis-aligned cube spanning the origin to `(10, 10, 10)`.
 pub fn unit_cube() -> Result<CadIr, ExampleError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )?;
     let s = 10.0_f64;
 
     let corners = [
@@ -228,10 +243,11 @@ pub fn unit_cube() -> Result<CadIr, ExampleError> {
         ir.model.loops.push(Loop {
             id: loop_id.clone(),
             face: cube_id!(FaceId, "face", name.clone()),
-            boundary: crate::topology::LoopBoundary::Ring(crate::topology::LoopRing::new(
-                coedge_ids.clone(),
-                Vec::new(),
-            )?),
+            boundary: crate::topology::LoopBoundary::Ring(
+                crate::topology::LoopRing::new(&ctx, coedge_ids.clone(), Vec::new())
+                    .map_err(crate::topology::LoopRingAdmissionError::from)?
+                    .map_err(crate::topology::LoopRingAdmissionError::from)?,
+            ),
         });
         ir.model.faces.push(Face {
             id: cube_id!(FaceId, "face", name.clone()),
@@ -288,13 +304,19 @@ pub fn unit_cube() -> Result<CadIr, ExampleError> {
         visible: None,
     });
 
-    ir.finalize();
+    ir.finalize(&ctx)?;
 
     Ok(ir)
 }
 
 /// A canonical fixture covering directed `SubD` and a Sum procedural surface.
-pub fn directed_subd_sum() -> Result<CadIr, crate::geometry::ProceduralGeometryError> {
+pub fn directed_subd_sum() -> Result<CadIr, ExampleError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )?;
     let mut ir = CadIr::empty();
     ir.model.curves = vec![
         Curve {
@@ -379,25 +401,39 @@ pub fn directed_subd_sum() -> Result<CadIr, crate::geometry::ProceduralGeometryE
                     SubdEdgeTag::Crease,
                     None,
                     [0.125, 0.875],
-                )
+                    &ctx,
+                )?
                 .map_err(|_| {
                     crate::geometry::ProceduralGeometryError::Payload(
                         "invalid directed SubD example edge",
                     )
                 })?,
-                SubdEdge::new([1, 2], [0.0, 0.5], SubdEdgeTag::SmoothX, None, [0.25, 0.75])
-                    .map_err(|_| {
-                        crate::geometry::ProceduralGeometryError::Payload(
-                            "invalid directed SubD example edge",
-                        )
-                    })?,
-                SubdEdge::new([2, 0], [1.0, 0.0], SubdEdgeTag::Smooth, None, [0.5, 0.5]).map_err(
-                    |_| {
-                        crate::geometry::ProceduralGeometryError::Payload(
-                            "invalid directed SubD example edge",
-                        )
-                    },
-                )?,
+                SubdEdge::new(
+                    [1, 2],
+                    [0.0, 0.5],
+                    SubdEdgeTag::SmoothX,
+                    None,
+                    [0.25, 0.75],
+                    &ctx,
+                )?
+                .map_err(|_| {
+                    crate::geometry::ProceduralGeometryError::Payload(
+                        "invalid directed SubD example edge",
+                    )
+                })?,
+                SubdEdge::new(
+                    [2, 0],
+                    [1.0, 0.0],
+                    SubdEdgeTag::Smooth,
+                    None,
+                    [0.5, 0.5],
+                    &ctx,
+                )?
+                .map_err(|_| {
+                    crate::geometry::ProceduralGeometryError::Payload(
+                        "invalid directed SubD example edge",
+                    )
+                })?,
             ],
             vec![SubdFace::new(vec![
                 SubdEdgeUse {
@@ -419,12 +455,13 @@ pub fn directed_subd_sum() -> Result<CadIr, crate::geometry::ProceduralGeometryE
                 )
             })?],
             Vec::new(),
-        )
+            &ctx,
+        )?
         .map_err(|_| {
             crate::geometry::ProceduralGeometryError::Payload("invalid directed SubD example cage")
         })?,
     });
-    ir.finalize();
+    ir.finalize(&ctx)?;
     Ok(ir)
 }
 

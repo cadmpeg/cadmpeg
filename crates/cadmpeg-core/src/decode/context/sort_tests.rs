@@ -15,13 +15,8 @@ fn charged_stable_sort_preserves_duplicate_order_and_permutation_cycles() {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("admitted test operation");
-        ctx.stable_sort_by(
-            &mut values,
-            |value| &value.0,
-            Ord::cmp,
-            "test stable sort",
-        )
-        .expect("admitted test operation");
+        ctx.stable_sort_by(&mut values, |value| &value.0, Ord::cmp, "test stable sort")
+            .expect("admitted test operation");
         assert_eq!(values, expected);
     }
 }
@@ -36,19 +31,15 @@ fn charged_stable_sort_scoped_refusal_preserves_input() {
         2 * 32 * u64::try_from(std::mem::size_of::<usize>()).expect("admitted test operation") - 1;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("admitted test operation");
-    assert!(
-        matches!(ctx.stable_sort_by(&mut values,
+    assert!(matches!(ctx.stable_sort_by(&mut values,
             |value| value,
-            Ord::cmp, "test stable sort"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::MaterializedBytes)
-    );
+            Ord::cmp, "test stable sort"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::MaterializedBytes));
     assert_eq!(values, expected);
     policy.limits.max_materialized_bytes += 1;
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("admitted test operation");
-    ctx.stable_sort_by(&mut values,
-            |value| value,
-            Ord::cmp, "test stable sort")
+    ctx.stable_sort_by(&mut values, |value| value, Ord::cmp, "test stable sort")
         .expect("admitted test operation");
     assert_eq!(values, (0..32).collect::<Vec<_>>());
 }
@@ -62,11 +53,9 @@ fn charged_stable_sort_work_refusal_preserves_input() {
     policy.limits.max_work_units = 1;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("admitted test operation");
-    assert!(
-        matches!(ctx.stable_sort_by(&mut values,
+    assert!(matches!(ctx.stable_sort_by(&mut values,
             |value| &value.0,
-            Ord::cmp, "test stable sort"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits)
-    );
+            Ord::cmp, "test stable sort"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits));
     assert_eq!(values, expected);
 }
 
@@ -79,17 +68,25 @@ fn copied_sort_refuses_before_key_extraction_and_keeps_original_refusal() {
         policy.limits.max_work_units = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let visits = std::cell::Cell::new(0);
-        let key = |value: &u64| { visits.set(visits.get() + 1); *value };
+        let key = |value: &u64| {
+            visits.set(visits.get() + 1);
+            *value
+        };
         let result = if stable {
             ctx.stable_sort_by_key(&mut values, key, Ord::cmp, "copied sort")
         } else {
             ctx.sort_unstable_by_key(&mut values, key, Ord::cmp, "copied sort")
         };
-        let CodecError::ResourceLimit(limit) = result.expect_err("refusal") else { panic!("resource refusal") };
+        let CodecError::ResourceLimit(limit) = result.expect_err("refusal") else {
+            panic!("resource refusal")
+        };
         assert_eq!(visits.get(), 0);
         assert_eq!(values, [2, 1]);
         assert_eq!(ctx.resource_refusal(), Some(limit));
-        let CodecError::ResourceLimit(repeated) = ctx.charge_work(0, "repeat").expect_err("fused") else { panic!("resource refusal") };
+        let CodecError::ResourceLimit(repeated) = ctx.charge_work(0, "repeat").expect_err("fused")
+        else {
+            panic!("resource refusal")
+        };
         assert_eq!(limit, repeated);
     }
 }
@@ -97,12 +94,21 @@ fn copied_sort_refuses_before_key_extraction_and_keeps_original_refusal() {
 #[test]
 fn copied_stable_sort_orders_external_identity_keys_without_copying_payloads() {
     let source = ["z", "a", "a", "b"];
-    let mut values: Vec<_> = (0..32).map(|index| (index % 4, index, "payload".to_owned())).collect();
+    let mut values: Vec<_> = (0..32)
+        .map(|index| (index % 4, index, "payload".to_owned()))
+        .collect();
     let mut expected = values.clone();
     expected.sort_by_key(|value| source[value.0]);
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
-    ctx.stable_sort_by_key(&mut values, |value| source[value.0], Ord::cmp, "external identities").expect("admitted sort");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    ctx.stable_sort_by_key(
+        &mut values,
+        |value| source[value.0],
+        Ord::cmp,
+        "external identities",
+    )
+    .expect("admitted sort");
     assert_eq!(values, expected);
 }
 
@@ -126,7 +132,9 @@ fn borrowed_sort_admits_nested_key_bytes_before_the_first_comparison() {
         } else {
             ctx.sort_unstable_by(&mut values, |value| value, compare, "nested sort")
         };
-        assert!(matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits));
+        assert!(
+            matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits)
+        );
         assert_eq!(comparisons.get(), 0);
         assert_eq!(values, expected);
     }

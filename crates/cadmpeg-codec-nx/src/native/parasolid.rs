@@ -260,8 +260,8 @@ pub(super) fn parasolid_group_records(
     }
     ctx.stable_sort_by_key(
         &mut groups,
-            |value| (value.origin.stream_ordinal(),value.inflated_offset),
-            Ord::cmp,
+        |value| (value.origin.stream_ordinal(), value.inflated_offset),
+        Ord::cmp,
         "sort NX GROUP records",
     )?;
     Ok(groups)
@@ -479,8 +479,8 @@ fn apply_group_state_events(
     }
     ctx.stable_sort_by(
         &mut events,
-            |value| &value.0,
-            Ord::cmp,
+        |value| &value.0,
+        Ord::cmp,
         "sort NX GROUP state events",
     )?;
     for (_, event) in events {
@@ -1284,12 +1284,7 @@ fn sort_deltas_events<T>(
     events: &mut [T],
     id: impl Fn(&T) -> &str,
 ) -> Result<(), CodecError> {
-    ctx.stable_sort_by(
-        events,
-            |value| id(value),
-            Ord::cmp,
-        "sort NX deltas events",
-    )?;
+    ctx.stable_sort_by(events, |value| id(value), Ord::cmp, "sort NX deltas events")?;
     Ok(())
 }
 
@@ -1854,8 +1849,8 @@ fn per_parasolid_stream<P: ParasolidStreamRecords>(
     }
     ctx.stable_sort_by(
         &mut records,
-            |value| P::id(value),
-            Ord::cmp,
+        |value| P::id(value),
+        Ord::cmp,
         "sort NX Parasolid records",
     )?;
     Ok(records)
@@ -1903,8 +1898,8 @@ fn per_parasolid_scan<P: ParasolidScanRecords>(
     }
     ctx.stable_sort_by(
         &mut records,
-            |value| P::id(value),
-            Ord::cmp,
+        |value| P::id(value),
+        Ord::cmp,
         "sort NX Parasolid records",
     )?;
     Ok(records)
@@ -2389,8 +2384,8 @@ pub(super) fn parasolid_chart_records(
     }
     ctx.stable_sort_by(
         &mut records,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort NX Parasolid records",
     )?;
     Ok(records)
@@ -3423,8 +3418,8 @@ pub(super) fn parasolid_field_names_records(
     }
     ctx.stable_sort_by(
         &mut records,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort NX Parasolid records",
     )?;
     Ok(records)
@@ -3538,8 +3533,8 @@ pub(super) fn parasolid_attribute_field_names(
     }
     ctx.stable_sort_by(
         &mut relations,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort NX attribute field name relations",
     )?;
     Ok(relations)
@@ -3629,11 +3624,7 @@ pub(super) fn parasolid_topology_attribute_list_references(
                 let ordinal = u32::try_from(stream_ordinal).map_err(|_| {
                     ctx.refuse_codec_limit("NX topology attribute stream ordinal", 0, 1)
                 })?;
-                ctx.reserve_vec(
-                    &mut references,
-                    1,
-                    "NX topology attribute list references",
-                )?;
+                ctx.reserve_vec(&mut references, 1, "NX topology attribute list references")?;
                 let digits = |value: u64| {
                     value
                         .checked_ilog10()
@@ -3731,8 +3722,8 @@ pub(super) fn parasolid_entity_51_records(
     }
     ctx.stable_sort_by(
         &mut records,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort NX Parasolid records",
     )?;
     Ok(records)
@@ -3970,44 +3961,44 @@ pub(super) fn parasolid_entity_value_records(
     }
     ctx.stable_sort_by(
         &mut records.integers,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort NX Parasolid value integers",
     )?;
     ctx.stable_sort_by(
         &mut records.doubles,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort NX Parasolid value doubles",
     )?;
     ctx.stable_sort_by(
         &mut records.strings,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort NX Parasolid value strings",
     )?;
     ctx.stable_sort_by(
         &mut records.vectors,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort NX Parasolid value vectors",
     )?;
     ctx.stable_sort_by(
         &mut records.axes,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort NX Parasolid value axes",
     )?;
     ctx.stable_sort_by(
         &mut records.tags,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort NX Parasolid value tags",
     )?;
     ctx.stable_sort_by(
         &mut records.unicode,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort NX Parasolid value unicode",
     )?;
     Ok(records)
@@ -4072,8 +4063,8 @@ fn sort_entity_51_uses<T>(
 ) -> Result<(), CodecError> {
     ctx.stable_sort_by(
         uses,
-            |value| id(value),
-            Ord::cmp,
+        |value| id(value),
+        Ord::cmp,
         "sort NX entity 51 value uses",
     )?;
     Ok(())
@@ -4479,8 +4470,8 @@ pub(super) fn parasolid_topology_attribute_class_uses(
     }
     ctx.stable_sort_by(
         &mut uses,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort NX Parasolid uses",
     )?;
     Ok(uses)
@@ -4545,8 +4536,8 @@ pub(super) fn parasolid_attribute_class_uses(
     }
     ctx.stable_sort_by(
         &mut uses,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort NX Parasolid uses",
     )?;
     Ok(uses)
@@ -4777,8 +4768,8 @@ pub(super) fn parasolid_attribute_field_uses(
     }
     ctx.stable_sort_by(
         &mut uses,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort NX Parasolid uses",
     )?;
     Ok(uses)

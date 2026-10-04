@@ -1148,7 +1148,8 @@ fn presentation_records_retain_non_color_geometry_owners() {
             .source_object
             .as_ref()
             .expect("styled curve owner")
-            .object_id.as_str(),
+            .object_id
+            .as_str(),
         "#6"
     );
     let surface = result
@@ -1163,7 +1164,8 @@ fn presentation_records_retain_non_color_geometry_owners() {
             .source_object
             .as_ref()
             .expect("annotation plane owner")
-            .object_id.as_str(),
+            .object_id
+            .as_str(),
         "#10"
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
@@ -1197,7 +1199,8 @@ fn complex_styled_item_decodes_color_and_owns_its_curve() {
             .source_object
             .as_ref()
             .expect("complex styled curve owner")
-            .object_id.as_str(),
+            .object_id
+            .as_str(),
         "#6"
     );
     assert!(result.ir().model.appearance_bindings.iter().any(|binding| {

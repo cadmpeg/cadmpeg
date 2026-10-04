@@ -1450,7 +1450,14 @@ pub(crate) fn support_uv_records(
     }
     let mut label_start = 0;
     while label_start < stream.len() {
-        let Some(relative) = ctx.find_bytes_iter(&stream[label_start..], b"values", "scan NX inline support-UV records")?.next() else {
+        let Some(relative) = ctx
+            .find_bytes_iter(
+                &stream[label_start..],
+                b"values",
+                "scan NX inline support-UV records",
+            )?
+            .next()
+        else {
             break;
         };
         let label = label_start + relative;

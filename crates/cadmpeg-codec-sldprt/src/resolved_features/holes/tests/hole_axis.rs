@@ -745,9 +745,11 @@ fn hole_topology_uses_exact_cylinder_spans() {
         face: face.id.clone(),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
             cadmpeg_ir::topology::LoopRing::new(
+                &cadmpeg_test_support::service_decode_context(),
                 vec![CoedgeId::mint("test:model:entity#coedge").expect("identity grammar")],
                 Vec::new(),
             )
+            .expect("fixture ring admission")
             .expect("valid loop ring"),
         ),
     };

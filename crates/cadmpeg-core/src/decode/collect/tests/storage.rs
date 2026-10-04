@@ -9,9 +9,11 @@ use crate::CodecError;
 pub(super) fn storage_cases<T>(
     small: u64,
     grown: u64,
+    small_peak: u64,
+    grown_peak: u64,
     build: impl Fn(&DecodeContext<'_>, usize) -> Result<T, CodecError>,
 ) {
-    for (count, bytes) in [(1, small), (5, grown)] {
+    for (count, bytes, peak) in [(1, small, small_peak), (5, grown, grown_peak)] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = bytes;
@@ -37,7 +39,7 @@ pub(super) fn storage_cases<T>(
 
         let arena = DecodeArena::new();
         policy.limits.max_retained_bytes = 0;
-        policy.limits.max_materialized_bytes = bytes;
+        policy.limits.max_materialized_bytes = peak;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
         let mut reservation = ctx
             .reserve_scoped(0, "test scoped storage")
@@ -46,7 +48,7 @@ pub(super) fn storage_cases<T>(
             .with_storage(|| build(&ctx, count))
             .expect("scoped storage");
         let error = ctx
-            .reserve_scoped(1, "verify scoped charge")
+            .reserve_scoped(peak - bytes + 1, "verify scoped charge")
             .expect_err("all scoped bytes used");
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::MaterializedBytes && limit.used == bytes
@@ -62,14 +64,33 @@ pub(super) fn storage_cases<T>(
         drop(reservation);
         ctx.reserve_scoped(bytes, "released scoped storage")
             .expect("scope released its bytes");
+
+        let arena = DecodeArena::new();
+        policy.limits.max_materialized_bytes = peak - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+        let mut reservation = ctx
+            .reserve_scoped(0, "below scoped peak")
+            .expect("empty scope");
+        let Err(error) = reservation.with_storage(|| build(&ctx, count)) else {
+            panic!("one byte below the replacement peak must refuse");
+        };
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::MaterializedBytes
+                && ctx.resource_refusal() == Some(limit)));
     }
 }
 
 macro_rules! storage_case {
+    ($name:ident, $small:expr, $grown:expr, peak = ($small_peak:expr, $grown_peak:expr), $build:expr) => {
+        #[test]
+        fn $name() {
+            storage_cases($small, $grown, $small_peak, $grown_peak, $build);
+        }
+    };
     ($name:ident, $small:expr, $grown:expr, $build:expr) => {
         #[test]
         fn $name() {
-            storage_cases($small, $grown, $build);
+            storage_cases($small, $grown, $small, $grown, $build);
         }
     };
 }
@@ -80,10 +101,12 @@ storage_case!(
     40,
     |ctx: &DecodeContext<'_>, count| { ctx.collection_vec::<u64>(count, "collection storage") }
 );
+// The growth peak includes the eight new u64 slots and four old slots.
 storage_case!(
     reserve_vec_storage,
     32,
     64,
+    peak = (32, 64 + 32),
     |ctx: &DecodeContext<'_>, count| {
         let mut values = Vec::new();
         for value in 0..count {
@@ -98,10 +121,12 @@ storage_case!(
         Ok(values)
     }
 );
+// The growth peak includes the eight new u64 slots and four old slots.
 storage_case!(
     push_vec_storage,
     32,
     64,
+    peak = (32, 64 + 32),
     |ctx: &DecodeContext<'_>, count| {
         let mut values = Vec::new();
         for value in 0..count {
@@ -119,10 +144,12 @@ storage_case!(
         Ok(values)
     }
 );
+// The growth peak includes the eight new u64 slots and four old slots.
 storage_case!(
     collect_vec_storage,
     32,
     64,
+    peak = (32, 64 + 32),
     |ctx: &DecodeContext<'_>, count| {
         ctx.collect_vec(
             (0..count).map(|value| u64::try_from(value).expect("small test index")),
@@ -130,10 +157,12 @@ storage_case!(
         )
     }
 );
+// The growth peak includes the eight new u64 slots and four old slots.
 storage_case!(
     try_collect_vec_storage,
     32,
     64,
+    peak = (32, 64 + 32),
     |ctx: &DecodeContext<'_>, count| {
         ctx.try_collect_vec(
             (0..count)
@@ -144,10 +173,12 @@ storage_case!(
 );
 // u64 set buckets use 32/64 bytes, 4/8 control bytes, sixteen trailing
 // controls and at most fifteen alignment bytes. Map buckets have two lanes.
+// The growth peak includes both new and old hash-set bucket storage.
 storage_case!(
     reserve_set_storage,
     67,
     103,
+    peak = (67, 103 + 67),
     |ctx: &DecodeContext<'_>, count| {
         let mut values = HashSet::<u64>::new();
         for value in 0..count {
@@ -162,10 +193,12 @@ storage_case!(
         Ok(values)
     }
 );
+// The growth peak includes both new and old hash-map bucket storage.
 storage_case!(
     reserve_map_storage,
     99,
     167,
+    peak = (99, 167 + 99),
     |ctx: &DecodeContext<'_>, count| {
         let mut values = HashMap::<u64, u64>::new();
         for value in 0..count {
@@ -180,10 +213,12 @@ storage_case!(
         Ok(values)
     }
 );
+// The growth peak includes both new and old hash-set bucket storage.
 storage_case!(
     insert_hash_set_storage,
     67,
     103,
+    peak = (67, 103 + 67),
     |ctx: &DecodeContext<'_>, count| {
         let mut values = HashSet::new();
         for value in 0..count {
@@ -196,10 +231,12 @@ storage_case!(
         Ok(values)
     }
 );
+// The growth peak includes both new and old hash-map bucket storage.
 storage_case!(
     insert_hash_map_storage,
     99,
     167,
+    peak = (99, 167 + 99),
     |ctx: &DecodeContext<'_>, count| {
         let mut values = HashMap::new();
         for value in 0..count {
@@ -213,10 +250,12 @@ storage_case!(
         Ok(values)
     }
 );
+// The growth peak includes both new and old hash-map bucket storage.
 storage_case!(
     admit_hash_map_entry_storage,
     99,
     167,
+    peak = (99, 167 + 99),
     |ctx: &DecodeContext<'_>, count| {
         let mut values = HashMap::new();
         for value in 0..count {
@@ -228,11 +267,11 @@ storage_case!(
     }
 );
 // A u64/u64 B-tree node bound is 11 lane pairs, sixteen pointer widths
-// and two alignment widths. Five new entries use 1+2+3+3+4 node bounds.
+// and two alignment widths. One or five new entries admit one 320-byte node.
 storage_case!(
     insert_btree_map_storage,
     320,
-    4160,
+    320,
     |ctx: &DecodeContext<'_>, count| {
         let mut values = BTreeMap::new();
         for value in 0..count {
@@ -246,10 +285,11 @@ storage_case!(
         Ok(values)
     }
 );
+// One or five map entries admit one 320-byte backing node.
 storage_case!(
     admit_btree_entry_storage,
     320,
-    4160,
+    320,
     |ctx: &DecodeContext<'_>, count| {
         let mut values = BTreeMap::new();
         for value in 0..count {
@@ -260,10 +300,11 @@ storage_case!(
         Ok(values)
     }
 );
+// One or five set entries admit one 232-byte backing node.
 storage_case!(
     insert_btree_set_storage,
     232,
-    3016,
+    232,
     |ctx: &DecodeContext<'_>, count| {
         let mut values = BTreeSet::new();
         for value in 0..count {
@@ -356,10 +397,12 @@ storage_case!(
         )
     }
 );
+// The growth peak includes both new and old hash-set bucket storage.
 storage_case!(
     collect_hash_set_storage,
     67,
     103,
+    peak = (67, 103 + 67),
     |ctx: &DecodeContext<'_>, count| {
         ctx.collect_hash_set(
             (0..count).map(|value| u64::try_from(value).expect("small test index")),
@@ -367,10 +410,12 @@ storage_case!(
         )
     }
 );
+// The growth peak includes both new and old hash-set bucket storage.
 storage_case!(
     extend_hash_set_storage,
     67,
     103,
+    peak = (67, 103 + 67),
     |ctx: &DecodeContext<'_>, count| {
         let mut values = HashSet::new();
         ctx.extend_hash_set(
@@ -381,10 +426,11 @@ storage_case!(
         Ok(values)
     }
 );
+// One or five collected set entries admit one 232-byte backing node.
 storage_case!(
     collect_btree_set_storage,
     232,
-    3016,
+    232,
     |ctx: &DecodeContext<'_>, count| {
         ctx.collect_btree_set(
             (0..count).map(|value| u64::try_from(value).expect("small test index")),
@@ -402,10 +448,12 @@ storage_case!(
         Ok(values)
     }
 );
+// The growth peak includes the eight new u64 slots and four old slots.
 storage_case!(
     push_back_storage,
     32,
     64,
+    peak = (32, 64 + 32),
     |ctx: &DecodeContext<'_>, count| {
         let mut values = VecDeque::new();
         for _ in 0..count {
@@ -414,10 +462,12 @@ storage_case!(
         Ok(values)
     }
 );
+// The growth peak includes the eight new u64 slots and four old slots.
 storage_case!(
     push_front_storage,
     32,
     64,
+    peak = (32, 64 + 32),
     |ctx: &DecodeContext<'_>, count| {
         let mut values = VecDeque::new();
         for _ in 0..count {
@@ -426,10 +476,12 @@ storage_case!(
         Ok(values)
     }
 );
+// The largest text growth has five live bytes and four old bytes.
 storage_case!(
     join_display_retained_storage,
     1,
     5,
+    peak = (1, 5 + 4),
     |ctx: &DecodeContext<'_>, count| {
         ctx.join_display_retained(std::iter::repeat_n("x", count), "", "display join storage")
     }
@@ -441,10 +493,12 @@ storage_case!(
     40,
     |ctx: &DecodeContext<'_>, count| { ctx.vector_storage::<u64>(count, "vector backing storage") }
 );
+// The growth peak includes the eight new u64 slots and four old slots.
 storage_case!(
     reserve_capacity_bytes,
     32,
     64,
+    peak = (32, 64 + 32),
     |ctx: &DecodeContext<'_>, count| {
         let mut values = Vec::new();
         for _ in 0..count {
@@ -457,3 +511,76 @@ storage_case!(
 
 mod retained;
 mod scoped;
+
+#[test]
+fn btree_node_bound_increments_at_first_entry_and_each_five_keys() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("test context");
+    // Each u64/u64 node has eleven lane pairs, sixteen pointer widths and two alignments.
+    for (len, bytes) in [
+        (0, 320),
+        (1, 0),
+        (4, 0),
+        (5, 320),
+        (6, 0),
+        (9, 0),
+        (10, 320),
+    ] {
+        assert_eq!(
+            ctx.tree_growth_bytes::<u64, u64>(len, "node bound")
+                .expect("bounded entry count"),
+            bytes
+        );
+    }
+    let error = ctx
+        .tree_growth_bytes::<u64, u64>(usize::MAX, "node bound")
+        .expect_err("entry count overflow");
+    assert_eq!(error.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(error.operation, "node bound");
+}
+
+#[test]
+fn btree_node_bound_refuses_before_bound_step_and_keeps_map_unchanged() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // Six entries admit two 320-byte nodes; the sixth must refuse one byte below that total.
+    policy.limits.max_retained_bytes = 639;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+    let mut values = BTreeMap::new();
+    for key in 0u64..5 {
+        ctx.insert_btree_map(&mut values, key, 0u64, "bound step")
+            .expect("node bound admits this key");
+    }
+    assert_eq!(
+        ctx.insert_btree_map(&mut values, 0, 7, "replacement")
+            .expect("replacement needs no additional backing node"),
+        Some(0)
+    );
+    let error = ctx
+        .insert_btree_map(&mut values, 5, 0, "bound step")
+        .expect_err("sixth key exceeds node bound");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.used == 320 && limit.additional == 320 && limit.operation == "bound step"
+            && ctx.resource_refusal() == Some(limit)));
+    assert_eq!(values.len(), 5);
+    assert_eq!(values[&0], 7);
+    assert!(!values.contains_key(&5));
+
+    policy.limits.max_retained_bytes = 640;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+    let mut values = BTreeMap::new();
+    for key in 0u64..10 {
+        ctx.insert_btree_map(&mut values, key, 0u64, "bound step")
+            .expect("node bound admits this key");
+    }
+    assert_eq!(values.len(), 10);
+    let error = ctx
+        .insert_btree_map(&mut values, 10, 0, "bound step")
+        .expect_err("eleventh key requires third node admission");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.used == 640 && limit.additional == 320));
+    assert_eq!(values.len(), 10);
+}

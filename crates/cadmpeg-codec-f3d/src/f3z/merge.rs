@@ -9,7 +9,6 @@ use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::SourceFidelity;
 use cadmpeg_ir::{Native, NativeRecord};
 use serde::de::DeserializeOwned;
-use serde::Serialize;
 use serde_json::{Map, Value};
 
 use super::archive::{ArchiveSession, ClassifiedMember};
@@ -247,7 +246,7 @@ impl MergeSession<'_, '_> {
                 ctx: self.ctx,
                 occurrence: &occurrence,
             };
-            parent_ir.model.extend_rewritten_for_decode(
+            parent_ir.model.extend_rewritten(
                 self.ctx,
                 component_ir.model,
                 &mut scope,
@@ -382,7 +381,7 @@ fn rescope_fidelity(
 ) -> Result<SourceFidelity, CodecError> {
     let (mut annotations, records) = source.into_parts();
     annotations
-        .map_ids_for_decode(
+        .map_ids(
             ctx,
             |id| match rescope_charged(ctx, id, occurrence)? {
                 Some(id) => Ok(id),
@@ -406,9 +405,8 @@ fn rescope_fidelity(
             "retain F3Z provenance stream",
         )?)
         .map_err(CodecError::malformed)?;
-        let stream =
-            StreamHandle::new_for_decode(ctx, stream, "allocate annotation stream handle")?;
-        builder.note_for_decode(
+        let stream = StreamHandle::new(ctx, stream, "allocate annotation stream handle")?;
+        builder.note(
             ctx,
             &id,
             &stream,
@@ -539,44 +537,21 @@ struct OccurrenceScope<'r, 'a> {
 impl EntityRewrite for OccurrenceScope<'_, '_> {
     type Error = CodecError;
 
-    fn rewrite<T: Serialize + DeserializeOwned>(&mut self, entity: T) -> Result<T, CodecError> {
-        let refusal = std::cell::RefCell::new(None);
-        let rewritten = cadmpeg_ir::schema::rewrite::identities(&entity, |id| {
-            rewrite_identity(self.ctx, id, self.occurrence, &refusal)
-        });
-        let value = serde_value::to_value(rewritten);
-        if let Some(error) = refusal.into_inner() {
-            return Err(error);
-        }
-        let value = value.map_err(|error| {
-            CodecError::malformed(format_args!("model serialization failed: {error}"))
-        })?;
-        crate::value_tree::from_value(value).map_err(|error| {
-            CodecError::malformed(format_args!("merged model round-trip failed: {error}"))
-        })
-    }
-}
-
-fn rewrite_identity(
-    ctx: &DecodeContext<'_>,
-    id: &str,
-    occurrence: &str,
-    refusal: &std::cell::RefCell<Option<CodecError>>,
-) -> String {
-    if refusal.borrow().is_some() {
-        return String::new();
-    }
-    let rewritten = match rescope_charged(ctx, id, occurrence) {
-        Ok(Some(rewritten)) => Ok(rewritten),
-        Ok(None) => ctx.format_retained(format_args!("{id}"), "copy F3Z unchanged identity"),
-        Err(error) => Err(error),
-    };
-    match rewritten {
-        Ok(rewritten) => rewritten,
-        Err(error) => {
-            *refusal.borrow_mut() = Some(error);
-            String::new()
-        }
+    fn rewrite<T: cadmpeg_ir::schema::rewrite::typed::RewriteIdentities>(
+        &mut self,
+        entity: T,
+    ) -> Result<T, CodecError> {
+        cadmpeg_ir::schema::rewrite::identities(
+            self.ctx,
+            "rewrite F3Z model identity",
+            entity,
+            |id: &str| match rescope_charged(self.ctx, id, self.occurrence)? {
+                Some(rewritten) => Ok(rewritten),
+                None => self
+                    .ctx
+                    .copy_retained_text(id, "copy F3Z unchanged identity"),
+            },
+        )
     }
 }
 
@@ -644,48 +619,15 @@ fn typed_fields(
     arena: &str,
     occurrence: &str,
 ) -> Result<Map<String, Value>, CodecError> {
-    let typed_error = |error: serde_json::Error| {
-        CodecError::from(cadmpeg_ir::native::NativeConvertError::InvalidCollection(
-            format_args!(
-                "F3D native arena `{arena}` record `{}` typed admission: {error}",
-                record.id()
-            )
-            .to_string(),
-        ))
-    };
     macro_rules! typed {
-        ($type:path) => {{
-            let mut value = Value::Object(record.fields_for_decode(ctx)?);
-            let Value::Object(fields) = &mut value else {
-                return Err(CodecError::malformed(
-                    "F3Z native record fields are not an object",
-                ));
-            };
-            ctx.charge_collection_items(1, "insert F3Z typed native identity field")?;
-            fields.insert(
-                "id".into(),
-                Value::String(ctx.format_retained(
-                    format_args!("{}", record.id()),
-                    "copy F3Z typed native identity",
-                )?),
-            );
-            let typed: $type = serde_json::from_value(value).map_err(typed_error)?;
-            let refusal = std::cell::RefCell::new(None);
-            let rewritten = cadmpeg_ir::schema::rewrite::identities(&typed, |id| {
-                rewrite_identity(ctx, id, occurrence, &refusal)
-            });
-            let value = serde_json::to_value(rewritten);
-            if let Some(error) = refusal.into_inner() {
-                return Err(error);
-            }
-            let Value::Object(mut fields) = value.map_err(typed_error)? else {
-                return Err(CodecError::malformed(
-                    "F3Z typed native record is not an object",
-                ));
-            };
-            fields.remove("id");
-            fields
-        }};
+        ($type:path) => {
+            record.rewrite_fields::<$type, _>(ctx, |id| {
+                match rescope_charged(ctx, id, occurrence)? {
+                    Some(rewritten) => Ok(rewritten),
+                    None => ctx.copy_retained_text(id, "copy F3Z unchanged native identity"),
+                }
+            })?
+        };
     }
 
     Ok(match arena {
@@ -710,7 +652,7 @@ fn typed_fields(
         "persistent_design_links" => typed!(crate::records::sketch_links::PersistentDesignLink),
         "persistent_subentity_tags" => typed!(crate::records::sketch_links::PersistentSubentityTag),
         "sketch_curve_links" => typed!(crate::records::sketch_links::SketchCurveLink),
-        _ => record.fields_for_decode(ctx)?,
+        _ => record.copy_fields(ctx)?,
     })
 }
 
@@ -966,16 +908,19 @@ mod tests {
 
     #[test]
     fn f3z_sibling_reassignment_refuses_work_limit() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_work_units = 2;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut occurrences = [
-            root_occurrence("f3d:model:occurrence#0", 0),
-            root_occurrence("f3d:model:occurrence#1", 0),
-        ];
-        let error = make_sibling_ordinals_unique(&ctx, &mut occurrences).unwrap_err();
+        // Each probe rebuilds the occurrences and admits both complete ordinal-index keys before reassignment.
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "find F3Z sibling ordinal",
+            0,
+            |ctx| {
+                let mut occurrences = [
+                    root_occurrence("f3d:model:occurrence#0", 0),
+                    root_occurrence("f3d:model:occurrence#1", 0),
+                ];
+                make_sibling_ordinals_unique(ctx, &mut occurrences)
+            },
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "find F3Z sibling ordinal")

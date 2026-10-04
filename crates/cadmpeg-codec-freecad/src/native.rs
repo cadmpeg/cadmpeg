@@ -551,8 +551,8 @@ mod tests {
         cadmpeg_test_support::service_decode_context()
             .stable_sort_by(
                 &mut ordered,
-            |value| &value.index,
-            Ord::cmp,
+                |value| &value.index,
+                Ord::cmp,
                 "test string tables sort",
             )
             .unwrap();
@@ -2985,7 +2985,11 @@ pub(crate) enum ExternalDocument {
 
 impl ExternalDocument {
     pub(crate) fn clone_with_context(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
-        let value = NonBlankString::for_decode(ctx, ctx.copy_retained_text(self.as_str(), "FreeCAD external document copy")?, "validate nonblank text")?
+        let value = NonBlankString::for_decode(
+            ctx,
+            ctx.copy_retained_text(self.as_str(), "FreeCAD external document copy")?,
+            "validate nonblank text",
+        )?
         .ok_or_else(|| CodecError::Malformed("external document is empty".into()))?;
         Ok(match self {
             Self::File(_) => Self::File(value),
@@ -3014,11 +3018,15 @@ impl ExternalDocument {
     ) -> Result<Option<Self>, String> {
         match (document, attribute) {
             (None, None | Some("file")) => Ok(None),
-            (Some(path), Some("file")) => path.try_into().ok()
+            (Some(path), Some("file")) => path
+                .try_into()
+                .ok()
                 .map(Self::File)
                 .map(Some)
                 .ok_or_else(|| "external document file path must not be empty".to_owned()),
-            (Some(name), None) => name.try_into().ok()
+            (Some(name), None) => name
+                .try_into()
+                .ok()
                 .map(Self::Name)
                 .map(Some)
                 .ok_or_else(|| "external document name must not be empty".to_owned()),
@@ -3052,7 +3060,11 @@ impl LinkTarget {
             .object
             .as_ref()
             .map(|value| {
-                NonBlankString::for_decode(ctx, ctx.copy_retained_text(value.as_str(), "FreeCAD link object copy")?, "validate nonblank text")?
+                NonBlankString::for_decode(
+                    ctx,
+                    ctx.copy_retained_text(value.as_str(), "FreeCAD link object copy")?,
+                    "validate nonblank text",
+                )?
                 .ok_or_else(|| CodecError::Malformed("link object is empty".into()))
             })
             .transpose()?;
@@ -3070,7 +3082,9 @@ impl LinkTarget {
 
     /// Admits a target from a parsed link element, or absence when the element
     /// selects no document, object, or subelement.
-    pub(crate) fn optional_from_wire<T: TryInto<NonBlankString>>(wire: LinkTargetWire<T>) -> Result<Option<Self>, String> {
+    pub(crate) fn optional_from_wire<T: TryInto<NonBlankString>>(
+        wire: LinkTargetWire<T>,
+    ) -> Result<Option<Self>, String> {
         let document =
             ExternalDocument::from_wire(wire.document, wire.document_attribute.as_deref())?;
         let object = wire.object.and_then(|value| value.try_into().ok());

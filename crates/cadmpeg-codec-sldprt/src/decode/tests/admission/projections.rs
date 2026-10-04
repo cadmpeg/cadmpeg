@@ -10,7 +10,7 @@ use std::io::Cursor;
 
 use super::{
     collection_refusal_at, collection_refusal_with_options, retained_refusal_at,
-    work_refusal_with_options,
+    work_refusal_with_options, work_refusal_with_request,
 };
 
 fn regeneration_parent_source() -> Vec<u8> {
@@ -66,10 +66,11 @@ fn metadata_regeneration_parent_refuses_work_limit() {
         container_only: true,
         ..DecodeOptions::default()
     };
-    let refusal = work_refusal_with_options(
+    let refusal = work_refusal_with_request(
         &regeneration_parent_source(),
         options,
         "install decoded feature regeneration parent",
+        Some(1), // One visitor work unit; key reads have separate requests.
     );
     assert_eq!(
         refusal.dimension,
@@ -131,10 +132,11 @@ fn metadata_curve_projection_refuses_work_limit() {
         container_only: true,
         ..DecodeOptions::default()
     };
-    let refusal = work_refusal_with_options(
+    let refusal = work_refusal_with_request(
         &composite_curve_source(),
         options,
         "project SLDPRT composite curve segments",
+        Some(1), // One visitor work unit; key reads have separate requests.
     );
     assert_eq!(
         refusal.dimension,
@@ -196,10 +198,11 @@ fn metadata_edit_projection_refuses_work_limit() {
         container_only: true,
         ..DecodeOptions::default()
     };
-    let refusal = work_refusal_with_options(
+    let refusal = work_refusal_with_request(
         &variable_fillet_source(),
         options,
         "scan SLDPRT variable fillet radii",
+        Some(1), // One visitor work unit; key reads have separate requests.
     );
     assert_eq!(
         refusal.dimension,
@@ -261,10 +264,11 @@ fn metadata_native_definition_refuses_work_limit() {
         container_only: true,
         ..DecodeOptions::default()
     };
-    let refusal = work_refusal_with_options(
+    let refusal = work_refusal_with_request(
         &native_definition_source(),
         options,
         "collect SLDPRT native definition parameters",
+        Some(1), // One visitor work unit; key reads have separate requests.
     );
     assert_eq!(
         refusal.dimension,
@@ -412,10 +416,11 @@ fn metadata_construction_binding_refuses_work_limit() {
         container_only: true,
         ..DecodeOptions::default()
     };
-    let refusal = work_refusal_with_options(
+    let refusal = work_refusal_with_request(
         &construction_reference_source(),
         options,
         "index SLDPRT native construction sources",
+        Some(1), // One visitor work unit; key reads have separate requests.
     );
     assert_eq!(
         refusal.dimension,
@@ -448,10 +453,11 @@ fn metadata_offset_plane_binding_refuses_work_limit() {
         container_only: true,
         ..DecodeOptions::default()
     };
-    let refusal = work_refusal_with_options(
+    let refusal = work_refusal_with_request(
         &construction_reference_source(),
         options,
         "index SLDPRT offset plane ordinals",
+        Some(1), // One visitor work unit; key reads have separate requests.
     );
     assert_eq!(
         refusal.dimension,
@@ -503,10 +509,11 @@ fn metadata_parameter_projection_refuses_work_limit() {
         container_only: true,
         ..DecodeOptions::default()
     };
-    let refusal = work_refusal_with_options(
+    let refusal = work_refusal_with_request(
         &native_definition_source(),
         options,
         "classify SLDPRT parameter owners",
+        Some(1), // One visitor work unit; key reads have separate requests.
     );
     assert_eq!(
         refusal.dimension,
@@ -539,10 +546,11 @@ fn metadata_parameter_ordering_refuses_work_limit() {
         container_only: true,
         ..DecodeOptions::default()
     };
-    let refusal = work_refusal_with_options(
+    let refusal = work_refusal_with_request(
         &native_definition_source(),
         options,
         "order SLDPRT parameter dependencies",
+        Some(1), // One visitor work unit; key reads have separate requests.
     );
     assert_eq!(
         refusal.dimension,
@@ -594,10 +602,11 @@ fn metadata_parameter_aliases_refuse_work_limit() {
         container_only: true,
         ..DecodeOptions::default()
     };
-    let refusal = work_refusal_with_options(
+    let refusal = work_refusal_with_request(
         &native_definition_source(),
         options,
         "scan SLDPRT parameter aliases",
+        Some(1), // One visitor work unit; key reads have separate requests.
     );
     assert_eq!(
         refusal.dimension,
@@ -624,10 +633,11 @@ fn metadata_parameter_value_states_refuse_collection_limit() {
 #[test]
 fn metadata_parameter_value_states_refuse_work_limit() {
     let options = DecodeOptions::default();
-    let refusal = work_refusal_with_options(
+    let refusal = work_refusal_with_request(
         &native_definition_source(),
         options,
         "collect SLDPRT parameter value state",
+        Some(1), // One visitor work unit; key reads have separate requests.
     );
     assert_eq!(
         refusal.dimension,
@@ -1558,10 +1568,11 @@ fn metadata_thread_enrichment_refuses_work_limit() {
         container_only: true,
         ..DecodeOptions::default()
     };
-    let limit = work_refusal_with_options(
+    let limit = work_refusal_with_request(
         &native_definition_source(),
         options,
         "enrich SLDPRT cosmetic thread diameters",
+        Some(1), // One visitor work unit; key reads have separate requests.
     );
     assert_eq!(
         limit.dimension,
@@ -1572,10 +1583,11 @@ fn metadata_thread_enrichment_refuses_work_limit() {
 
 #[test]
 fn geometry_thread_enrichment_refuses_work_limit() {
-    let limit = work_refusal_with_options(
+    let limit = work_refusal_with_request(
         &geometry_parameter_source(),
         DecodeOptions::default(),
         "enrich SLDPRT cosmetic thread diameters",
+        Some(1),
     );
     assert_eq!(
         limit.dimension,
@@ -1632,10 +1644,11 @@ fn metadata_hole_ownership_refuses_work_limit() {
         container_only: true,
         ..DecodeOptions::default()
     };
-    let limit = work_refusal_with_options(
+    let limit = work_refusal_with_request(
         &hole_ownership_source(false),
         options,
         "enrich SLDPRT hole profile ownership",
+        Some(1), // One visitor work unit; key reads have separate requests.
     );
     assert_eq!(
         limit.dimension,
@@ -1646,15 +1659,17 @@ fn metadata_hole_ownership_refuses_work_limit() {
 
 #[test]
 fn geometry_hole_ownership_refuses_work_limit() {
-    let limit = work_refusal_with_options(
+    let limit = work_refusal_with_request(
         &hole_ownership_source(true),
         DecodeOptions::default(),
         "enrich SLDPRT hole profile ownership",
+        Some(1),
     );
     assert_eq!(
         limit.dimension,
         cadmpeg_core::decode::ResourceDimension::WorkUnits
     );
+    // Select the single entity visit, independently of key-copy requests with the same label.
     assert_eq!(limit.additional, 1);
 }
 
@@ -1728,10 +1743,11 @@ fn metadata_profiled_hole_projection_refuses_work_limit() {
         container_only: true,
         ..DecodeOptions::default()
     };
-    let limit = work_refusal_with_options(
+    let limit = work_refusal_with_request(
         &hole_ownership_source(false),
         options,
         "project SLDPRT profiled hole constructions",
+        Some(1), // One visitor work unit; key reads have separate requests.
     );
     assert_eq!(
         limit.dimension,
@@ -1777,10 +1793,11 @@ fn geometry_profiled_hole_projection_refuses_collection_limit() {
 #[test]
 fn geometry_profiled_hole_projection_refuses_work_limit() {
     let options = DecodeOptions::default();
-    let limit = work_refusal_with_options(
+    let limit = work_refusal_with_request(
         &hole_ownership_source(true),
         options,
         "project SLDPRT profiled hole constructions",
+        Some(1),
     );
     assert_eq!(
         limit.dimension,
@@ -1829,10 +1846,11 @@ fn metadata_hole_position_projection_refuses_work_limit() {
         container_only: true,
         ..DecodeOptions::default()
     };
-    let limit = work_refusal_with_options(
+    let limit = work_refusal_with_request(
         &hole_ownership_source(false),
         options,
         "project SLDPRT hole position sketches",
+        Some(1), // One visitor work unit; key reads have separate requests.
     );
     assert_eq!(
         limit.dimension,
@@ -1878,10 +1896,11 @@ fn geometry_hole_position_projection_refuses_collection_limit() {
 #[test]
 fn geometry_hole_position_projection_refuses_work_limit() {
     let options = DecodeOptions::default();
-    let limit = work_refusal_with_options(
+    let limit = work_refusal_with_request(
         &hole_ownership_source(true),
         options,
         "project SLDPRT hole position sketches",
+        Some(1),
     );
     assert_eq!(
         limit.dimension,
@@ -1930,10 +1949,11 @@ fn metadata_bore_backed_position_projection_refuses_work_limit() {
         container_only: true,
         ..DecodeOptions::default()
     };
-    let limit = work_refusal_with_options(
+    let limit = work_refusal_with_request(
         &hole_ownership_source(false),
         options,
         "project SLDPRT bore backed position sketches",
+        Some(1), // One visitor work unit; key reads have separate requests.
     );
     assert_eq!(
         limit.dimension,
@@ -1960,10 +1980,11 @@ fn geometry_bore_backed_position_projection_refuses_collection_limit() {
 #[test]
 fn geometry_bore_backed_position_projection_refuses_work_limit() {
     let options = DecodeOptions::default();
-    let limit = work_refusal_with_options(
+    let limit = work_refusal_with_request(
         &hole_ownership_source(true),
         options,
         "project SLDPRT bore backed position sketches",
+        Some(1), // One visitor work unit; key reads have separate requests.
     );
     assert_eq!(
         limit.dimension,

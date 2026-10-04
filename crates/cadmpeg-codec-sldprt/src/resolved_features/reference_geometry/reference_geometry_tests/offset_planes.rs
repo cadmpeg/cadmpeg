@@ -207,7 +207,11 @@ fn offset_plane_frame_translates_its_reference_frame() {
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             definition,
-            (Vec::new()).try_into().unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(
+                Vec::new(),
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .unwrap(),
         ),
         native_ref: Some(native_ref.into()),
     };

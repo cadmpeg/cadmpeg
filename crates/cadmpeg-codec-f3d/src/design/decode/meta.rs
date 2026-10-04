@@ -358,8 +358,8 @@ pub(crate) fn decode_component_naming_spaces(
     }
     ctx.stable_sort_by(
         &mut out[..],
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d design meta 1",
     )?;
     Ok(out)

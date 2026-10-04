@@ -56,7 +56,8 @@ fn legacy_font_face_refuses_work_before_scan() {
     let bytes = replacement_face_bytes();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 44;
+    // The fourteen-character description has two 28-byte scans and fourteen UTF-8 output bytes.
+    policy.limits.max_work_units = 2 * 2 * 14 + 14;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let result = parse_text_style(
         &ctx,

@@ -102,8 +102,8 @@ pub(crate) fn decode_parameters(
     }
     ctx.stable_sort_by(
         &mut out[..],
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d design parameters 1",
     )?;
     Ok(out)
@@ -141,50 +141,62 @@ impl ParsedDesignParameter {
         stream: &str,
         frame_start: u64,
     ) -> Result<Option<DesignParameter>, CodecError> {
-        let source_kind = ctx.validate_nonblank_text(self.source_kind, "validate parameter source kind")?;
-        let expression = ctx.validate_nonblank_text(self.expression, "validate parameter expression")?;
+        let source_kind =
+            ctx.validate_nonblank_text(self.source_kind, "validate parameter source kind")?;
+        let expression =
+            ctx.validate_nonblank_text(self.expression, "validate parameter expression")?;
         let name = ctx.validate_nonblank_text(self.name, "validate parameter name")?;
-        let unit = self.unit.map(|unit| Ok::<_, cadmpeg_core::decode::ResourceLimit>((ctx.validate_nonblank_text(unit.value, "validate parameter unit")?, unit.offset))).transpose()?;
+        let unit = self
+            .unit
+            .map(|unit| {
+                Ok::<_, cadmpeg_core::decode::ResourceLimit>((
+                    ctx.validate_nonblank_text(unit.value, "validate parameter unit")?,
+                    unit.offset,
+                ))
+            })
+            .transpose()?;
         Ok((|| {
-        let family_discriminator = match self.family_discriminator {
-            Some(value) => Some(crate::records::identity::Located {
-                value,
-                offset: FrameRelative(i128::from(DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET))
-                    .absolute(frame_start)?,
-            }),
-            None => None,
-        };
-        let unit = match unit {
-            Some((value, offset)) => Some(crate::records::identity::RecordedValue {
-                value,
-                offset: offset.absolute(frame_start)?,
-            }),
-            None => None,
-        };
-        crate::records::parameters::DesignParameter::try_from(
-            crate::records::parameters::DesignParameterDraft::<cadmpeg_core::text::NonBlankText<String>> {
-                id: ids::native_design_parameter_id(stream, frame_start),
-                byte_offset: frame_start,
-                class_tag: self.class_tag,
-                record_index: self.record_index,
-                source_ordinal: self.source_ordinal,
-                source: crate::records::parameters::DesignParameterSource::new(
-                    source_kind,
-                    self.owner_record_index,
-                    family_discriminator,
-                )
-                .ok()?,
-                expression,
-                expression_offset: self.expression_offset.absolute(frame_start)?,
-                source_kind_offset: self.source_kind_offset.absolute(frame_start)?,
-                unit,
-                name,
-                name_offset: self.name_offset.absolute(frame_start)?,
-                evaluated_value: self.evaluated_value,
-                evaluated_value_offset: self.evaluated_value_offset.absolute(frame_start)?,
-            },
-        )
-        .ok()
+            let family_discriminator = match self.family_discriminator {
+                Some(value) => Some(crate::records::identity::Located {
+                    value,
+                    offset: FrameRelative(i128::from(DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET))
+                        .absolute(frame_start)?,
+                }),
+                None => None,
+            };
+            let unit = match unit {
+                Some((value, offset)) => Some(crate::records::identity::RecordedValue {
+                    value,
+                    offset: offset.absolute(frame_start)?,
+                }),
+                None => None,
+            };
+            crate::records::parameters::DesignParameter::try_from(
+                crate::records::parameters::DesignParameterDraft::<
+                    cadmpeg_core::text::NonBlankText<String>,
+                > {
+                    id: ids::native_design_parameter_id(stream, frame_start),
+                    byte_offset: frame_start,
+                    class_tag: self.class_tag,
+                    record_index: self.record_index,
+                    source_ordinal: self.source_ordinal,
+                    source: crate::records::parameters::DesignParameterSource::new(
+                        source_kind,
+                        self.owner_record_index,
+                        family_discriminator,
+                    )
+                    .ok()?,
+                    expression,
+                    expression_offset: self.expression_offset.absolute(frame_start)?,
+                    source_kind_offset: self.source_kind_offset.absolute(frame_start)?,
+                    unit,
+                    name,
+                    name_offset: self.name_offset.absolute(frame_start)?,
+                    evaluated_value: self.evaluated_value,
+                    evaluated_value_offset: self.evaluated_value_offset.absolute(frame_start)?,
+                },
+            )
+            .ok()
         })())
     }
 }
@@ -197,7 +209,12 @@ const DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET: u64 = 22;
 pub(in crate::design) fn parse_design_parameter_record(payload: &[u8]) -> Option<DesignParameter> {
     parse_design_parameter(&cadmpeg_test_support::service_decode_context(), payload)
         .unwrap()?
-        .into_record(&cadmpeg_test_support::service_decode_context(), TEST_PARAMETER_STREAM, 0).unwrap()
+        .into_record(
+            &cadmpeg_test_support::service_decode_context(),
+            TEST_PARAMETER_STREAM,
+            0,
+        )
+        .unwrap()
 }
 
 /// Design `BulkStream` name used when a test parses one isolated frame.
@@ -214,9 +231,11 @@ fn locate_design_parameter(
     let frame_start = u64::try_from(at).map_err(|_| {
         CodecError::malformed("Fusion Design parameter frame offset exceeds the addressable stream")
     })?;
-    parsed.into_record(ctx, stream, frame_start)?.ok_or_else(|| {
-        CodecError::malformed("Fusion Design parameter frame has invalid fields or offsets")
-    })
+    parsed
+        .into_record(ctx, stream, frame_start)?
+        .ok_or_else(|| {
+            CodecError::malformed("Fusion Design parameter frame has invalid fields or offsets")
+        })
 }
 
 pub(in crate::design) fn parse_design_parameter(
@@ -682,8 +701,8 @@ pub(crate) fn decode_parameter_owners(
     }
     ctx.stable_sort_by(
         &mut out[..],
-            |value| value.id(),
-            Ord::cmp,
+        |value| value.id(),
+        Ord::cmp,
         "sort f3d design parameters 2",
     )?;
     Ok(out)
@@ -1024,8 +1043,8 @@ pub(crate) fn decode_parameter_companions(
     }
     ctx.stable_sort_by(
         &mut out[..],
-            |value| value.id(),
-            Ord::cmp,
+        |value| value.id(),
+        Ord::cmp,
         "sort f3d design parameters 3",
     )?;
     Ok(out)
@@ -1221,11 +1240,11 @@ fn companion_payload<S: std::hash::BuildHasher>(
     }
     ctx.stable_sort_by_key(
         &mut owned[..],
-            |value| {
-                let recipe = value;
-                recipe.byte_offset
-            },
-            Ord::cmp,
+        |value| {
+            let recipe = value;
+            recipe.byte_offset
+        },
+        Ord::cmp,
         "sort f3d design parameters 4",
     )?;
     let mut owned_ids = Vec::new();

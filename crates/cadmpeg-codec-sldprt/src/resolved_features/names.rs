@@ -54,7 +54,10 @@ fn record_id(
     Ok(id)
 }
 
-pub(super) fn operand_kind_name(ctx: &DecodeContext<'_>, kind: FeatureInputOperandKind) -> Result<NonBlankString, cadmpeg_core::CodecError> {
+pub(super) fn operand_kind_name(
+    ctx: &DecodeContext<'_>,
+    kind: FeatureInputOperandKind,
+) -> Result<NonBlankString, cadmpeg_core::CodecError> {
     match kind {
         FeatureInputOperandKind::D6 => Ok(cadmpeg_core::nonblank_literal!("d6")),
         FeatureInputOperandKind::E1 => Ok(cadmpeg_core::nonblank_literal!("e1")),

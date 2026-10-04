@@ -119,11 +119,13 @@ fn base_feature() -> cadmpeg_ir::features::Feature {
             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::Native("native:scope".into()),
             }),
-            vec![
-                BodyId::mint("test:model:body#2").unwrap(),
-                BodyId::mint("test:model:body#1").unwrap(),
-            ]
-            .try_into()
+            cadmpeg_ir::features::DistinctMembers::try_from(
+                vec![
+                    BodyId::mint("test:model:body#2").unwrap(),
+                    BodyId::mint("test:model:body#1").unwrap(),
+                ],
+                &cadmpeg_test_support::service_decode_context(),
+            )
             .unwrap(),
         ),
         native_ref: Some("native:scope".into()),

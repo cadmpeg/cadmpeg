@@ -457,7 +457,8 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
         }
         Ok(SketchConstraintDefinitionInput::Native {
             native_kind: nonblank_literal!(
-                ctx, "sldprt:marker-relation:{}",
+                ctx,
+                "sldprt:marker-relation:{}",
                 marker.kind().native_code()
             )?,
             native_state: None,
@@ -1918,8 +1919,8 @@ fn sort_axis_relation_point_loci(
     const OPERATION: &str = "sort SLDPRT axis relation point loci";
     ctx.sort_unstable_by(
         loci.as_mut_slice(),
-            |value| value,
-            |left, right| locus_key(left).cmp(&locus_key(right)),
+        |value| value,
+        |left, right| locus_key(left).cmp(&locus_key(right)),
         OPERATION,
     )?;
     loci.dedup();
@@ -2144,12 +2145,7 @@ pub(super) fn relation_owner_markers<'a>(
             break;
         }
     }
-    ctx.sort_unstable_by_key(
-        &mut owners,
-            |value| value.offset(),
-            Ord::cmp,
-        OPERATION,
-    )?;
+    ctx.sort_unstable_by_key(&mut owners, |value| value.offset(), Ord::cmp, OPERATION)?;
     Ok(owners)
 }
 

@@ -538,6 +538,7 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
         (
             "planar-open",
             NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 2.0, 2.0],
                 vec![
@@ -548,12 +549,14 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
                 None,
                 false,
             )
+            .expect("fixture constructor admission")
             .expect("valid planar-open NURBS"),
             [0, 0, 1, 0],
         ),
         (
             "unique-planar-open",
             NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 2.0, 2.0],
                 vec![
@@ -564,12 +567,14 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
                 None,
                 false,
             )
+            .expect("fixture constructor admission")
             .expect("valid unique-planar-open NURBS"),
             [1, 0, 1, 0],
         ),
         (
             "nonplanar-open",
             NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0],
                 vec![
@@ -581,12 +586,14 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
                 None,
                 false,
             )
+            .expect("fixture constructor admission")
             .expect("valid nonplanar-open NURBS"),
             [0, 0, 1, 0],
         ),
         (
             "closed-planar",
             NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 2.0, 2.0],
                 vec![
@@ -597,18 +604,21 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
                 None,
                 false,
             )
+            .expect("fixture constructor admission")
             .expect("valid closed-planar NURBS"),
             [0, 1, 1, 0],
         ),
         (
             "equal-weight-rational",
             NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
                 Some(vec![2.0, 2.0]),
                 false,
             )
+            .expect("fixture constructor admission")
             .expect("valid equal-weight rational NURBS"),
             [0, 0, 1, 0],
         ),

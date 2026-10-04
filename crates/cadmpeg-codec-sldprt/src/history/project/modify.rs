@@ -57,6 +57,7 @@ pub(super) fn project_fillet(
         }) {
         RadiusSpec::Constant { radius }
     } else {
+        let mut point_storage = ctx.reserve_scoped(0, "collect SLDPRT variable fillet radii")?;
         let mut points = Vec::new();
         let mut valid = true;
         for (name, radius) in &feature.parameters {
@@ -91,7 +92,12 @@ pub(super) fn project_fillet(
                 valid = false;
                 break;
             };
-            ctx.reserve_vec(&mut points, 1, "collect SLDPRT variable fillet radii")?;
+            ctx.reserve_scoped_vec(
+                &mut point_storage,
+                &mut points,
+                1,
+                "collect SLDPRT variable fillet radii",
+            )?;
             points.push((index, point));
         }
         ctx.sort_unstable_by(
@@ -113,8 +119,12 @@ pub(super) fn project_fillet(
                 points.len(),
                 "collect SLDPRT variable fillet controls",
             )?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(points.len()),
+                "collect SLDPRT variable fillet controls",
+            )?;
             radii.extend(points.into_iter().map(|(_, point)| point));
-            cadmpeg_ir::features::edge_treatments::VariableRadii::from_parts(radii).ok()
+            cadmpeg_ir::features::edge_treatments::VariableRadii::from_parts(radii, ctx)?.ok()
         } else {
             None
         };
@@ -303,7 +313,8 @@ pub(super) fn project_combine(
             .map_or(BodySelection::Unresolved, BodySelection::Native),
         property_text(ctx, feature, "Tools")?
             .map_or(BodySelection::Unresolved, BodySelection::Native),
-    )
+        ctx,
+    )?
     .ok();
     Ok(operands.map(|operands| {
         FeatureDefinition::Operation(FeatureOperation::Combine {
@@ -414,7 +425,8 @@ pub(super) fn project_replace_face(
     Ok(cadmpeg_ir::features::ReplaceFaceOperands::new(
         FaceSelection::Native(faces),
         FaceSelection::Native(replacement),
-    )
+        ctx,
+    )?
     .ok()
     .map(|operands| FeatureDefinition::Operation(FeatureOperation::ReplaceFace { operands })))
 }

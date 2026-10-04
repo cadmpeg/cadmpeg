@@ -11,12 +11,14 @@ use super::{source_numeric_id, RecordExt, ValueExt};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::draft::{CommitSession, DecodeCommitSession, DraftError, ModelDraft};
-use cadmpeg_ir::eval::{
-    model_curve_parameter_near_point_in_index_with_tolerance, model_curve_point_by_id,
-    model_surface_partials_by_id, model_surface_point_by_id, nurbs_curve_parameter_domain,
-    nurbs_pcurve_parameter_domain, pcurve_tangent, pcurve_uv,
-};
+use cadmpeg_ir::draft::{CommitSession, DraftError, ModelDraft};
+use cadmpeg_ir::eval::model_curve_parameter_near_point_in_index_with_tolerance;
+use cadmpeg_ir::eval::model_curve_point_by_id;
+use cadmpeg_ir::eval::model_surface_partials_by_id;
+use cadmpeg_ir::eval::model_surface_point_by_id;
+use cadmpeg_ir::eval::nurbs_curve_parameter_domain;
+use cadmpeg_ir::eval::nurbs_pcurve_parameter_domain;
+use cadmpeg_ir::eval::pcurve_tangent;
 use cadmpeg_ir::geometry::{
     pcurve::PcurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry,
     SolvedSurfaceGeometry, Surface, SurfaceGeometry,
@@ -96,7 +98,6 @@ fn topology_commit_error(
 DraftError::Admission(message) => ctx.copy_retained_text(message, "step_topology_commit_error_text"),
 DraftError::IdentityCollision(identity) => ctx.format_retained(format_args!("{context} conflicts with decoded topology: identity collision at '{identity}': {error}"), "step_topology_commit_error_text"),
         DraftError::UnresolvedReference { .. }
-        | DraftError::ReferenceWalk { .. }
         | DraftError::FeatureParents { .. } => {
             ctx.format_retained(format_args!("{context} conflicts with decoded topology: {error}"), "step_topology_commit_error_text")
         }
@@ -174,11 +175,10 @@ fn insert_body_id(
     if bodies.contains(body) {
         return Ok(());
     }
-    ctx.charge_collection_items(1, "step_representation_body_set")?;
     bytes.grow(u64_from_index(std::mem::size_of::<BodyId>()))?;
     let body =
         bytes.with_storage(|| body.try_clone_for_decode(ctx, "step_representation_body_set"))?;
-    bodies.insert(body);
+    ctx.insert_btree_set(bodies, body, "step_representation_body_set")?;
     Ok(())
 }
 
@@ -395,7 +395,7 @@ pub(super) fn decode(
     carrier_index: &CarrierIndex,
     ctx: &DecodeContext<'_>,
 ) -> Result<StageOutcome<TopologyData>, CodecError> {
-    let mut commit_session = CommitSession::new_for_decode(ir, ctx)?;
+    let mut commit_session = CommitSession::new(ir, ctx, None)?;
     let mut result = StageOutcome {
         value: TopologyData {
             body_by_root: BTreeMap::new(),
@@ -505,7 +505,7 @@ pub(super) fn decode(
             let (built, failures) = outcome.into_parts();
             let mut committed = 0;
             for mut built in built {
-                if let Err(error) = commit_session.commit_model_for_decode(built.draft, ctx)? {
+                if let Err(error) = commit_session.commit_model(built.draft)? {
                     ctx.push_vec(
                         &mut losses,
                         StepLossCode::DecodeWarning.note(topology_commit_error(
@@ -570,7 +570,7 @@ pub(super) fn decode(
         let (built, failures) = outcome.into_parts();
         let mut committed = 0;
         for mut built in built {
-            if let Err(error) = commit_session.commit_model_for_decode(built.draft, ctx)? {
+            if let Err(error) = commit_session.commit_model(built.draft)? {
                 ctx.push_vec(
                     &mut losses,
                     StepLossCode::DecodeWarning.note(topology_commit_error(
@@ -721,7 +721,7 @@ pub(super) fn decode(
         let mut body_by_shell = BTreeMap::<u64, BTreeSet<BodyId>>::new();
         for mut built in built {
             drop_committed_surfaces(&mut built.draft, &mut commit_session, ctx)?;
-            if let Err(error) = commit_session.commit_model_for_decode(built.draft, ctx)? {
+            if let Err(error) = commit_session.commit_model(built.draft)? {
                 ctx.push_vec(
                     &mut losses,
                     StepLossCode::DecodeWarning.note(topology_commit_error(
@@ -864,7 +864,7 @@ pub(super) fn decode(
             )), "step_topology_losses")?;
             continue;
         };
-        if let Err(error) = commit_session.commit_model_for_decode(built.draft, ctx)? {
+        if let Err(error) = commit_session.commit_model(built.draft)? {
             ctx.push_vec(
                 &mut losses,
                 StepLossCode::DecodeWarning.note(topology_commit_error(
@@ -2442,15 +2442,19 @@ struct Built {
 
 fn drop_committed_surfaces(
     draft: &mut ModelDraft,
-    session: &mut DecodeCommitSession<'_, '_>,
+    session: &mut CommitSession<'_, &mut CadIr>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
+    ctx.charge_work(
+        u64_from_index(draft.model().surfaces.len()),
+        "filter committed surfaces",
+    )?;
     let mut refusal = None;
     draft.model_mut().surfaces.retain(|surface| {
         if refusal.is_some() {
             return true;
         }
-        match session.contains_for_decode(surface.id.as_str(), ctx) {
+        match session.contains(surface.id.as_str()) {
             Ok(contains) => !contains,
             Err(error) => {
                 refusal = Some(error);
@@ -2519,19 +2523,19 @@ fn staged_topology(
     } = parts;
     let mut draft = ModelDraft::new();
     for vertex in vertices {
-        draft.insert_for_decode(vertex, ctx)?;
+        draft.insert(vertex, ctx)?;
     }
     for edge in edges {
-        draft.insert_for_decode(edge, ctx)?;
+        draft.insert(edge, ctx)?;
     }
     for coedge in coedges {
-        draft.insert_for_decode(coedge, ctx)?;
+        draft.insert(coedge, ctx)?;
     }
     for loop_ in loops {
-        draft.insert_for_decode(loop_, ctx)?;
+        draft.insert(loop_, ctx)?;
     }
     for face in faces {
-        draft.insert_for_decode(face, ctx)?;
+        draft.insert(face, ctx)?;
     }
     let mut surface_ids = BTreeSet::new();
     for surface in surfaces {
@@ -2540,17 +2544,17 @@ fn staged_topology(
                 ctx.copy_retained(surface.id.as_str().as_bytes(), "step_staged_surface_ids")?;
             let id = String::from_utf8(id).map_err(CodecError::malformed)?;
             ctx.insert_btree_set(&mut surface_ids, id, "step_staged_surface_ids")?;
-            draft.insert_for_decode(surface, ctx)?;
+            draft.insert(surface, ctx)?;
         }
     }
     for shell in shells {
-        draft.insert_for_decode(shell, ctx)?;
+        draft.insert(shell, ctx)?;
     }
-    draft.insert_for_decode(region, ctx)?;
+    draft.insert(region, ctx)?;
     let body_id = body
         .id
         .try_clone_for_decode(ctx, "step_topology_identity_copy")?;
-    draft.insert_for_decode(body, ctx)?;
+    draft.insert(body, ctx)?;
     Ok(Built {
         typed,
         draft,
@@ -2567,8 +2571,16 @@ struct RootKey {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for RootKey {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(self.root_kind, &self.shell_keys), ctx, operation)
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(self.root_kind, &self.shell_keys),
+            ctx,
+            operation,
+        )
     }
 }
 
@@ -2701,8 +2713,8 @@ fn root_key(
     }
     ctx.sort_unstable_by(
         &mut shell_keys,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "step_root_shell_keys_sort",
     )?;
     Ok(Some(RootKey {
@@ -3363,9 +3375,8 @@ fn build_one(
                         )?;
                         ctx.insert_hash_set(&mut typed, loop_step, "step_brep_typed")?;
                     }
-                    let Ok(ring) =
-                        cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedge_ids, Vec::new())
-                            .map_err(cadmpeg_core::CodecError::from)?
+                    let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(ctx, coedge_ids, Vec::new())
+                        .map_err(cadmpeg_core::CodecError::from)?
                     else {
                         note_failure(failure, loop_step, CarrierKind::PolyLoopPointCarrier);
                         return Err(BuildError::Absent);
@@ -3624,9 +3635,8 @@ fn build_one(
                         ctx.insert_hash_set(&mut typed, parent, "step_brep_typed")?;
                     }
                 }
-                let Ok(ring) =
-                    cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedge_ids, Vec::new())
-                        .map_err(cadmpeg_core::CodecError::from)?
+                let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(ctx, coedge_ids, Vec::new())
+                    .map_err(cadmpeg_core::CodecError::from)?
                 else {
                     note_failure(failure, loop_step, CarrierKind::EdgeLoopCarrier);
                     return Err(BuildError::Absent);
@@ -4019,7 +4029,10 @@ fn connected_face_components(
     edge_vertices: &BTreeMap<String, (String, String)>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<Vec<usize>>, CodecError> {
-    let mut neighbors = ctx.collect_indexed_vec(face_ids.len(), "STEP connected-face neighbors", |_| Ok(BTreeSet::new()))?;
+    let mut neighbors =
+        ctx.collect_indexed_vec(face_ids.len(), "STEP connected-face neighbors", |_| {
+            Ok(BTreeSet::new())
+        })?;
     let mut face_indices = BTreeMap::new();
     for (index, face) in face_ids.iter().enumerate() {
         ctx.insert_btree_map(
@@ -4349,8 +4362,13 @@ fn implicit_face_plane(
     }
     ctx.stable_sort_by_key(
         &mut points,
-            |value| (value.x, value.y, value.z,),
-            |left, right| left.0.total_cmp(&right.0).then_with(||left.1.total_cmp(&right.1)).then_with(||left.2.total_cmp(&right.2)),
+        |value| (value.x, value.y, value.z),
+        |left, right| {
+            left.0
+                .total_cmp(&right.0)
+                .then_with(|| left.1.total_cmp(&right.1))
+                .then_with(|| left.2.total_cmp(&right.2))
+        },
         "step_implicit_face_plane_sort",
     )?;
     let Some(point_count) = cadmpeg_core::convert::f64_from_index(points.len()) else {
@@ -4576,7 +4594,7 @@ fn select_associated_pcurve(
         .map(|surface| &surface.geometry)
         .ok_or(PcurveSelectionFailure::Carrier)?;
     let surface_id = SurfaceId::from(surface_identity);
-    let index = ModelIndex::new_for_decode(ir, ctx)?;
+    let index = ModelIndex::build(ir, ctx)?;
     let pcurve = ir
         .model
         .pcurves
@@ -4631,6 +4649,7 @@ fn select_associated_pcurve(
     }
     let parameter_range = if let Some(range) = pcurve_declared_parameter_range(geometry) {
         let declared = pcurve_declared_endpoint_fit_directed(
+            ctx,
             &index,
             &surface_id,
             geometry,
@@ -4683,7 +4702,7 @@ fn pcurve_locus_witness(
         return Ok(false);
     };
     let curve_id = CurveId::from(ids::data(kind!("curve"), curve_step));
-    let curve_seeds = curve_selection_parameter_domain(index, &curve_id).map_or(
+    let curve_seeds = curve_selection_parameter_domain(index, &curve_id, ctx)?.map_or(
         [
             0.0,
             1.0,
@@ -4704,12 +4723,12 @@ fn pcurve_locus_witness(
         },
     );
     let Some(curve_start_parameter) =
-        curve_parameter_near_point(index, &curve_id, curve_start, &curve_seeds, bound)?
+        curve_parameter_near_point(ctx, index, &curve_id, curve_start, &curve_seeds, bound)?
     else {
         return Ok(false);
     };
     let Some(curve_end_parameter) =
-        curve_parameter_near_point(index, &curve_id, curve_end, &curve_seeds, bound)?
+        curve_parameter_near_point(ctx, index, &curve_id, curve_end, &curve_seeds, bound)?
     else {
         return Ok(false);
     };
@@ -4738,8 +4757,8 @@ fn pcurve_locus_witness(
     )?;
     ctx.stable_sort_by(
         &mut fractions,
-            |value| value,
-            f64::total_cmp,
+        |value| value,
+        f64::total_cmp,
         "step_pcurve_locus_fractions_sort",
     )?;
     fractions.dedup_by(|left, right| *left == *right);
@@ -4747,10 +4766,10 @@ fn pcurve_locus_witness(
         let pcurve_parameter = endpoint
             .start_parameter
             .mul_add(1.0 - fraction, endpoint.end_parameter * fraction);
-        let Some(uv) = pcurve_selection_uv(geometry, pcurve_parameter)? else {
+        let Some(uv) = pcurve_selection_uv(ctx, geometry, pcurve_parameter)? else {
             return Ok(false);
         };
-        let Some(mapped) = surface_selection_point(index, surface_id, uv.u, uv.v)? else {
+        let Some(mapped) = surface_selection_point(ctx, index, surface_id, uv.u, uv.v)? else {
             return Ok(false);
         };
         let curve_seed =
@@ -4765,11 +4784,16 @@ fn pcurve_locus_witness(
             curve_seed,
         ];
         let Some(curve_parameter) =
-            curve_parameter_near_point(index, &curve_id, mapped, &seeds, bound)?
+            curve_parameter_near_point(ctx, index, &curve_id, mapped, &seeds, bound)?
         else {
             return Ok(false);
         };
-        let curve_point = match model_curve_point_by_id(index, &curve_id, curve_parameter) {
+        let curve_point = match model_curve_point_by_id(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+            index,
+            &curve_id,
+            curve_parameter,
+        ) {
             Ok(point) => point,
             Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => {
                 return Err(limit.into())
@@ -4787,16 +4811,17 @@ fn pcurve_locus_witness(
 }
 
 fn curve_parameter_near_point(
+    ctx: &DecodeContext<'_>,
     index: &ModelIndex<'_>,
     curve_id: &CurveId,
     point: Point3,
     seeds: &[f64],
     tolerance: f64,
-) -> Result<Option<f64>, ResourceLimit> {
+) -> Result<Option<f64>, CodecError> {
     let mut best: Option<(f64, f64)> = None;
     for &seed in seeds.iter().filter(|seed| seed.is_finite()) {
         let Some(parameter) = model_curve_parameter_near_point_in_index_with_tolerance(
-            index, curve_id, point, seed, tolerance,
+            ctx, index, curve_id, point, seed, tolerance,
         )?
         else {
             continue;
@@ -4820,6 +4845,7 @@ fn pcurve_endpoint_fit(
 ) -> Result<Option<PcurveEndpointFit>, PcurveSelectionFailure> {
     if let Some(parameter_range) = pcurve_declared_parameter_range(geometry) {
         let Some(declared_score) = pcurve_declared_endpoint_fit_directed(
+            ctx,
             index,
             surface_id,
             geometry,
@@ -4841,11 +4867,12 @@ fn pcurve_endpoint_fit(
         // Search for an alternative interval, then use the evaluated residual
         // as the witness. The search does not establish a global minimum.
         let seeds = pcurve_selection_seeds(index, surface_id, geometry, surface, ctx)?;
-        let Some(start) = pcurve_surface_closest(index, surface_id, geometry, start, &seeds)?
+        let Some(start) = pcurve_surface_closest(ctx, index, surface_id, geometry, start, &seeds)?
         else {
             return Ok(None);
         };
-        let Some(end) = pcurve_surface_closest(index, surface_id, geometry, end, &seeds)? else {
+        let Some(end) = pcurve_surface_closest(ctx, index, surface_id, geometry, end, &seeds)?
+        else {
             return Ok(None);
         };
         return Ok(Some(PcurveEndpointFit {
@@ -4855,10 +4882,11 @@ fn pcurve_endpoint_fit(
         }));
     }
     let seeds = pcurve_selection_seeds(index, surface_id, geometry, surface, ctx)?;
-    let Some(start) = pcurve_surface_closest(index, surface_id, geometry, start, &seeds)? else {
+    let Some(start) = pcurve_surface_closest(ctx, index, surface_id, geometry, start, &seeds)?
+    else {
         return Ok(None);
     };
-    let Some(end) = pcurve_surface_closest(index, surface_id, geometry, end, &seeds)? else {
+    let Some(end) = pcurve_surface_closest(ctx, index, surface_id, geometry, end, &seeds)? else {
         return Ok(None);
     };
     Ok(Some(PcurveEndpointFit {
@@ -4898,16 +4926,18 @@ fn surface_selection_parameters(
     surface_id: &SurfaceId,
     u: f64,
     v: f64,
-) -> [f64; 2] {
-    let domains = index
-        .surfaces(surface_id.as_str())
-        .map_or([None, None], |surface| {
-            surface_selection_parameter_domains(index, surface_id, &surface.geometry)
-        });
-    [
+    ctx: &DecodeContext<'_>,
+) -> Result<[f64; 2], ResourceLimit> {
+    let domains = match index.surfaces(surface_id.as_str(), ctx)? {
+        Some(surface) => {
+            surface_selection_parameter_domains(index, surface_id, &surface.geometry, ctx)?
+        }
+        None => [None, None],
+    };
+    Ok([
         clamp_selection_parameter(u, domains[0]),
         clamp_selection_parameter(v, domains[1]),
-    ]
+    ])
 }
 
 fn clamp_selection_parameter(value: f64, domain: Option<[f64; 2]>) -> f64 {
@@ -4925,15 +4955,22 @@ fn clamp_selection_parameter(value: f64, domain: Option<[f64; 2]>) -> f64 {
 }
 
 fn surface_selection_point(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     index: &ModelIndex<'_>,
     surface_id: &SurfaceId,
     u: f64,
     v: f64,
 ) -> Result<Option<Point3>, ResourceLimit> {
-    let [u, v] = surface_selection_parameters(index, surface_id, u, v);
+    let [u, v] = surface_selection_parameters(index, surface_id, u, v, ctx)?;
     // A non-finite point is returned as the evaluation reached it; the
     // selection measures read it as a miss.
-    match model_surface_point_by_id(index, surface_id, u, v) {
+    match model_surface_point_by_id(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+        index,
+        surface_id,
+        u,
+        v,
+    ) {
         Ok(point) => Ok(Some(point.get())),
         Err(failure) => failure.non_finite(),
     }
@@ -4941,6 +4978,7 @@ fn surface_selection_point(
 
 #[cfg(test)]
 fn pcurve_declared_endpoint_fit(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     index: &ModelIndex<'_>,
     surface_id: &SurfaceId,
     geometry: &PcurveGeometry,
@@ -4948,16 +4986,17 @@ fn pcurve_declared_endpoint_fit(
     start: Point3,
     end: Point3,
 ) -> Result<Option<f64>, ResourceLimit> {
-    let Some(first_uv) = pcurve_selection_uv(geometry, range[0])? else {
+    let Some(first_uv) = pcurve_selection_uv(ctx, geometry, range[0])? else {
         return Ok(None);
     };
-    let Some(last_uv) = pcurve_selection_uv(geometry, range[1])? else {
+    let Some(last_uv) = pcurve_selection_uv(ctx, geometry, range[1])? else {
         return Ok(None);
     };
-    let Some(first) = surface_selection_point(index, surface_id, first_uv.u, first_uv.v)? else {
+    let Some(first) = surface_selection_point(ctx, index, surface_id, first_uv.u, first_uv.v)?
+    else {
         return Ok(None);
     };
-    let Some(last) = surface_selection_point(index, surface_id, last_uv.u, last_uv.v)? else {
+    let Some(last) = surface_selection_point(ctx, index, surface_id, last_uv.u, last_uv.v)? else {
         return Ok(None);
     };
     let forward = first.distance(start).max(last.distance(end));
@@ -4966,6 +5005,7 @@ fn pcurve_declared_endpoint_fit(
 }
 
 fn pcurve_declared_endpoint_fit_directed(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     index: &ModelIndex<'_>,
     surface_id: &SurfaceId,
     geometry: &PcurveGeometry,
@@ -4973,16 +5013,17 @@ fn pcurve_declared_endpoint_fit_directed(
     start: Point3,
     end: Point3,
 ) -> Result<Option<f64>, ResourceLimit> {
-    let Some(first_uv) = pcurve_selection_uv(geometry, range[0])? else {
+    let Some(first_uv) = pcurve_selection_uv(ctx, geometry, range[0])? else {
         return Ok(None);
     };
-    let Some(last_uv) = pcurve_selection_uv(geometry, range[1])? else {
+    let Some(last_uv) = pcurve_selection_uv(ctx, geometry, range[1])? else {
         return Ok(None);
     };
-    let Some(first) = surface_selection_point(index, surface_id, first_uv.u, first_uv.v)? else {
+    let Some(first) = surface_selection_point(ctx, index, surface_id, first_uv.u, first_uv.v)?
+    else {
         return Ok(None);
     };
-    let Some(last) = surface_selection_point(index, surface_id, last_uv.u, last_uv.v)? else {
+    let Some(last) = surface_selection_point(ctx, index, surface_id, last_uv.u, last_uv.v)? else {
         return Ok(None);
     };
     Ok(Some(first.distance(start).max(last.distance(end))))
@@ -4992,28 +5033,37 @@ fn pcurve_declared_endpoint_fit_directed(
 /// returned as the evaluation reached it; the selection measures read it as a
 /// miss.
 fn pcurve_selection_uv(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &PcurveGeometry,
     parameter: f64,
 ) -> Result<Option<Point2>, ResourceLimit> {
-    match pcurve_uv(geometry, parameter) {
+    match cadmpeg_ir::eval::decode::pcurve_uv(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+        geometry,
+        parameter,
+    ) {
         Ok(uv) => Ok(Some(uv.get())),
         Err(failure) => failure.non_finite(),
     }
 }
 
 fn pcurve_surface_closest(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     index: &ModelIndex<'_>,
     surface_id: &SurfaceId,
     geometry: &PcurveGeometry,
     target: Point3,
     seeds: &[f64],
 ) -> Result<Option<(f64, f64)>, ResourceLimit> {
+    ctx.charge_work_limit(0, "geometry helper boundary")?;
     // The minimum is only over the finite seed set. The caller treats the
     // directly evaluated result as a witness and omits the optional relation
     // when no witness meets the tolerance.
     let mut best: Option<(f64, f64)> = None;
     for &seed in seeds {
-        let Some(candidate) = mapped_pcurve_closest(index, surface_id, geometry, target, seed)?
+        ctx.charge_work_limit(1, "step pcurve seed visit")?;
+        let Some(candidate) =
+            mapped_pcurve_closest(ctx, index, surface_id, geometry, target, seed)?
         else {
             continue;
         };
@@ -5030,12 +5080,14 @@ fn pcurve_surface_closest(
 /// is evaluated at the returned parameter and is an admission witness, not a
 /// proof of a global minimum.
 fn mapped_pcurve_closest(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     index: &ModelIndex<'_>,
     surface_id: &SurfaceId,
     geometry: &PcurveGeometry,
     target: Point3,
     seed: f64,
 ) -> Result<Option<(f64, f64)>, ResourceLimit> {
+    ctx.charge_work_limit(0, "geometry helper boundary")?;
     if !seed.is_finite() {
         return Ok(None);
     }
@@ -5043,22 +5095,28 @@ fn mapped_pcurve_closest(
     let clamp_to_domain =
         |parameter: f64| domain.map_or(parameter, |[lower, upper]| parameter.clamp(lower, upper));
     let evaluate_point = |parameter: f64| -> Result<Option<Point3>, ResourceLimit> {
-        let Some(uv) = pcurve_selection_uv(geometry, parameter)? else {
+        let Some(uv) = pcurve_selection_uv(ctx, geometry, parameter)? else {
             return Ok(None);
         };
-        surface_selection_point(index, surface_id, uv.u, uv.v)
+        surface_selection_point(ctx, index, surface_id, uv.u, uv.v)
     };
     let evaluate_tangent = |parameter: f64| -> Result<Option<Vector3>, ResourceLimit> {
-        let Some(uv) = pcurve_selection_uv(geometry, parameter)? else {
+        let Some(uv) = pcurve_selection_uv(ctx, geometry, parameter)? else {
             return Ok(None);
         };
-        let tangent_uv = match pcurve_tangent(geometry, parameter) {
+        let tangent_uv = match pcurve_tangent(ctx, geometry, parameter) {
             Ok(value) => value,
             Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
             Err(_) => return Ok(None),
         };
-        let [u, v] = surface_selection_parameters(index, surface_id, uv.u, uv.v);
-        let partials = match model_surface_partials_by_id(index, surface_id, u, v) {
+        let [u, v] = surface_selection_parameters(index, surface_id, uv.u, uv.v, ctx)?;
+        let partials = match model_surface_partials_by_id(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+            index,
+            surface_id,
+            u,
+            v,
+        ) {
             Ok(value) => value,
             Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
             Err(_) => return Ok(None),
@@ -5074,6 +5132,7 @@ fn mapped_pcurve_closest(
     let mut best = f64::INFINITY;
     let mut best_parameter = parameter;
     for _ in 0..32 {
+        ctx.charge_work_limit(1, "step pcurve inverse step")?;
         let Some(point) = evaluate_point(parameter)? else {
             return Ok(None);
         };
@@ -5100,6 +5159,7 @@ fn mapped_pcurve_closest(
         };
         let mut candidate_error = candidate_point.distance(target);
         for _ in 0..12 {
+            ctx.charge_work_limit(1, "step pcurve inverse backtrack")?;
             if candidate_error < error {
                 break;
             }
@@ -5248,7 +5308,7 @@ fn pcurve_selection_seeds(
             ctx.push_vec(&mut seeds, seed, "step_pcurve_selection_seeds")?;
         }
     }
-    if let Some((origin, direction)) = geometry.line_parameters() {
+    if let Some((origin, direction)) = geometry.line_parameters(ctx)? {
         if let Some(domain) = surface
             .solved()
             .and_then(|surface| surface_periodic_domains(surface)[0])
@@ -5281,7 +5341,8 @@ fn pcurve_selection_seeds(
                 }
             }
         }
-        let [u_domain, v_domain] = surface_selection_parameter_domains(index, surface_id, surface);
+        let [u_domain, v_domain] =
+            surface_selection_parameter_domains(index, surface_id, surface, ctx)?;
         if let Some([u_lower, u_upper]) = u_domain {
             for boundary in [u_lower, u_lower.midpoint(u_upper), u_upper] {
                 if direction.u != 0.0 {
@@ -5351,14 +5412,12 @@ fn pcurve_has_angular_parameterization(geometry: &PcurveGeometry) -> bool {
 
 fn pcurve_selection_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
     match geometry {
-        PcurveGeometry::Nurbs { nurbs } => nurbs_pcurve_parameter_domain(
-            nurbs.degree(),
-            nurbs.knots(),
-            nurbs.control_points().len(),
-        )
-        .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints),
+        PcurveGeometry::Nurbs { nurbs } => {
+            nurbs_pcurve_parameter_domain(nurbs.degree(), nurbs.knots(), nurbs.pole_rows().count())
+                .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
+        }
         PcurveGeometry::PolarNurbs { nurbs } => {
-            nurbs_pcurve_parameter_domain(nurbs.degree(), nurbs.knots(), nurbs.poles().len())
+            nurbs_pcurve_parameter_domain(nurbs.degree(), nurbs.knots(), nurbs.pole_rows().count())
                 .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
         }
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
@@ -5391,7 +5450,9 @@ fn surface_selection_parameter_domains(
     index: &ModelIndex<'_>,
     surface_id: &SurfaceId,
     surface: &SurfaceGeometry,
-) -> [Option<[f64; 2]>; 2] {
+    ctx: &DecodeContext<'_>,
+) -> Result<[Option<[f64; 2]>; 2], ResourceLimit> {
+    let _depth = ctx.enter_nested_limit("STEP surface selection domain depth")?;
     let definition = index
         .ir()
         .model
@@ -5401,7 +5462,7 @@ fn surface_selection_parameter_domains(
             index.ir().model.procedural_surface_owner(&procedural.id) == Some(surface_id)
         })
         .map(cadmpeg_ir::geometry::ProceduralSurface::definition);
-    match definition {
+    Ok(match definition {
         Some(ProceduralSurfaceDefinition::Subset(definition_payload)) => {
             let parameter_ranges = definition_payload
                 .parameter_ranges()
@@ -5413,26 +5474,29 @@ fn surface_selection_parameter_domains(
         }
         Some(ProceduralSurfaceDefinition::AxisRevolution(definition_payload)) => [
             Some([0.0, std::f64::consts::TAU]),
-            curve_selection_parameter_domain(index, definition_payload.directrix()),
+            curve_selection_parameter_domain(index, definition_payload.directrix(), ctx)?,
         ],
         Some(ProceduralSurfaceDefinition::Extrusion(payload)) => [
-            curve_selection_parameter_domain(index, payload.directrix()),
+            curve_selection_parameter_domain(index, payload.directrix(), ctx)?,
             None,
         ],
         Some(ProceduralSurfaceDefinition::LinearSweep(definition_payload)) => [
-            curve_selection_parameter_domain(index, definition_payload.directrix()),
+            curve_selection_parameter_domain(index, definition_payload.directrix(), ctx)?,
             None,
         ],
-        Some(ProceduralSurfaceDefinition::Replica { source, .. }) => index
-            .surfaces(source.as_str())
-            .map_or([None, None], |source_surface| {
-                surface_selection_parameter_domains(index, source, &source_surface.geometry)
-            }),
+        Some(ProceduralSurfaceDefinition::Replica { source, .. }) => match index
+            .surfaces(source.as_str(), ctx)?
+        {
+            Some(source_surface) => {
+                surface_selection_parameter_domains(index, source, &source_surface.geometry, ctx)?
+            }
+            None => [None, None],
+        },
         _ => surface.solved().map_or(
             [None, None],
             surface_selection_parameter_domains_from_geometry,
         ),
-    }
+    })
 }
 
 fn surface_selection_parameter_domains_from_geometry(
@@ -5469,9 +5533,15 @@ fn subset_parameter_domain(range: [f64; 2]) -> Option<[f64; 2]> {
 fn curve_selection_parameter_domain(
     index: &ModelIndex<'_>,
     curve_id: &CurveId,
-) -> Option<[f64; 2]> {
-    let curve = index.curves(curve_id.as_str())?;
-    curve_selection_parameter_domain_from_geometry(curve.geometry.solved()?)
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<[f64; 2]>, ResourceLimit> {
+    let Some(curve) = index.curves(curve_id.as_str(), ctx)? else {
+        return Ok(None);
+    };
+    Ok(curve
+        .geometry
+        .solved()
+        .and_then(curve_selection_parameter_domain_from_geometry))
 }
 
 fn curve_selection_parameter_domain_from_geometry(

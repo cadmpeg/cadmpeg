@@ -316,7 +316,9 @@ fn pattern_slots_error(max_items: u64, max_retained: u64) -> Result<(), cadmpeg_
         crate::ids::history_input_state_id(&prefix),
         vec![crate::ids::history_input_body_id(&prefix, 1)],
         "f3d:test:native-selection#1".into(),
+        &cadmpeg_test_support::service_decode_context(),
     )
+    .expect("selection storage is admitted")
     .unwrap();
     let pattern: PatternKind = serde_json::from_value(serde_json::json!({
         "kind": "circular",
@@ -345,9 +347,11 @@ fn pattern_slots_error(max_items: u64, max_retained: u64) -> Result<(), cadmpeg_
         native_ref: None,
     };
     feature.evaluation.set_outputs(
-        vec![cadmpeg_ir::ids::BodyId::mint("f3d:brep:body#2").unwrap()]
-            .try_into()
-            .unwrap(),
+        cadmpeg_ir::features::DistinctMembers::try_from(
+            vec![cadmpeg_ir::ids::BodyId::mint("f3d:brep:body#2").unwrap()],
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap(),
     );
     let inputs = FeatureBodySelectionInputs {
         scopes: &[],

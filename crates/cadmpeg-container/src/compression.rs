@@ -53,7 +53,10 @@ fn inflate_zlib_writer<'ctx, 'a>(
             "zlib expansion step",
         )?;
         let remaining = &input[source_offset..];
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(remaining.len()), "zlib compressed input")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(remaining.len()),
+            "zlib compressed input",
+        )?;
         let status = decoder
             .decompress(remaining, &mut chunk, FlushDecompress::None)
             .map_err(|error| CodecError::malformed(format_args!("invalid zlib member: {error}")))?;
@@ -202,10 +205,16 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         // One loop visit, one output chunk and all but one compressed byte.
-        policy.limits.max_work_units = 1 + super::INFLATE_CHUNK as u64 + bytes.len() as u64 - 1;
+        policy.limits.max_work_units = 1
+            + cadmpeg_core::decode::u64_from_index(super::INFLATE_CHUNK)
+            + cadmpeg_core::decode::u64_from_index(bytes.len())
+            - 1;
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = inflate_zlib_member_owned(&ctx, root, ExpandSpec::Exact(4)).expect_err("input admission");
-        let CodecError::ResourceLimit(original) = error else { panic!("resource refusal"); };
+        let error = inflate_zlib_member_owned(&ctx, root, ExpandSpec::Exact(4))
+            .expect_err("input admission");
+        let CodecError::ResourceLimit(original) = error else {
+            panic!("resource refusal");
+        };
         assert_eq!(original.operation, "zlib compressed input");
         assert!(matches!(ctx.charge_work(1, "after refusal"),
             Err(CodecError::ResourceLimit(repeated)) if repeated == original));

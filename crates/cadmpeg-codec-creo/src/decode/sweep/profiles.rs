@@ -62,12 +62,12 @@ fn sketch_geometry_endpoints(
             let [lower, upper] = cadmpeg_ir::scalar::FiniteReal::raw_array(range);
             let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
             let (Some(first), Some(last)) = (
-                cadmpeg_ir::eval::finite_or_refusal(
-                    cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, &carrier, lower)?,
-                )?,
-                cadmpeg_ir::eval::finite_or_refusal(
-                    cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, &carrier, upper)?,
-                )?,
+                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                    cadmpeg_ir::eval::decode::curve_point(ctx, &carrier, lower),
+                )?)?,
+                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                    cadmpeg_ir::eval::decode::curve_point(ctx, &carrier, upper),
+                )?)?,
             ) else {
                 return Ok(None);
             };
@@ -401,7 +401,7 @@ pub(in super::super) fn circular_pcurve(
         "creo circular pcurve weighted poles",
     )?;
     let nurbs = (|| -> Result<Result<cadmpeg_ir::geometry::pcurve::PcurveNurbs, cadmpeg_ir::geometry::nurbs::NurbsError>, cadmpeg_core::CodecError> {
-        use cadmpeg_ir::geometry::nurbs::KnotValue;
+        use cadmpeg_ir::geometry::nurbs::KnotVector;
         use cadmpeg_ir::geometry::pcurve::{PcurveNurbsPoles, WeightedPole2};
         use cadmpeg_ir::scalar::NonZeroReal;
         use cadmpeg_ir::units::FinitePoint2;
@@ -432,19 +432,16 @@ pub(in super::super) fn circular_pcurve(
             };
             weighted.push(WeightedPole2 { point, weight: admitted_weight });
         }
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(knot_count).checked_mul(2)
-            .ok_or_else(|| ctx.refuse_codec_limit("creo circular pcurve knot admission", u64::MAX, u64::MAX))?,
-            "creo circular pcurve knot admission")?;
-        let knots = match KnotValue::admit(knots) {
+        let knots = match KnotVector::new(ctx, knots)? {
             Ok(knots) => knots,
             Err(error) => return Ok(Err(error)),
         };
-        Ok(cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_admitted_rows(
+        cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(ctx,
             2,
             knots,
             PcurveNurbsPoles::Rational { points: weighted },
             false,
-        ))
+        )
     })()?;
     match nurbs {
         Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
@@ -804,8 +801,8 @@ impl ValidatedProfile {
                     })?;
                 ctx.stable_sort_by(
                     &mut ordered,
-            |value| &value.2,
-            f64::total_cmp,
+                    |value| &value.2,
+                    f64::total_cmp,
                     "creo NURBS carrier bound ordering",
                 )?;
                 for (position, first) in ordered.iter().enumerate() {
@@ -1449,12 +1446,12 @@ fn nurbs_profile_signed_area_twice(
         {
             let parameter = middle + half_width * node;
             let (Some(point), Some(tangent)) = (
-                cadmpeg_ir::eval::finite_or_refusal(
-                    cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, &carrier, parameter)?,
-                )?,
-                cadmpeg_ir::eval::finite_or_refusal(
-                    cadmpeg_ir::eval::decode::curve_tangent_for_decode(ctx, &carrier, parameter)?,
-                )?,
+                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                    cadmpeg_ir::eval::decode::curve_point(ctx, &carrier, parameter),
+                )?)?,
+                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                    cadmpeg_ir::eval::decode::curve_tangent(ctx, &carrier, parameter),
+                )?)?,
             ) else {
                 return Ok(None);
             };

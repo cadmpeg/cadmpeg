@@ -230,7 +230,7 @@ fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
             occurrence: &occurrence,
         };
         merged
-            .extend_rewritten_for_decode(
+            .extend_rewritten(
                 &ctx,
                 component.clone(),
                 &mut scope,
@@ -344,9 +344,14 @@ fn occurrence_native_field_clone_refuses_collection_limit() {
     .unwrap();
     let error = rescope_record(&ctx, &record, "unknowns", "component-0").unwrap_err();
     assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "serialize native record")
+        matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy native field sequence")
     );
+    let cadmpeg_core::CodecError::ResourceLimit(first) = error else {
+        unreachable!()
+    };
+    assert!(matches!(ctx.finish_session(),
+        Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first));
 }
 
 #[test]
@@ -507,17 +512,18 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
         )
     })
     .expect("admitted configuration payload");
-    let visibility = BodyVisibility::try_from(crate::records::bodies::BodyVisibilityWire::<String> {
-        id: "f3d:Design/BulkStream.dat:body-visibility#3".into(),
-        body: BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
-        stream: "Design/BulkStream.dat".into(),
-        byte_offset: 10,
-        asm_body_key_offset: 20,
-        asm_body_key: 3,
-        entity_suffix: 1,
-        visible: true,
-    })
-    .unwrap();
+    let visibility =
+        BodyVisibility::try_from(crate::records::bodies::BodyVisibilityWire::<String> {
+            id: "f3d:Design/BulkStream.dat:body-visibility#3".into(),
+            body: BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
+            stream: "Design/BulkStream.dat".into(),
+            byte_offset: 10,
+            asm_body_key_offset: 20,
+            asm_body_key: 3,
+            entity_suffix: 1,
+            visible: true,
+        })
+        .unwrap();
     let mut component = Native::default();
     component
         .namespace_mut("f3d")
@@ -670,7 +676,7 @@ fn occurrence_merge_refuses_destination_growth_before_rewriting() {
             occurrence: "child",
         };
         let error = parent
-            .extend_rewritten_for_decode(ctx, component, &mut scope, "append F3Z model entities")
+            .extend_rewritten(ctx, component, &mut scope, "append F3Z model entities")
             .unwrap_err();
         let cadmpeg_core::CodecError::ResourceLimit(limit) = cadmpeg_core::CodecError::from(error)
         else {

@@ -3,7 +3,7 @@
 use crate::eval::model_surface_partials_by_id;
 use crate::eval::model_surface_point;
 use crate::eval::model_surface_point_by_id;
-use crate::eval::scalar_sweep_law_differential;
+use crate::eval::sweep_law::scalar_sweep_law_differential;
 use crate::eval::sweep_profile_differential;
 use crate::eval::sweep_profile_reversed;
 use crate::eval::tests::bilinear_surface;
@@ -39,7 +39,11 @@ fn law_integer_refuses_an_inexact_f64_value() {
     };
     let law = law.admit().expect("finite law input");
     assert!(matches!(
-        scalar_sweep_law_differential(&law, finite(0.0)),
+        scalar_sweep_law_differential(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &law,
+            finite(0.0)
+        ),
         Err(crate::eval::EvaluationFailure::NoValue)
     ));
 }
@@ -76,23 +80,39 @@ fn law_sweep_maps_wide_profile_interval_into_finite_nurbs_domain() {
         id: profile.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
                 None,
                 false,
             )
+            .expect("fixture constructor admission")
             .unwrap(),
         )),
         source_object: None,
     });
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
     let range = [finite(-f64::MAX), finite(f64::MAX)];
     let parameter = finite(-f64::MAX * 0.5);
-    let forward = sweep_profile_differential(&index, &profile, range, false, parameter)
-        .expect("forward interior profile point");
-    let reversed = sweep_profile_differential(&index, &profile, range, true, parameter)
-        .expect("reversed interior profile point");
+    let forward = sweep_profile_differential(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &index,
+        &profile,
+        range,
+        false,
+        parameter,
+    )
+    .expect("forward interior profile point");
+    let reversed = sweep_profile_differential(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &index,
+        &profile,
+        range,
+        true,
+        parameter,
+    )
+    .expect("reversed interior profile point");
     assert_eq!(forward.point.get(), Point3::new(1.25, 0.0, 0.0));
     assert_eq!(reversed.point.get(), Point3::new(1.75, 0.0, 0.0));
 }
@@ -108,9 +128,12 @@ fn cacheless_law_differential_applies_algebraic_product_rule() {
             },
         ],
     };
-    let differential =
-        scalar_sweep_law_differential(&law.admit().expect("finite law"), finite(3.0))
-            .expect("law differential");
+    let differential = scalar_sweep_law_differential(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &law.admit().expect("finite law"),
+        finite(3.0),
+    )
+    .expect("law differential");
     assert_eq!(differential.value.get(), 6.0);
     assert_eq!(differential.derivative.unwrap().get(), 2.0);
 }
@@ -130,9 +153,12 @@ fn cacheless_law_differential_applies_elementary_functions_and_composition() {
         operator: "SIN".into(),
         operands: vec![inner.clone()],
     };
-    let differential =
-        scalar_sweep_law_differential(&law.admit().expect("finite law"), finite(0.75))
-            .expect("sine law");
+    let differential = scalar_sweep_law_differential(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &law.admit().expect("finite law"),
+        finite(0.75),
+    )
+    .expect("sine law");
     assert!((differential.value.get() - 1.5f64.sin()).abs() <= f64::EPSILON * 64.0);
     assert!(
         (differential.derivative.unwrap().get() - 2.0 * 1.5f64.cos()).abs() <= f64::EPSILON * 64.0
@@ -150,9 +176,12 @@ fn cacheless_law_differential_applies_elementary_functions_and_composition() {
             inner,
         ],
     };
-    let differential =
-        scalar_sweep_law_differential(&composition.admit().expect("finite law"), finite(0.75))
-            .expect("composed cosine law");
+    let differential = scalar_sweep_law_differential(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &composition.admit().expect("finite law"),
+        finite(0.75),
+    )
+    .expect("composed cosine law");
     assert!((differential.value.get() - 1.5f64.cos()).abs() <= f64::EPSILON * 64.0);
     assert!(
         (differential.derivative.unwrap().get() + 2.0 * 1.5f64.sin()).abs() <= f64::EPSILON * 64.0
@@ -168,7 +197,12 @@ fn a_law_whose_derivative_has_no_value_keeps_its_value() {
             value: cadmpeg_core::nonblank_literal!("X"),
         }],
     };
-    let law = scalar_sweep_law_differential(&absolute, finite(0.0)).expect("absolute value");
+    let law = scalar_sweep_law_differential(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &absolute,
+        finite(0.0),
+    )
+    .expect("absolute value");
     assert_eq!(law.value.get(), 0.0);
     assert_eq!(law.derivative, Err(crate::eval::EvaluationFailure::NoValue));
 
@@ -178,7 +212,12 @@ fn a_law_whose_derivative_has_no_value_keeps_its_value() {
             value: cadmpeg_core::nonblank_literal!("X"),
         }],
     };
-    let law = scalar_sweep_law_differential(&inverse, finite(1.0)).expect("inverse sine");
+    let law = scalar_sweep_law_differential(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &inverse,
+        finite(1.0),
+    )
+    .expect("inverse sine");
     assert_eq!(law.value.get(), std::f64::consts::FRAC_PI_2);
     assert_eq!(law.derivative, Err(crate::eval::EvaluationFailure::NoValue));
 }
@@ -203,12 +242,14 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
             id: profile_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
                     None,
                     false,
                 )
+                .expect("fixture constructor admission")
                 .unwrap(),
             )),
             source_object: None,
@@ -217,12 +258,14 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
             id: spine_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(4.0, 5.0, 6.0), Point3::new(4.0, 5.0, 7.0)],
                     None,
                     false,
                 )
+                .expect("fixture constructor admission")
                 .unwrap(),
             )),
             source_object: None,
@@ -298,17 +341,29 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
         record_bounds: None,
     });
 
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
     let expected = Point3::new(-0.5, 0.5, 0.25);
-    let point = model_surface_point_by_id(&index, &surface_id, -0.25, 0.25)
-        .expect("profile-frame sweep point")
-        .get();
+    let point = model_surface_point_by_id(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &index,
+        &surface_id,
+        -0.25,
+        0.25,
+    )
+    .expect("profile-frame sweep point")
+    .get();
     assert!((point.x - expected.x).abs() <= f64::EPSILON * 64.0);
     assert!((point.y - expected.y).abs() <= f64::EPSILON * 64.0);
     assert!((point.z - expected.z).abs() <= f64::EPSILON * 64.0);
 
-    let partials = model_surface_partials_by_id(&index, &surface_id, -0.25, 0.25)
-        .expect("profile-frame sweep partials");
+    let partials = model_surface_partials_by_id(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &index,
+        &surface_id,
+        -0.25,
+        0.25,
+    )
+    .expect("profile-frame sweep partials");
     assert_eq!(partials.point, point);
     assert_eq!(partials.du, Vector3::new(0.0, -2.0, 0.0));
     assert_eq!(partials.dv, Vector3::new(-2.0, 0.0, 1.0));
@@ -341,14 +396,26 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
         .unwrap();
     });
 
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
     assert_eq!(
-        model_surface_point_by_id(&index, &surface_id, 0.25, 0.5)
-            .map(crate::features::FinitePoint3::get),
+        model_surface_point_by_id(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &index,
+            &surface_id,
+            0.25,
+            0.5
+        )
+        .map(crate::features::FinitePoint3::get),
         Ok(Point3::new(0.25, 0.5, 0.0))
     );
-    let cached_partials = model_surface_partials_by_id(&index, &surface_id, 0.25, 0.5)
-        .expect("current sweep cache partials");
+    let cached_partials = model_surface_partials_by_id(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &index,
+        &surface_id,
+        0.25,
+        0.5,
+    )
+    .expect("current sweep cache partials");
     assert_eq!(cached_partials.point, Point3::new(0.25, 0.5, 0.0));
     assert_eq!(cached_partials.du, Vector3::new(1.0, 0.0, 0.0));
     assert_eq!(cached_partials.dv, Vector3::new(0.0, 1.0, 0.0));
@@ -383,12 +450,25 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
         )
         .unwrap();
     });
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
     assert_eq!(
-        model_surface_point_by_id(&index, &surface_id, 0.25, 0.5),
+        model_surface_point_by_id(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &index,
+            &surface_id,
+            0.25,
+            0.5
+        ),
         Err(crate::eval::EvaluationFailure::NoValue)
     );
-    assert!(model_surface_partials_by_id(&index, &surface_id, 0.25, 0.5).is_err());
+    assert!(model_surface_partials_by_id(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &index,
+        &surface_id,
+        0.25,
+        0.5
+    )
+    .is_err());
 }
 
 #[test]
@@ -408,8 +488,12 @@ fn numerical_seventh_sweep_rail_keeps_finite_rotated_coordinates() {
             flags: [true, false, false],
         }],
     };
-    let transform =
-        crate::eval::sweep_rail_transform(&formula.admit().expect("finite formula")).unwrap();
+    let transform = crate::eval::sweep_rail_transform(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &formula.admit().expect("finite formula"),
+    )
+    .unwrap()
+    .unwrap();
     let point = transform
         .apply_point(Point3::new(f64::MAX, f64::MAX, f64::MAX))
         .unwrap();
@@ -546,10 +630,22 @@ fn a_law_sweep_whose_law_overflows_reaches_no_coordinate() {
             value: cadmpeg_core::nonblank_literal!("1000.0*X"),
         }],
     });
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
     for route in [
-        model_surface_point_by_id(&index, &surface_id, 0.5, 1.0),
-        model_surface_point(&ir, &ir.model.surfaces[0].geometry, 0.5, 1.0),
+        model_surface_point_by_id(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &index,
+            &surface_id,
+            0.5,
+            1.0,
+        ),
+        model_surface_point(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &ir,
+            &ir.model.surfaces[0].geometry,
+            0.5,
+            1.0,
+        ),
     ] {
         assert!(
             matches!(
@@ -575,21 +671,251 @@ fn a_law_sweep_whose_law_derivative_has_no_value_keeps_its_point() {
     let (plain, plain_id) = law_sweep_model(LawExpression::Text {
         value: cadmpeg_core::nonblank_literal!("X"),
     });
-    let expected =
-        model_surface_point_by_id(&crate::index::ModelIndex::new(&plain), &plain_id, 0.5, 0.0)
-            .expect("sweep of the law X");
-    let index = crate::index::ModelIndex::new(&ir);
+    let expected = model_surface_point_by_id(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &crate::index::ModelIndex::build(&plain, crate::index::StandardIndex),
+        &plain_id,
+        0.5,
+        0.0,
+    )
+    .expect("sweep of the law X");
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
     assert_eq!(
-        model_surface_point_by_id(&index, &surface_id, 0.5, 0.0),
+        model_surface_point_by_id(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &index,
+            &surface_id,
+            0.5,
+            0.0
+        ),
         Ok(expected)
     );
     assert_eq!(
-        model_surface_point(&ir, &ir.model.surfaces[0].geometry, 0.5, 0.0),
+        model_surface_point(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &ir,
+            &ir.model.surfaces[0].geometry,
+            0.5,
+            0.0
+        ),
         Ok(expected)
     );
     assert_eq!(
-        model_surface_partials_by_id(&index, &surface_id, 0.5, 0.0)
-            .map(crate::eval::SurfacePartials::into_raw),
+        model_surface_partials_by_id(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &index,
+            &surface_id,
+            0.5,
+            0.0
+        )
+        .map(crate::eval::SurfacePartials::into_raw),
         Err(crate::eval::EvaluationFailure::NoValue)
     );
+}
+
+#[test]
+fn recursive_law_and_zero_radius_keep_the_live_session_refusal() {
+    use crate::eval::{admission::EvaluationAdmission, EvaluationFailure};
+    use crate::geometry::{VariableBlendValue, VariableBlendValuePayload};
+    use crate::scalar::FiniteReal;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let law = LawExpression::Algebraic {
+        operator: "ABS".into(),
+        operands: vec![LawExpression::Double {
+            value: FiniteReal::ONE,
+        }],
+    };
+    let radius = VariableBlendValue {
+        modern_flag: false,
+        calibrated: 0,
+        payload: VariableBlendValuePayload::Constant {
+            discriminator: 0,
+            parameters: [FiniteReal::ZERO; 2],
+            radius: FiniteReal::ZERO,
+            variable_chamfer: 0,
+            chamfer_type: 0,
+            nested: Box::new(VariableBlendValue {
+                modern_flag: false,
+                calibrated: 0,
+                payload: VariableBlendValuePayload::TwoEnds {
+                    discriminator: 0,
+                    parameters: [FiniteReal::ZERO, FiniteReal::ONE],
+                    radii: [FiniteReal::ZERO; 2],
+                },
+            }),
+        },
+    };
+    assert_eq!(
+        scalar_sweep_law_differential(EvaluationAdmission::Standard, &law, FiniteReal::ZERO)
+            .unwrap()
+            .value,
+        FiniteReal::ONE
+    );
+    assert!(
+        crate::eval::variable_blend_is_zero_radius(EvaluationAdmission::Standard, &radius).unwrap()
+    );
+    for route in 0..2 {
+        for trigger in 0..5 {
+            let mut policy = DecodePolicy::service();
+            let dimension = match trigger {
+                0 => {
+                    policy.limits.max_work_units = 0;
+                    ResourceDimension::WorkUnits
+                }
+                1 => {
+                    policy.limits.max_recursion_depth = 0;
+                    ResourceDimension::RecursionDepth
+                }
+                2 => {
+                    policy.limits.max_materialized_bytes = 0;
+                    ResourceDimension::MaterializedBytes
+                }
+                3 => {
+                    policy.limits.max_collection_items = 0;
+                    ResourceDimension::CollectionItems
+                }
+                _ => {
+                    policy.limits.max_recursion_depth = 1;
+                    ResourceDimension::RecursionDepth
+                }
+            };
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let evaluate = || {
+                if route == 0 {
+                    scalar_sweep_law_differential(
+                        EvaluationAdmission::Decode(&ctx),
+                        &law,
+                        FiniteReal::ZERO,
+                    )
+                    .map(|_| ())
+                } else {
+                    crate::eval::variable_blend_is_zero_radius(
+                        EvaluationAdmission::Decode(&ctx),
+                        &radius,
+                    )
+                    .map(|_| ())
+                }
+            };
+            let EvaluationFailure::ResourceLimit(first) = evaluate().unwrap_err() else {
+                panic!("recursive inspection must retain the original resource refusal");
+            };
+            assert_eq!(first.dimension, dimension);
+            assert_eq!(
+                (first.limit, first.used),
+                if trigger == 4 { (1, 1) } else { (0, 0) }
+            );
+            assert!(first.additional > 0);
+            assert_eq!(evaluate(), Err(EvaluationFailure::ResourceLimit(first)));
+            assert!(
+                matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first)
+            );
+        }
+    }
+}
+
+#[test]
+fn sweep_text_whitespace_refuses_before_the_next_character() {
+    use crate::eval::{admission::EvaluationAdmission, EvaluationFailure};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let expression = LawExpression::Text {
+        value: cadmpeg_core::text::NonBlankString::try_from(" X ")
+            .expect("nonblank sweep expression"),
+    };
+    let frame_work = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+        Option<crate::eval::ModelEvaluationIdentity>,
+    >());
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = frame_work + 1;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result =
+        scalar_sweep_law_differential(EvaluationAdmission::Decode(&ctx), &expression, finite(2.0));
+    let Err(EvaluationFailure::ResourceLimit(first)) = result else {
+        panic!("text inspection must refuse before reading a character");
+    };
+    assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(
+        (first.limit, first.used, first.additional),
+        (frame_work + 1, frame_work + 1, 1)
+    );
+    // Attached work slices retain the core work-budget refusal metadata.
+    assert_eq!(first.operation, "work_budget");
+    assert!(
+        matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first)
+    );
+}
+
+#[test]
+fn sweep_text_projections_admit_scoped_storage_and_release_it() {
+    use crate::eval::{admission::EvaluationAdmission, EvaluationFailure};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let scale = LawExpression::Text {
+        value: cadmpeg_core::text::NonBlankString::try_from(" VEC ( 2, 3, 4 ) ")
+            .expect("nonblank scale expression"),
+    };
+    let formula = LawFormula::Named {
+        name: cadmpeg_core::text::NonBlankString::try_from(" DOMAIN ( VEC ( 1, 0, 0 ), 0, 1 ) ")
+            .expect("nonblank formula name"),
+        variables: Vec::new(),
+    };
+    for route in 0..2 {
+        for trigger in 0..4 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = 4096;
+            let dimension = match trigger {
+                0 => {
+                    policy.limits.max_materialized_bytes = 0;
+                    Some(ResourceDimension::MaterializedBytes)
+                }
+                1 => {
+                    policy.limits.max_collection_items = 0;
+                    Some(ResourceDimension::CollectionItems)
+                }
+                2 => {
+                    policy.limits.max_work_units = 0;
+                    Some(ResourceDimension::WorkUnits)
+                }
+                _ => {
+                    policy.limits.max_retained_bytes = 0;
+                    None
+                }
+            };
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let evaluate = || {
+                if route == 0 {
+                    crate::eval::sweep_law::sweep_scale(EvaluationAdmission::Decode(&ctx), &scale)
+                        .map(|value| {
+                            assert_eq!(value, Some(Vector3::new(2.0, 3.0, 4.0)));
+                        })
+                } else {
+                    crate::eval::sweep_rail_transform(EvaluationAdmission::Decode(&ctx), &formula)
+                        .map(|value| {
+                            assert_eq!(value, Some(crate::transform::Transform::identity()));
+                        })
+                }
+            };
+            let result = evaluate();
+            if let Some(dimension) = dimension {
+                let EvaluationFailure::ResourceLimit(first) = result.unwrap_err() else {
+                    panic!("text projection must keep its resource refusal");
+                };
+                assert_eq!(first.dimension, dimension);
+                assert_eq!((first.limit, first.used), (0, 0));
+                assert!(first.additional > 0);
+                assert_eq!(evaluate(), Err(EvaluationFailure::ResourceLimit(first)));
+                assert!(
+                    matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first)
+                );
+            } else {
+                assert_eq!(result, Ok(()));
+                let storage = ctx
+                    .reserve_scoped_limit(4096, "test released law text")
+                    .unwrap();
+                drop(storage);
+                assert!(ctx.finish_session().is_ok());
+            }
+        }
+    }
 }

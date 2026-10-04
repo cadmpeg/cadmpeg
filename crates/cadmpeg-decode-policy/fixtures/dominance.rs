@@ -123,7 +123,9 @@ pub fn optional_repeat(ctx: &DecodeContext, bytes: &[u8], branch: Option<u8>) ->
     Ok(())
 }
 
-fn returned_slice(bytes: &[u8]) -> &[u8] { bytes }
+fn returned_slice(bytes: &[u8]) -> &[u8] {
+    bytes
+}
 
 pub fn returned_operand(ctx: &DecodeContext, bytes: &[u8], other: &[u8]) -> Result<(), ()> {
     let value = returned_slice(bytes);

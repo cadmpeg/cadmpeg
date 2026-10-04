@@ -66,7 +66,11 @@ impl PayloadFamily {
 /// Classify a decompressed block payload by signature.
 ///
 /// Unknown signatures return [`PayloadFamily::Unknown`].
-pub(crate) fn payload_family(ctx: &DecodeContext<'_>, payload: &[u8], operation: &'static str) -> Result<PayloadFamily, CodecError> {
+pub(crate) fn payload_family(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    operation: &'static str,
+) -> Result<PayloadFamily, CodecError> {
     ctx.charge_work(0, operation)?;
     Ok(if payload.starts_with(&[0x89, 0x50, 0x4e, 0x47]) {
         PayloadFamily::PngPreview
@@ -84,7 +88,8 @@ pub(crate) fn payload_family(ctx: &DecodeContext<'_>, payload: &[u8], operation:
         PayloadFamily::Unqlite
     } else if payload.starts_with(b"<?xml")
         || payload.starts_with(&[0xff, 0xfe])
-        || (payload.first() == Some(&0x86) && ctx.contains_bytes(&payload[..payload.len().min(64)], b"<", operation)?)
+        || (payload.first() == Some(&0x86)
+            && ctx.contains_bytes(&payload[..payload.len().min(64)], b"<", operation)?)
     {
         PayloadFamily::Xml
     } else {
@@ -401,16 +406,6 @@ enum ScanAdmission<'a, 'ctx> {
     Decode(&'ctx DecodeContext<'a>),
 }
 
-impl ScanAdmission<'_, '_> {
-    fn reserve<T>(&self, values: &mut Vec<T>, operation: &'static str) -> Result<(), CodecError> {
-        if let Self::Decode(ctx) = self {
-            ctx.reserve_vec(values, 1, operation)?;
-            ctx.charge_entities(1, operation)?;
-        }
-        Ok(())
-    }
-}
-
 #[derive(Default)]
 struct NativeMarkers {
     blocks: Vec<Block>,
@@ -419,15 +414,13 @@ struct NativeMarkers {
 }
 
 fn walk_native_markers(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
-    admission: &ScanAdmission<'_, '_>,
     mut try_one_block: impl FnMut(usize) -> Result<Option<RawBlock>, CodecError>,
     mut try_one_cell: impl FnMut(usize) -> Result<Option<CacheCell>, CodecError>,
     mut try_one_directory: impl FnMut(usize) -> Result<Option<DirectoryEntry>, CodecError>,
 ) -> Result<NativeMarkers, CodecError> {
-    if let ScanAdmission::Decode(ctx) = admission {
-        ctx.charge_work(u64_from_index(bytes.len()), "scan SLDPRT native markers")?;
-    }
+    ctx.charge_work(u64_from_index(bytes.len()), "scan SLDPRT native markers")?;
     let mut blocks = Vec::new();
     let mut directory = Vec::new();
     let mut cache_cells = Vec::new();
@@ -439,15 +432,18 @@ fn walk_native_markers(
         }
         if let Some(block) = try_one_block(i)? {
             i = block.offset + block_hdr::LEN + block.preamble_len + index_from_u32(block.comp_sz);
-            admission.reserve(&mut blocks, "admit SLDPRT block")?;
-            blocks.push(block.into_block());
+            ctx.reserve_vec(&mut blocks, 1, "admit SLDPRT block")?;
+            ctx.charge_entities(1, "admit SLDPRT block")?;
+            blocks.push(block.into_block(ctx)?);
             continue;
         }
         if let Some(cell) = try_one_cell(i)? {
-            admission.reserve(&mut cache_cells, "admit SLDPRT cache cell")?;
+            ctx.reserve_vec(&mut cache_cells, 1, "admit SLDPRT cache cell")?;
+            ctx.charge_entities(1, "admit SLDPRT cache cell")?;
             cache_cells.push(cell);
         } else if let Some(entry) = try_one_directory(i)? {
-            admission.reserve(&mut directory, "admit SLDPRT directory entry")?;
+            ctx.reserve_vec(&mut directory, 1, "admit SLDPRT directory entry")?;
+            ctx.charge_entities(1, "admit SLDPRT directory entry")?;
             directory.push(entry);
         }
         i += 1;
@@ -471,7 +467,11 @@ fn compound_stream(
     let ps_streams = crate::parasolid::extract_streams_with_offsets(semantic_payload, ctx)?;
     let path = match cadmpeg_ir::StreamName::try_from(path) {
         Ok(path) => path,
-        Err(_) => cadmpeg_ir::stream_name!("compound@").with_suffix(directory_id),
+        Err(_) => cadmpeg_ir::stream_name!("compound@").with_suffix(
+            ctx,
+            directory_id,
+            "compose annotation stream name",
+        )?,
     };
     Ok(CompoundStream {
         path,
@@ -513,8 +513,8 @@ pub(crate) fn scan<'a>(
         directory,
         cache_cells,
     } = walk_native_markers(
+        ctx,
         bytes,
-        &ScanAdmission::Decode(ctx),
         |off| try_block_budgeted(ctx, root, off),
         |off| try_cache_cell_with(bytes, off, |raw| nibble_swap_name_charged(ctx, raw)),
         |off| try_directory_entry_with(bytes, off, |raw| nibble_swap_name_charged(ctx, raw)),
@@ -619,19 +619,23 @@ struct RawBlock {
 }
 
 impl RawBlock {
-    fn into_block(self) -> Block {
+    fn into_block(self, ctx: &DecodeContext<'_>) -> Result<Block, CodecError> {
         let section = match self.section {
             Some(name) => match cadmpeg_ir::StreamName::try_from(name) {
                 Ok(name) => BlockName::Named(name),
-                Err(_) => BlockName::Anonymous(
-                    cadmpeg_ir::stream_name!("block@").with_suffix(self.offset),
-                ),
+                Err(_) => BlockName::Anonymous(cadmpeg_ir::stream_name!("block@").with_suffix(
+                    ctx,
+                    self.offset,
+                    "compose annotation stream name",
+                )?),
             },
-            None => {
-                BlockName::Anonymous(cadmpeg_ir::stream_name!("block@").with_suffix(self.offset))
-            }
+            None => BlockName::Anonymous(cadmpeg_ir::stream_name!("block@").with_suffix(
+                ctx,
+                self.offset,
+                "compose annotation stream name",
+            )?),
         };
-        Block {
+        Ok(Block {
             offset: self.offset,
             type_id: self.type_id,
             comp_sz: self.comp_sz,
@@ -639,7 +643,7 @@ impl RawBlock {
             family: self.family,
             payload: self.payload,
             ps_streams: self.ps_streams,
-        }
+        })
     }
 }
 

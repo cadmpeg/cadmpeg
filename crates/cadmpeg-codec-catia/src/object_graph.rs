@@ -1731,10 +1731,9 @@ fn decode_payload(
                     admitted!(ctx.push_vec(
                         &mut fields,
                         PayloadField::Blob {
-                            bytes: admitted!(ctx.copy_slice(
-                                &bytes[at + 5..end],
-                                "catia_object_payload_blob"
-                            )),
+                            bytes: admitted!(
+                                ctx.copy_slice(&bytes[at + 5..end], "catia_object_payload_blob")
+                            ),
                             offset,
                         },
                         "catia_object_payload_fields"

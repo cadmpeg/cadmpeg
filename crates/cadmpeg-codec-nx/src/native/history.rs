@@ -622,7 +622,11 @@ mod tests {
             ordinal,
             name: Some(id.into()),
             suppressed: None,
-            dependencies: (dependencies).try_into().unwrap(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
+                dependencies,
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .unwrap(),
             source_properties: cadmpeg_core::text::named_entries(id, source_properties)
                 .expect("the fixture states named properties"),
             source_tag: native.then(|| "NX_OPERATION".to_string()),
@@ -634,7 +638,11 @@ mod tests {
                     role: FeatureTreeNodeRole::History,
                     children: cadmpeg_ir::features::TreeChildren::default(),
                 }),
-                outputs.try_into().unwrap(),
+                cadmpeg_ir::features::DistinctMembers::try_from(
+                    outputs,
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .unwrap(),
             ),
             native_ref: native.then(|| format!("native:{id}")),
         }
@@ -751,10 +759,11 @@ mod tests {
         );
 
         let mut missing = writer();
-        missing.dependencies =
-            (vec![FeatureId::mint("synthetic:test:id#missing").expect("identity grammar")])
-                .try_into()
-                .unwrap();
+        missing.dependencies = cadmpeg_ir::features::DistinctMembers::try_from(
+            vec![FeatureId::mint("synthetic:test:id#missing").expect("identity grammar")],
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap();
         let (ir, body) = closure_ir(vec![missing]);
         assert_eq!(
             active_feature_closure(&ir, &[body]),
@@ -766,10 +775,11 @@ mod tests {
 
         let mut out_of_order = writer();
         out_of_order.ordinal = 1;
-        out_of_order.dependencies =
-            (vec![FeatureId::mint("synthetic:test:id#dependency").expect("identity grammar")])
-                .try_into()
-                .unwrap();
+        out_of_order.dependencies = cadmpeg_ir::features::DistinctMembers::try_from(
+            vec![FeatureId::mint("synthetic:test:id#dependency").expect("identity grammar")],
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap();
         let dependency = history_feature(
             "synthetic:test:id#dependency",
             2,
@@ -1004,11 +1014,19 @@ mod tests {
                 evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                     FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                         bodies: BodySelection::Resolved {
-                            bodies: vec![body.clone()].try_into().expect("distinct bodies"),
+                            bodies: cadmpeg_ir::features::DistinctMembers::try_from(
+                                vec![body.clone()],
+                                &cadmpeg_test_support::service_decode_context(),
+                            )
+                            .expect("distinct bodies"),
                             native: "test".into(),
                         },
                     }),
-                    vec![body.clone()].try_into().unwrap(),
+                    cadmpeg_ir::features::DistinctMembers::try_from(
+                        vec![body.clone()],
+                        &cadmpeg_test_support::service_decode_context(),
+                    )
+                    .unwrap(),
                 ),
                 native_ref: None,
             },
@@ -1091,11 +1109,19 @@ mod tests {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                 FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                     bodies: BodySelection::Resolved {
-                        bodies: vec![body.clone()].try_into().expect("distinct bodies"),
+                        bodies: cadmpeg_ir::features::DistinctMembers::try_from(
+                            vec![body.clone()],
+                            &cadmpeg_test_support::service_decode_context(),
+                        )
+                        .expect("distinct bodies"),
                         native: "test".into(),
                     },
                 }),
-                vec![body.clone()].try_into().unwrap(),
+                cadmpeg_ir::features::DistinctMembers::try_from(
+                    vec![body.clone()],
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .unwrap(),
             ),
             native_ref: None,
         }]);

@@ -278,12 +278,11 @@ pub(crate) fn decode(
             ));
         }
         segments
-            .push(expand.ctx(), segment(
-                expand.root(),
-                data,
-                class.class_data_range,
-                archive,
-            )?, "Rhino polyedge segments")
+            .push(
+                expand.ctx(),
+                segment(expand.root(), data, class.class_data_range, archive)?,
+                "Rhino polyedge segments",
+            )
             .map_err(|error| refused(body.position(), &error))?;
         body.skip(wrapper.next_offset() - start).ok_or_else(|| {
             FramingError::structural(body.position(), "polyedge segment overruns body")

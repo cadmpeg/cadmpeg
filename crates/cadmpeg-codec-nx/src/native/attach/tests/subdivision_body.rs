@@ -10,8 +10,12 @@ fn nx_body_writing_subdivision_body_retains_unresolved_family() {
     let mut source_properties = BTreeMap::new();
     source_properties.insert("body_write.0".to_string(), "witness".to_string());
 
-    let definition =
-        body_writing_unresolved_feature_definition("SUBDIVISION_BODY", &source_properties);
+    let definition = body_writing_unresolved_feature_definition(
+        &cadmpeg_test_support::service_decode_context(),
+        "SUBDIVISION_BODY",
+        &source_properties,
+    )
+    .expect("body-writing projection admission");
 
     assert_eq!(
         definition,
@@ -28,7 +32,12 @@ fn nx_body_writing_subdivision_body_retains_unresolved_family() {
 #[test]
 fn nx_non_body_writing_subdivision_body_remains_native_for_semantic_review() {
     assert_eq!(
-        body_writing_unresolved_feature_definition("SUBDIVISION_BODY", &BTreeMap::new()),
+        body_writing_unresolved_feature_definition(
+            &cadmpeg_test_support::service_decode_context(),
+            "SUBDIVISION_BODY",
+            &BTreeMap::new()
+        )
+        .expect("body-writing projection admission"),
         None
     );
 }

@@ -2610,8 +2610,8 @@ fn outline_planes(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-            |value| &value.offset,
-            Ord::cmp,
+        |value| &value.offset,
+        Ord::cmp,
         "creo outline planes result ordering",
     )?;
     Ok(result)
@@ -2798,8 +2798,8 @@ pub(crate) fn positional_frame_planes(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-            |value| &value.offset,
-            Ord::cmp,
+        |value| &value.offset,
+        Ord::cmp,
         "creo positional frame planes result ordering",
     )?;
     Ok(result)
@@ -2884,8 +2884,8 @@ pub(crate) fn placed_outline_planes(
     }
     ctx.stable_sort_by(
         frame_bound.as_mut_slice(),
-            |value| &value.offset,
-            Ord::cmp,
+        |value| &value.offset,
+        Ord::cmp,
         "creo placed outline planes frame bound ordering",
     )?;
     let mut frame_bound_ids = BTreeSet::new();
@@ -2918,8 +2918,8 @@ pub(crate) fn placed_outline_planes(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-            |value| &value.offset,
-            Ord::cmp,
+        |value| &value.offset,
+        Ord::cmp,
         "creo placed outline planes result ordering",
     )?;
     Ok(result)
@@ -2940,7 +2940,10 @@ struct SurfaceArrayFrame {
     count: usize,
 }
 
-fn surface_array_frames<'a, 'ctx>(ctx: &'a DecodeContext<'ctx>, payload: &'a [u8]) -> impl Iterator<Item = Result<SurfaceArrayFrame, CodecError>> + use<'a, 'ctx> {
+fn surface_array_frames<'a, 'ctx>(
+    ctx: &'a DecodeContext<'ctx>,
+    payload: &'a [u8],
+) -> impl Iterator<Item = Result<SurfaceArrayFrame, CodecError>> + use<'a, 'ctx> {
     const LABEL: &[u8] = b"srf_array\0";
     let mut search = 0;
     let mut finished = false;
@@ -2949,37 +2952,46 @@ fn surface_array_frames<'a, 'ctx>(ctx: &'a DecodeContext<'ctx>, payload: &'a [u8
             return None;
         }
         let frame = (|| -> Result<Option<SurfaceArrayFrame>, CodecError> {
-        loop {
-            let Some(label) = ctx.find_bytes_from(payload, LABEL, search, "find Creo surface array")? else {
-                return Ok(None);
-            };
-            let start = label + LABEL.len();
-            search = start;
-            if payload.get(start) != Some(&psb::token::ARRAY_OPEN) {
-                continue;
-            }
-            let (count, after_count) = compact_int(payload, start + 1);
-            if after_count == start + 1 {
-                continue;
-            }
-            // The declared count is a slot extent every reader compares against a
-            // `usize` length, so a count this target cannot address states no
-            // frame.
-            let Ok(count) = usize::try_from(count) else {
-                continue;
-            };
-            let mut end = ctx.find_bytes_from(payload, LABEL, start, "find Creo surface array boundary")?.unwrap_or(payload.len());
-            for terminator in [b"crv_array\0".as_slice(), b"lo_array\0", b"qlt_array\0"] {
-                if let Some(offset) = ctx.find_bytes_from(payload, terminator, after_count, "find Creo surface array boundary")? {
-                    end = end.min(offset);
+            loop {
+                let Some(label) =
+                    ctx.find_bytes_from(payload, LABEL, search, "find Creo surface array")?
+                else {
+                    return Ok(None);
+                };
+                let start = label + LABEL.len();
+                search = start;
+                if payload.get(start) != Some(&psb::token::ARRAY_OPEN) {
+                    continue;
                 }
+                let (count, after_count) = compact_int(payload, start + 1);
+                if after_count == start + 1 {
+                    continue;
+                }
+                // The declared count is a slot extent every reader compares against a
+                // `usize` length, so a count this target cannot address states no
+                // frame.
+                let Ok(count) = usize::try_from(count) else {
+                    continue;
+                };
+                let mut end = ctx
+                    .find_bytes_from(payload, LABEL, start, "find Creo surface array boundary")?
+                    .unwrap_or(payload.len());
+                for terminator in [b"crv_array\0".as_slice(), b"lo_array\0", b"qlt_array\0"] {
+                    if let Some(offset) = ctx.find_bytes_from(
+                        payload,
+                        terminator,
+                        after_count,
+                        "find Creo surface array boundary",
+                    )? {
+                        end = end.min(offset);
+                    }
+                }
+                return Ok(Some(SurfaceArrayFrame {
+                    start: after_count,
+                    end,
+                    count,
+                }));
             }
-            return Ok(Some(SurfaceArrayFrame {
-                start: after_count,
-                end,
-                count,
-            }));
-        }
         })();
         if !matches!(frame, Ok(Some(_))) {
             finished = true;
@@ -3030,8 +3042,8 @@ pub(crate) fn counted_row_bounds(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-            |value| &value.0.offset,
-            Ord::cmp,
+        |value| &value.0.offset,
+        Ord::cmp,
         "creo counted row bounds result ordering",
     )?;
     Ok(result)
@@ -3084,18 +3096,34 @@ fn rows_with_boundaries(
 ) -> Result<Vec<SurfaceRow>, CodecError> {
     let mut result = Vec::new();
     let mut namespace_start = 0;
-    while let Some(array) = ctx.find_bytes_from(payload, b"srf_array\0", namespace_start, "find Creo surface marker")? {
+    while let Some(array) = ctx.find_bytes_from(
+        payload,
+        b"srf_array\0",
+        namespace_start,
+        "find Creo surface marker",
+    )? {
         let start = array + b"srf_array\0".len();
-        let end = ctx.find_bytes_from(payload, b"srf_array\0", start, "find Creo surface marker")?.unwrap_or(payload.len());
+        let end = ctx
+            .find_bytes_from(payload, b"srf_array\0", start, "find Creo surface marker")?
+            .unwrap_or(payload.len());
         namespace_start = start;
         let value = |label: &[u8]| -> Result<Option<(u32, usize)>, CodecError> {
-            Ok(ctx.find_bytes_in(payload, label, start, end, "find Creo surface field")?.and_then(|at| {
-                let value_start = at + label.len();
-                let (value, after) = compact_int(payload, value_start);
-                (after > value_start).then_some((value, at))
-            }))
+            Ok(ctx
+                .find_bytes_in(payload, label, start, end, "find Creo surface field")?
+                .and_then(|at| {
+                    let value_start = at + label.len();
+                    let (value, after) = compact_int(payload, value_start);
+                    (after > value_start).then_some((value, at))
+                }))
         };
-        let typed_kind = ctx.find_bytes_in(payload, b"geom_type\0", start, end, "find Creo surface marker")?
+        let typed_kind = ctx
+            .find_bytes_in(
+                payload,
+                b"geom_type\0",
+                start,
+                end,
+                "find Creo surface marker",
+            )?
             .and_then(|at| payload.get(at + b"geom_type\0".len()))
             .and_then(|byte| SurfaceKind::from_byte(*byte));
         if let (Some((id, id_offset)), Some(kind), Some((feature_id, _)), Some((next_surface, _))) = (
@@ -3104,14 +3132,22 @@ fn rows_with_boundaries(
             value(b"feat_id\0")?,
             value(b"next_geom_ptr\0")?,
         ) {
-            let Some(orientation) = ctx.find_bytes_in(payload, b"orient\0", start, end, "find Creo surface marker")?
+            let Some(orientation) = ctx
+                .find_bytes_in(payload, b"orient\0", start, end, "find Creo surface marker")?
                 .and_then(|at| payload.get(at + b"orient\0".len()))
                 .copied()
                 .filter(|byte| matches!(byte, 0x01 | 0xf6))
             else {
                 continue;
             };
-            let Some(boundary_type) = ctx.find_bytes_in(payload, b"boundary_type\0", start, end, "find Creo surface marker")?
+            let Some(boundary_type) = ctx
+                .find_bytes_in(
+                    payload,
+                    b"boundary_type\0",
+                    start,
+                    end,
+                    "find Creo surface marker",
+                )?
                 .and_then(|at| payload.get(at + b"boundary_type\0".len()))
                 .copied()
                 .and_then(BoundaryType::from_byte)
@@ -3173,8 +3209,8 @@ fn rows_with_boundaries(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-            |value| &value.offset,
-            Ord::cmp,
+        |value| &value.offset,
+        Ord::cmp,
         "creo rows with boundaries result ordering",
     )?;
     result.dedup_by_key(|row| row.offset);
@@ -3631,9 +3667,16 @@ fn named_prototype_frames<'a>(
     let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
     let mut frames = Vec::new();
     let mut search = 0;
-    while let Some(record_start) = ctx.find_bytes_from(payload, b"srf_prim_ptr(", search, "find Creo surface marker")? {
+    while let Some(record_start) = ctx.find_bytes_from(
+        payload,
+        b"srf_prim_ptr(",
+        search,
+        "find Creo surface marker",
+    )? {
         let family_start = record_start + b"srf_prim_ptr(".len();
-        let Some(close) = ctx.find_bytes_from(payload, b")\0", family_start, "find Creo surface marker")? else {
+        let Some(close) =
+            ctx.find_bytes_from(payload, b")\0", family_start, "find Creo surface marker")?
+        else {
             break;
         };
         let family_bytes = &payload[family_start..close];
@@ -3650,15 +3693,34 @@ fn named_prototype_frames<'a>(
                 "creo prototype family name",
             )?),
         };
-        let mut record_end = ctx.find_bytes_from(payload, b"srf_prim_ptr(", close + 2, "find Creo surface marker")?.unwrap_or(payload.len());
-        if let Some(at) = ctx.find_bytes_from(payload, b"srf_prim_ptr\0", close + 2, "find Creo surface marker")? {
+        let mut record_end = ctx
+            .find_bytes_from(
+                payload,
+                b"srf_prim_ptr(",
+                close + 2,
+                "find Creo surface marker",
+            )?
+            .unwrap_or(payload.len());
+        if let Some(at) = ctx.find_bytes_from(
+            payload,
+            b"srf_prim_ptr\0",
+            close + 2,
+            "find Creo surface marker",
+        )? {
             record_end = record_end.min(at);
         }
-        if let Some(at) = ctx.find_bytes_from(payload, b"\xe0\x00entity_ptr(", close + 2, "find Creo surface marker")? {
+        if let Some(at) = ctx.find_bytes_from(
+            payload,
+            b"\xe0\x00entity_ptr(",
+            close + 2,
+            "find Creo surface marker",
+        )? {
             record_end = record_end.min(at);
         }
         for marker in [b"crv_array\0".as_slice(), b"lo_array\0", b"qlt_array\0"] {
-            if let Some(at) = ctx.find_bytes_from(payload, marker, close + 2, "find Creo surface marker")? {
+            if let Some(at) =
+                ctx.find_bytes_from(payload, marker, close + 2, "find Creo surface marker")?
+            {
                 record_end = record_end.min(at);
             }
         }
@@ -3757,8 +3819,8 @@ fn named_prototype_frames<'a>(
     }
     ctx.stable_sort_by(
         frames.as_mut_slice(),
-            |value| &value.offset,
-            Ord::cmp,
+        |value| &value.offset,
+        Ord::cmp,
         "creo named prototype frames frames ordering",
     )?;
     Ok(frames)
@@ -5490,8 +5552,8 @@ fn contour_records_for_rows(
     }
     ctx.stable_sort_by(
         records.as_mut_slice(),
-            |value| &value.offset,
-            Ord::cmp,
+        |value| &value.offset,
+        Ord::cmp,
         "creo contour records for rows records ordering",
     )?;
     Ok(records)
@@ -5904,28 +5966,30 @@ pub(crate) fn decode_tabulated_cylinder_frame(
     cache: &scalar::ScalarCache,
 ) -> Result<Option<(TabulatedCylinderFrame, usize)>, CodecError> {
     const FRAME_MARKER: &[u8] = &[0x00, 0x0c, 0x9a];
-    let Some(marker) = ctx.find_bytes_from(body, FRAME_MARKER, 0, "find Creo tabulated cylinder frame")? else {
+    let Some(marker) =
+        ctx.find_bytes_from(body, FRAME_MARKER, 0, "find Creo tabulated cylinder frame")?
+    else {
         return Ok(None);
     };
     Ok((|| {
-    let mut cursor = marker + FRAME_MARKER.len();
-    let mut values = [0.0; 6];
-    let mut prefixes = [0; 6];
-    for slot in 0..6 {
-        prefixes[slot] = *body.get(cursor)?;
-        let (value, next) = if matches!(slot, 1 | 4) && body.get(cursor) == Some(&0x18) {
-            (0.0, cursor + 1)
-        } else if matches!(slot, 0 | 3)
-            || (matches!(slot, 1 | 4) && body.get(cursor) == Some(&0x2d))
-        {
-            scalar::decode_tabulated_cylinder_first_frame_coordinate(body, cursor, cache)?
-        } else {
-            scalar::decode_tabulated_cylinder_frame_coordinate(body, cursor, cache)?
-        };
-        values[slot] = value;
-        cursor = next;
-    }
-    Some((TabulatedCylinderFrame::new(values, prefixes)?, cursor))
+        let mut cursor = marker + FRAME_MARKER.len();
+        let mut values = [0.0; 6];
+        let mut prefixes = [0; 6];
+        for slot in 0..6 {
+            prefixes[slot] = *body.get(cursor)?;
+            let (value, next) = if matches!(slot, 1 | 4) && body.get(cursor) == Some(&0x18) {
+                (0.0, cursor + 1)
+            } else if matches!(slot, 0 | 3)
+                || (matches!(slot, 1 | 4) && body.get(cursor) == Some(&0x2d))
+            {
+                scalar::decode_tabulated_cylinder_first_frame_coordinate(body, cursor, cache)?
+            } else {
+                scalar::decode_tabulated_cylinder_frame_coordinate(body, cursor, cache)?
+            };
+            values[slot] = value;
+            cursor = next;
+        }
+        Some((TabulatedCylinderFrame::new(values, prefixes)?, cursor))
     })())
 }
 
@@ -5942,7 +6006,9 @@ pub(crate) fn tabulated_cylinder_curve_replays(
     let surface_rows = rows(ctx, payload)?;
     let mut signatures = Vec::new();
     let mut search = 0;
-    while let Some(offset) = ctx.find_bytes_from(payload, SIGNATURE, search, "find Creo surface marker")? {
+    while let Some(offset) =
+        ctx.find_bytes_from(payload, SIGNATURE, search, "find Creo surface marker")?
+    {
         ctx.reserve_vec(&mut signatures, 1, "creo tabulated curve signatures")?;
         signatures.push(offset);
         search = offset + SIGNATURE.len();
@@ -6090,8 +6156,8 @@ pub(crate) fn tabulated_cylinder_curve_replays(
     }
     ctx.stable_sort_by(
         replays.as_mut_slice(),
-            |value| &value.offset,
-            Ord::cmp,
+        |value| &value.offset,
+        Ord::cmp,
         "creo tabulated cylinder curve replays replays ordering",
     )?;
     Ok(replays)
@@ -7619,8 +7685,8 @@ fn plane_envelopes_for_rows(
     }
     ctx.stable_sort_by(
         envelopes.as_mut_slice(),
-            |value| &value.offset,
-            Ord::cmp,
+        |value| &value.offset,
+        Ord::cmp,
         "creo plane envelopes for rows envelopes ordering",
     )?;
     Ok(envelopes)
@@ -7654,12 +7720,22 @@ fn complete_plane_compact_scalar_suffix<'a>(
 
 /// Count labeled `srf_prim_ptr` prototypes whose family is known, plus unlabeled
 /// `geom_type` prototype records. Production readers use only this count.
-pub(crate) fn prototype_count(ctx: &DecodeContext<'_>, payload: &[u8]) -> Result<usize, CodecError> {
+pub(crate) fn prototype_count(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<usize, CodecError> {
     let mut named = 0;
     let mut search = 0;
-    while let Some(record_start) = ctx.find_bytes_from(payload, b"srf_prim_ptr(", search, "find Creo surface marker")? {
+    while let Some(record_start) = ctx.find_bytes_from(
+        payload,
+        b"srf_prim_ptr(",
+        search,
+        "find Creo surface marker",
+    )? {
         let family_start = record_start + b"srf_prim_ptr(".len();
-        let Some(close) = ctx.find_bytes_from(payload, b")\0", family_start, "find Creo surface marker")? else {
+        let Some(close) =
+            ctx.find_bytes_from(payload, b")\0", family_start, "find Creo surface marker")?
+        else {
             break;
         };
         if std::str::from_utf8(&payload[family_start..close])
@@ -7673,10 +7749,29 @@ pub(crate) fn prototype_count(ctx: &DecodeContext<'_>, payload: &[u8]) -> Result
     }
     let mut unlabeled = 0;
     let mut start = 0;
-    while let Some(record) = ctx.find_bytes_from(payload, b"srf_prim_ptr\0", start, "find Creo surface marker")? {
+    while let Some(record) = ctx.find_bytes_from(
+        payload,
+        b"srf_prim_ptr\0",
+        start,
+        "find Creo surface marker",
+    )? {
         start = record + b"srf_prim_ptr\0".len();
-        let end = ctx.find_bytes_from(payload, b"srf_prim_ptr\0", start, "find Creo surface marker")?.unwrap_or(payload.len());
-        let Some(kind_label) = ctx.find_bytes_in(payload, b"geom_type\0", start, end, "find Creo surface marker")? else {
+        let end = ctx
+            .find_bytes_from(
+                payload,
+                b"srf_prim_ptr\0",
+                start,
+                "find Creo surface marker",
+            )?
+            .unwrap_or(payload.len());
+        let Some(kind_label) = ctx.find_bytes_in(
+            payload,
+            b"geom_type\0",
+            start,
+            end,
+            "find Creo surface marker",
+        )?
+        else {
             continue;
         };
         if payload

@@ -52,9 +52,18 @@ pub(super) enum SketchPlaneUAxisSource {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for SketchPlaneUAxisSource {
-    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
-    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
     }
 }
 
@@ -631,8 +640,8 @@ pub(super) fn resolve_slot_marker_arcs(
     }
     ctx.sort_unstable_by_key(
         &mut curves,
-            |value| value.offset(),
-            Ord::cmp,
+        |value| value.offset(),
+        Ord::cmp,
         "sort SLDPRT slot curves",
     )?;
     if curves.len() != 4 {
@@ -665,8 +674,8 @@ pub(super) fn resolve_slot_marker_arcs(
     }
     ctx.sort_unstable_by_key(
         &mut points,
-            |value| value.offset(),
-            Ord::cmp,
+        |value| value.offset(),
+        Ord::cmp,
         "sort SLDPRT slot points",
     )?;
     let [Some(first_center), Some(second_center)] =
@@ -1629,7 +1638,12 @@ pub(super) fn lane_sketch_plane_frames(
     for (source, mut candidates) in lane_candidates {
         ctx.stable_sort_by_key(
             &mut candidates,
-            |value| (reference_plane_frame_key(&value.as_tuple()),value.u_axis_source,),
+            |value| {
+                (
+                    reference_plane_frame_key(&value.as_tuple()),
+                    value.u_axis_source,
+                )
+            },
             Ord::cmp,
             "sort SLDPRT sketch plane frames",
         )?;
@@ -1654,14 +1668,20 @@ pub(super) fn ordered_rectangle_corners(
         return Ok(None);
     };
     let mut u = points.iter().map(|point| point.u).collect::<Vec<_>>();
-    ctx.stable_sort_by(&mut u,
-            |value| value,
-            f64::total_cmp, "sldprt rectangle u sort")?;
+    ctx.stable_sort_by(
+        &mut u,
+        |value| value,
+        f64::total_cmp,
+        "sldprt rectangle u sort",
+    )?;
     u.dedup();
     let mut v = points.iter().map(|point| point.v).collect::<Vec<_>>();
-    ctx.stable_sort_by(&mut v,
-            |value| value,
-            f64::total_cmp, "sldprt rectangle v sort")?;
+    ctx.stable_sort_by(
+        &mut v,
+        |value| value,
+        f64::total_cmp,
+        "sldprt rectangle v sort",
+    )?;
     v.dedup();
     let ([u0, u1], [v0, v1]) = (u.as_slice(), v.as_slice()) else {
         return Ok(None);
@@ -1688,16 +1708,16 @@ fn ordered_tolerant_rectangle_corners(
     let mut u = points.iter().map(|point| point.u).collect::<Vec<_>>();
     ctx.stable_sort_by(
         &mut u,
-            |value| value,
-            f64::total_cmp,
+        |value| value,
+        f64::total_cmp,
         "sldprt tolerant rectangle u sort",
     )?;
     u.dedup_by(|left, right| same_dimension_length(*left, *right));
     let mut v = points.iter().map(|point| point.v).collect::<Vec<_>>();
     ctx.stable_sort_by(
         &mut v,
-            |value| value,
-            f64::total_cmp,
+        |value| value,
+        f64::total_cmp,
         "sldprt tolerant rectangle v sort",
     )?;
     v.dedup_by(|left, right| same_dimension_length(*left, *right));
@@ -1766,8 +1786,8 @@ pub(super) fn indexed_rectangle_from_line_cycle(
     roster.extend_from_slice(markers);
     ctx.sort_unstable_by_key(
         &mut roster,
-            |value| value.offset(),
-            Ord::cmp,
+        |value| value.offset(),
+        Ord::cmp,
         "sldprt rectangle marker roster sort",
     )?;
     let mut records = Vec::new();
@@ -2019,14 +2039,14 @@ pub(super) fn indexed_rectangle_from_line_cycle(
                     }
                     ctx.stable_sort_by(
                         &mut u[..u_len],
-            |value| value,
-            f64::total_cmp,
+                        |value| value,
+                        f64::total_cmp,
                         "sldprt rectangle axis u sort",
                     )?;
                     ctx.stable_sort_by(
                         &mut v[..v_len],
-            |value| value,
-            f64::total_cmp,
+                        |value| value,
+                        f64::total_cmp,
                         "sldprt rectangle axis v sort",
                     )?;
                     let ([u0, u1], [v0, v1]) = (&u[..u_len], &v[..v_len]) else {
@@ -2351,13 +2371,19 @@ pub(super) fn unique_dimensioned_rectangle_markers<'a>(
         v.push(point.1);
     }
     let point_count = cadmpeg_core::decode::u64_from_index(points.len());
-    ctx.sort_unstable_by(&mut u,
-            |value| value,
-            Ord::cmp, "sldprt rectangle cells u sort")?;
+    ctx.sort_unstable_by(
+        &mut u,
+        |value| value,
+        Ord::cmp,
+        "sldprt rectangle cells u sort",
+    )?;
     u.dedup();
-    ctx.sort_unstable_by(&mut v,
-            |value| value,
-            Ord::cmp, "sldprt rectangle cells v sort")?;
+    ctx.sort_unstable_by(
+        &mut v,
+        |value| value,
+        Ord::cmp,
+        "sldprt rectangle cells v sort",
+    )?;
     v.dedup();
     let dimension_count = cadmpeg_core::decode::u64_from_index(dimensions_mm.len());
     let dimension_work = dimension_count

@@ -17,11 +17,20 @@ struct DesignBulkStreamPath(NonBlankString);
 impl DesignBulkStreamPath {
     fn try_new<T: AsRef<str> + TryInto<NonBlankString>>(text: T) -> Result<Self, String> {
         let value = text.as_ref();
-        let prefix = value.strip_suffix("/BulkStream.dat").ok_or("stream must name a containing Design BulkStream")?;
-        if prefix.is_empty() || value.chars().any(char::is_control) || prefix.split('/').any(|part| matches!(part, "" | "." | "..")) {
+        let prefix = value
+            .strip_suffix("/BulkStream.dat")
+            .ok_or("stream must name a containing Design BulkStream")?;
+        if prefix.is_empty()
+            || value.chars().any(char::is_control)
+            || prefix
+                .split('/')
+                .any(|part| matches!(part, "" | "." | ".."))
+        {
             return Err("stream must name a containing Design BulkStream".into());
         }
-        Ok(Self(text.try_into().map_err(|_| "stream must not be blank")?))
+        Ok(Self(
+            text.try_into().map_err(|_| "stream must not be blank")?,
+        ))
     }
 }
 
@@ -454,7 +463,9 @@ pub(crate) struct DesignBodyBindingWire<T = String> {
     pub(crate) body: Option<BodyId>,
 }
 
-impl<T: AsRef<str> + TryInto<NonBlankString>> TryFrom<DesignBodyBindingWire<T>> for DesignBodyBinding {
+impl<T: AsRef<str> + TryInto<NonBlankString>> TryFrom<DesignBodyBindingWire<T>>
+    for DesignBodyBinding
+{
     type Error = String;
     fn try_from(wire: DesignBodyBindingWire<T>) -> Result<Self, Self::Error> {
         let pair_count =
@@ -635,6 +646,37 @@ mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     use super::{DesignBodyBinding, DesignBodyBindingWire, DesignBodyBounds, DesignBodyBoundsWire};
+
+    #[test]
+    fn native_reference_walk_visits_typed_body_without_copying_plain_text() {
+        use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
+        let value = super::BodyVisibility::try_from(super::BodyVisibilityWire {
+            id: "f3d:Design/BulkStream.dat:body-visibility#1".to_owned(),
+            body: super::BodyId::mint("f3d:model:body#1").unwrap(),
+            stream: "Design/BulkStream.dat".to_owned(),
+            byte_offset: 0,
+            asm_body_key_offset: 0,
+            asm_body_key: 1,
+            entity_suffix: 1,
+            visible: true,
+        })
+        .unwrap();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut references = Vec::new();
+        value
+            .visit_identity_references(&ctx, &mut |id| {
+                references.push(id.to_owned());
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(references, ["f3d:model:body#1"]);
+        ctx.finish_session().unwrap();
+    }
 
     fn bounds_fixture() -> DesignBodyBounds {
         serde_json::from_value(serde_json::json!({
@@ -854,3 +896,5 @@ mod tests {
         }
     }
 }
+
+mod identity_rewrite;

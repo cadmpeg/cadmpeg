@@ -29,14 +29,22 @@ fn typed_reference_walk_ignores_id_shaped_plain_strings() {
     let mut references = Vec::new();
     crate::schema::EntitySchema::visit_references(
         &ir.model.product_definitions[0],
-        &mut |reference| references.push(reference.target),
+        &cadmpeg_test_support::service_decode_context(),
+        &mut |reference| {
+            references.push(reference.to_owned());
+            Ok(())
+        },
     )
     .expect("every entity states its typed references");
     assert_eq!(references, vec![target.as_str().to_owned()]);
     let mut borrowed_references = Vec::new();
-    crate::schema::EntitySchema::visit_reference_ids(
+    crate::schema::EntitySchema::visit_references(
         &ir.model.product_definitions[0],
-        &mut |reference| borrowed_references.push(reference.to_owned()),
+        &cadmpeg_test_support::service_decode_context(),
+        &mut |reference| {
+            borrowed_references.push(reference.to_owned());
+            Ok(())
+        },
     )
     .expect("every entity states its typed references");
     assert_eq!(borrowed_references, references);
@@ -71,10 +79,26 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
     let state = FeatureInputTopology {
         id: state_id.clone(),
         input_of: feature_id.clone(),
-        bodies: (Vec::new()).try_into().unwrap(),
-        faces: (Vec::new()).try_into().unwrap(),
-        edges: (vec![historical_edge.clone()]).try_into().unwrap(),
-        vertices: (Vec::new()).try_into().unwrap(),
+        bodies: crate::features::DistinctMembers::try_from(
+            Vec::new(),
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap(),
+        faces: crate::features::DistinctMembers::try_from(
+            Vec::new(),
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap(),
+        edges: crate::features::DistinctMembers::try_from(
+            vec![historical_edge.clone()],
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap(),
+        vertices: crate::features::DistinctMembers::try_from(
+            Vec::new(),
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap(),
         native_ref: None,
     };
     let feature = Feature {
@@ -95,7 +119,9 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
                         state_id.clone(),
                         vec![historical_edge],
                         "edge:local".into(),
+                        &cadmpeg_test_support::service_decode_context(),
                     )
+                    .expect("selection storage is admitted")
                     .unwrap(),
                     radius: RadiusSpec::Constant {
                         radius: crate::scalar::PositiveLength::new(1.0).unwrap(),
@@ -109,15 +135,44 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
 
     let mut state_references = Vec::new();
     state
-        .visit_references(&mut |reference| state_references.push(reference.target))
+        .visit_references(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut |reference| {
+                state_references.push(reference.to_owned());
+                Ok(())
+            },
+        )
         .expect("state states its typed references");
     assert_eq!(state_references, vec![feature_id.as_str().to_owned()]);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut borrowed_state_references = Vec::new();
+    state
+        .visit_references(&ctx, &mut |target| {
+            borrowed_state_references.push(target.to_owned());
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(borrowed_state_references, state_references);
 
     let mut feature_references = Vec::new();
     feature
-        .visit_references(&mut |reference| feature_references.push(reference.target))
+        .visit_references(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut |reference| {
+                feature_references.push(reference.to_owned());
+                Ok(())
+            },
+        )
         .expect("feature states its typed references");
     assert_eq!(feature_references, vec![state_id.as_str()]);
+    let mut borrowed_feature_references = Vec::new();
+    feature
+        .visit_references(&ctx, &mut |target| {
+            borrowed_feature_references.push(target.to_owned());
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(borrowed_feature_references, feature_references);
 
     let mut ir = CadIr::empty();
     ir.model.feature_input_topologies.push(state);
@@ -149,6 +204,84 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
                 && finding.entity.as_deref() == Some(feature_id.as_str())
                 && finding.message == format!("references missing historical edge `{missing}`")
         }));
+}
+
+#[test]
+fn borrowed_reference_walk_refuses_work_and_depth_without_allocating_output() {
+    use crate::schema::EntitySchema;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let entity = ProductDefinition {
+        id: "test:model:product#owner".try_into().unwrap(),
+        kind: ProductDefinitionKind::Part,
+        source_name: Some("test:model:name#not-a-reference".into()),
+        label: None,
+        description: None,
+        part_number: None,
+        bom_properties: std::collections::BTreeMap::new(),
+        bodies: vec!["test:model:body#target".try_into().unwrap()],
+        native_ref: None,
+    };
+    for dimension in [
+        ResourceDimension::WorkUnits,
+        ResourceDimension::RecursionDepth,
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        if dimension == ResourceDimension::WorkUnits {
+            policy.limits.max_work_units = 0;
+        } else {
+            policy.limits.max_recursion_depth = 0;
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = entity.visit_references(&ctx, &mut |_| Ok(())).unwrap_err();
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("borrowed walk refusal must remain a resource error");
+        };
+        assert_eq!(limit.dimension, dimension);
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+        );
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut seen = 0;
+    entity
+        .visit_references(&ctx, &mut |target| {
+            assert_eq!(target, "test:model:body#target");
+            seen += 1;
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(seen, 1);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn borrowed_reference_walk_preserves_callback_allocator_refusal() {
+    use crate::schema::EntitySchema;
+    use cadmpeg_core::decode::{ResourceDimension, ResourceLimit};
+    use cadmpeg_core::CodecError;
+    let entity = crate::topology::Vertex {
+        id: "test:model:vertex#owner".try_into().unwrap(),
+        point: "test:model:point#target".try_into().unwrap(),
+        tolerance: None,
+    };
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let limit = ResourceLimit::allocation_failed(
+        ResourceDimension::MaterializedBytes,
+        4096,
+        64,
+        "borrowed reference callback",
+    );
+    let error = entity
+        .visit_references(&ctx, &mut |_| Err(CodecError::ResourceLimit(limit)))
+        .unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(original) if original == limit));
 }
 
 #[cfg(feature = "schema")]
@@ -244,7 +377,11 @@ fn model_feature_schema_describes_serialized_regeneration_parent() {
         ));
     model.features.push(child_feature);
     model
-        .set_feature_regeneration_parent(child, parent.clone())
+        .set_feature_regeneration_parent(
+            &cadmpeg_test_support::service_decode_context(),
+            &(child),
+            &(parent.clone()),
+        )
         .unwrap();
     let wire = serde_json::to_value(&model).unwrap();
     assert_eq!(wire["features"][1]["regeneration_parent"], parent.as_str());

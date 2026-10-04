@@ -255,3 +255,5 @@ impl TryFrom<DesignThreadConstructionWire> for DesignThreadConstruction {
 
 #[cfg(test)]
 mod tests;
+
+mod identity_rewrite;

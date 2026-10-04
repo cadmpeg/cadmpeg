@@ -704,7 +704,6 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             let sections_are_resolved = !shape.any_section_is_unresolved()
                 && shape
                     .referenced_profiles()
-                    .into_iter()
                     .all(planar_profile_ref_is_resolved);
             let mode_is_resolved = match mode {
                 SweepMode::Unresolved {} => false,
@@ -3084,8 +3083,8 @@ impl<'a> F3dDecodeSession<'a> {
                 apply_appearance_base_colors(self.ctx, &mut self.ir)?;
                 self.ctx.stable_sort_by(
                     &mut self.ir.model.appearance_bindings,
-            |value| &value.id,
-            Ord::cmp,
+                    |value| &value.id,
+                    Ord::cmp,
                     "sort F3D appearance bindings",
                 )?;
                 reconcile_appearance_loss(
@@ -3516,10 +3515,13 @@ fn decode_scanned_document<'a>(
                             body: body
                                 .id
                                 .try_clone_for_decode(ctx, "retain F3D visible body ID")?,
-                            stream: ctx.validate_nonblank_text(ctx.copy_retained_text(
-                                &visibility.stream,
-                                "retain F3D body visibility stream",
-                            )?, "validate stream")?,
+                            stream: ctx.validate_nonblank_text(
+                                ctx.copy_retained_text(
+                                    &visibility.stream,
+                                    "retain F3D body visibility stream",
+                                )?,
+                                "validate stream",
+                            )?,
                             byte_offset: visibility.byte_offset,
                             asm_body_key_offset: visibility.asm_body_key_offset,
                             asm_body_key: body_selector,
@@ -3756,7 +3758,8 @@ fn project_mesh_bodies(
             })
             .map(str::to_owned);
         let asset =
-            cadmpeg_ir::assets::Asset::try_new(ctx, 
+            cadmpeg_ir::assets::Asset::try_new(
+                ctx,
                 texture
                     .asset
                     .try_clone_for_decode(ctx, "retain F3D mesh texture asset ID")?,
@@ -3930,7 +3933,9 @@ fn mesh_texture_assignments(
         ));
     }
     let mut triangles =
-        ctx.collect_indexed_vec(textures.len(), "f3d mesh texture assignments", |_| Ok(Vec::new()))?;
+        ctx.collect_indexed_vec(textures.len(), "f3d mesh texture assignments", |_| {
+            Ok(Vec::new())
+        })?;
     for (triangle, texture_id) in texture_ids.iter().enumerate() {
         ctx.charge_work(1, "resolve F3D mesh texture triangle")?;
         if *texture_id == 0 {
@@ -4480,8 +4485,15 @@ fn decode_result(
     )?;
     // Stamped on the finalized, classified document, so the write path
     // compares against the exact document the sealed wrapper returns.
-    ir.finalize();
-    let hash = document_local_sha256_with_source(&ir, &source)?;
+    ir.finalize(ctx)?;
+    let hash = cadmpeg_ir::hash::document_local_sha256(
+        ctx,
+        &ir,
+        Some(&source),
+        "f3d",
+        crate::ids::FILE_SOURCE_IMAGE_ID,
+        "record F3D document digest",
+    )?;
     ctx.insert_btree_map(
         &mut source.attributes,
         cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
@@ -4513,26 +4525,19 @@ pub(crate) fn preserve_source_image(
 ///
 /// See [`cadmpeg_ir::hash::document_local_sha256`].
 pub(crate) fn document_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
-    Ok(cadmpeg_ir::hash::document_local_sha256(
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    let digest = cadmpeg_ir::hash::document_local_sha256(
+        &ctx,
         ir,
+        ir.source.as_ref(),
         "f3d",
         crate::ids::FILE_SOURCE_IMAGE_ID,
-    )?)
-}
-
-/// Computes the digest for a document whose source metadata is still local to
-/// its author. The digest covers that metadata without its own digest
-/// attribute, as defined by [`cadmpeg_ir::hash::document_local_sha256`].
-pub(crate) fn document_local_sha256_with_source(
-    ir: &CadIr,
-    source: &cadmpeg_ir::SourceMeta,
-) -> Result<String, CodecError> {
-    Ok(cadmpeg_ir::hash::document_local_sha256_with_source(
-        ir,
-        source,
-        "f3d",
-        crate::ids::FILE_SOURCE_IMAGE_ID,
-    )?)
+        "record F3D document digest",
+    )?;
+    ctx.finish_session()?;
+    Ok(digest)
 }
 
 fn annotation_stream(
@@ -4541,7 +4546,7 @@ fn annotation_stream(
 ) -> Result<StreamHandle, CodecError> {
     let name = crate::ids::native_scope_charged(ctx, entry_name)?;
     let name = cadmpeg_ir::StreamName::try_from(name).map_err(CodecError::malformed)?;
-    StreamHandle::new_for_decode(ctx, name, "allocate annotation stream handle")
+    StreamHandle::new(ctx, name, "allocate annotation stream handle")
 }
 
 fn note_native_annotation(
@@ -4551,7 +4556,7 @@ fn note_native_annotation(
     id: &str,
     tag: &str,
 ) -> Result<(), CodecError> {
-    annotations.note_for_decode(ctx, id, stream, trailing_offset(id), Some(tag))
+    annotations.note(ctx, id, stream, trailing_offset(id), Some(tag))
 }
 
 fn populate_annotations(
@@ -4568,7 +4573,7 @@ fn populate_annotations(
     if let Some((stream_name, records)) = brep {
         let stream = annotation_stream(ctx, stream_name)?;
         for record in records {
-            annotations.note_for_decode(
+            annotations.note(
                 ctx,
                 &record.id,
                 &stream,
@@ -4576,7 +4581,7 @@ fn populate_annotations(
                 Some(record.tag.as_str()),
             )?;
             for field in &record.derived_fields {
-                annotations.derived_for_decode(ctx, &record.id, field)?;
+                annotations.derived(ctx, &record.id, field)?;
             }
         }
     }
@@ -4615,7 +4620,7 @@ fn populate_annotations(
         "index F3D annotation spatial sketches",
     )?;
 
-    let native_stream = StreamHandle::new_for_decode(
+    let native_stream = StreamHandle::new(
         ctx,
         cadmpeg_ir::stream_name!("f3d:native"),
         "allocate annotation stream handle",
@@ -4797,7 +4802,7 @@ fn populate_annotations(
         .transpose()?;
     if let Some(stream) = appearance_stream {
         for appearance in &ir.model.appearances {
-            annotations.note_for_decode(
+            annotations.note(
                 ctx,
                 appearance.id.as_str(),
                 &stream,
@@ -4807,7 +4812,7 @@ fn populate_annotations(
         }
     }
     for binding in &ir.model.appearance_bindings {
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             binding.id.as_str(),
             &native_stream,
@@ -4819,7 +4824,7 @@ fn populate_annotations(
         if let Some(fallback) = container::select_fallback_brep(scan) {
             let stream = annotation_stream(ctx, &fallback.name)?;
             for unknown in unknowns {
-                annotations.note_for_decode(
+                annotations.note(
                     ctx,
                     unknown.id().as_str(),
                     &stream,
@@ -4896,8 +4901,8 @@ fn append_related_record_headers(
     )?;
     ctx.stable_sort_by(
         &mut native.design_record_headers,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort F3D design record headers",
     )?;
     Ok(())

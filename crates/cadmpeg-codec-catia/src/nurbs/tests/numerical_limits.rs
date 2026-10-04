@@ -21,12 +21,14 @@ fn pole_count_refuses_unrepresentable_degree_successor() {
 #[test]
 fn reversed_nurbs_copies_refuse_low_collection_and_retained_limits() {
     let curve = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         None,
         false,
     )
+    .expect("fixture constructor admission")
     .expect("linear model curve");
     let retained = crate::test_support::with_retained_limit(0, |ctx| {
         reverse_nurbs_curve(ctx, &curve, [0.0, 1.0])
@@ -44,12 +46,14 @@ fn reversed_nurbs_copies_refuse_low_collection_and_retained_limits() {
     );
     let pcurve = PcurveGeometry::Nurbs {
         nurbs: PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
             None,
             false,
         )
+        .expect("fixture pcurve construction admission")
         .expect("linear pcurve"),
     };
     let retained = crate::test_support::with_retained_limit(0, |ctx| {
@@ -99,12 +103,14 @@ fn reversal_preserves_large_parameter_offsets_and_endpoint_values() {
         let [lower, upper] = range;
         let knots = vec![lower, lower, upper, upper];
         let source = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             knots.clone(),
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
         )
+        .expect("fixture constructor admission")
         .expect("linear model curve");
         let reversed = crate::test_support::with_service_context(|ctx| {
             reverse_nurbs_curve(ctx, &source, range)
@@ -130,12 +136,14 @@ fn reversal_preserves_large_parameter_offsets_and_endpoint_values() {
         assert_eq!(reversed_range, range);
         let pcurve = PcurveGeometry::Nurbs {
             nurbs: PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 knots,
                 vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
                 None,
                 false,
             )
+            .expect("fixture pcurve construction admission")
             .expect("linear pcurve"),
         };
         let reversed_pcurve = crate::test_support::with_service_context(|ctx| {
@@ -145,13 +153,21 @@ fn reversal_preserves_large_parameter_offsets_and_endpoint_values() {
         .expect("reversed pcurve");
         for (parameter, expected_x) in [(lower, 1.0), (upper, 0.0)] {
             assert_eq!(
-                cadmpeg_ir::eval::curve_point(&reversed, parameter)
-                    .map(cadmpeg_ir::features::FinitePoint3::get),
+                cadmpeg_ir::eval::decode::curve_point(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    &reversed,
+                    parameter
+                )
+                .map(cadmpeg_ir::features::FinitePoint3::get),
                 Ok(Point3::new(expected_x, 0.0, 0.0))
             );
             assert_eq!(
-                cadmpeg_ir::eval::pcurve_uv(&reversed_pcurve, parameter)
-                    .map(cadmpeg_ir::units::FinitePoint2::get),
+                cadmpeg_ir::eval::decode::pcurve_uv(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    &reversed_pcurve,
+                    parameter
+                )
+                .map(cadmpeg_ir::units::FinitePoint2::get),
                 Ok(Point2::new(expected_x, 0.0))
             );
         }
@@ -165,22 +181,26 @@ fn wide_finite_nurbs_ranges_reverse_and_normalize_without_a_finite_width() {
     let knots = vec![range[0], range[0], range[1], range[1]];
     let curve = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             knots.clone(),
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
         )
+        .expect("fixture constructor admission")
         .expect("wide finite curve"),
     ));
     let pcurve = PcurveGeometry::Nurbs {
         nurbs: PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             knots,
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
             None,
             false,
         )
+        .expect("fixture pcurve construction admission")
         .expect("wide finite pcurve"),
     };
     let mut refusal = LaneRefusals::new();
@@ -208,11 +228,21 @@ fn wide_finite_nurbs_ranges_reverse_and_normalize_without_a_finite_width() {
     .expect("wide pcurve reversal");
     for (parameter, expected) in [(range[0], 1.0), (range[1], 0.0)] {
         assert_eq!(
-            cadmpeg_ir::eval::curve_point(&reversed, parameter).map(|point| point.get().x),
+            cadmpeg_ir::eval::decode::curve_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &reversed,
+                parameter
+            )
+            .map(|point| point.get().x),
             Ok(expected)
         );
         assert_eq!(
-            cadmpeg_ir::eval::pcurve_uv(&reversed_pcurve, parameter).map(|point| point.get().u),
+            cadmpeg_ir::eval::decode::pcurve_uv(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &reversed_pcurve,
+                parameter
+            )
+            .map(|point| point.get().u),
             Ok(expected)
         );
     }
@@ -282,8 +312,18 @@ fn line_pcurve_reversal_does_not_need_a_finite_endpoint_sum() {
     .expect("service profile admits range operation")
     .expect("finite reflected origin");
     for (from, to) in [(range[0], range[1]), (range[1], range[0])] {
-        let original = cadmpeg_ir::eval::pcurve_uv(&source, from).expect("source point");
-        let reverse = cadmpeg_ir::eval::pcurve_uv(&reversed, to).expect("reversed point");
+        let original = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &source,
+            from,
+        )
+        .expect("source point");
+        let reverse = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &reversed,
+            to,
+        )
+        .expect("reversed point");
         assert!((reverse.u / original.u - 1.0).abs() < RELATIVE_ROUNDOFF);
         assert_eq!(reverse.v, 0.0);
     }
@@ -291,11 +331,13 @@ fn line_pcurve_reversal_does_not_need_a_finite_endpoint_sum() {
 
 fn bilinear_surface(points: Vec<Vec<Point3>>, weights: Vec<Vec<f64>>) -> NurbsSurface {
     NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(points, Some(weights)),
         false,
     )
+    .expect("fixture constructor admission")
     .expect("bilinear surface")
 }
 
@@ -320,6 +362,7 @@ fn isocurve_is_invariant_under_common_weight_scale() {
             ),
         ] {
             let curve = cadmpeg_ir::eval::nurbs_surface_isocurve(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
                 &surface,
                 if fix_u {
                     cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U
@@ -348,6 +391,7 @@ fn isocurve_preserves_weight_ratios_between_output_poles() {
             vec![vec![scale, 2.0 * scale], vec![2.0 * scale, 4.0 * scale]],
         );
         let curve = cadmpeg_ir::eval::nurbs_surface_isocurve(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
             &surface,
             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
             0.5,
@@ -370,6 +414,7 @@ fn isocurve_keeps_finite_maximum_coordinates() {
         vec![vec![1e200; 2]; 2],
     );
     let curve = cadmpeg_ir::eval::nurbs_surface_isocurve(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
         &surface,
         cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
         0.5,

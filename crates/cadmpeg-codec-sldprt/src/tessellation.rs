@@ -715,8 +715,8 @@ pub(crate) fn section_display_faces(
     }
     ctx.stable_sort_by_key(
         &mut faces,
-            |value| value.table.start(),
-            Ord::cmp,
+        |value| value.table.start(),
+        Ord::cmp,
         "sort SLDPRT display faces",
     )?;
     for index in 0..faces.len() {
@@ -1208,8 +1208,8 @@ fn approximate_surface_owner(
     }
     ctx.stable_sort_by(
         &mut fits,
-            |value| &value.1,
-            f64::total_cmp,
+        |value| &value.1,
+        f64::total_cmp,
         "sort SLDPRT tessellation surface fits",
     )?;
     let best_deflection = fits[0].1;
@@ -1294,8 +1294,8 @@ fn approximate_trimmed_surface_owner(
     }
     ctx.stable_sort_by(
         &mut fits,
-            |value| &value.1,
-            f64::total_cmp,
+        |value| &value.1,
+        f64::total_cmp,
         "sort SLDPRT tessellation surface fits",
     )?;
     let Some(first) = fits.first() else {
@@ -2512,7 +2512,7 @@ fn conical_trim(
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
                 if nurbs.degree() != 1
                     || nurbs.periodic()
-                    || nurbs.control_points().len() != 2
+                    || nurbs.pole_rows().count() != 2
                     || nurbs.control_points().iter().any(|point| {
                         surface.solved().is_none_or(|surface| {
                             analytic_surface_residual(surface, point.get())
@@ -2670,8 +2670,8 @@ fn circular_interval(
     }
     ctx.stable_sort_by(
         angles,
-            |value| value,
-            f64::total_cmp,
+        |value| value,
+        f64::total_cmp,
         "sort SLDPRT circular trim angles",
     )?;
     angles.dedup_by(|left, right| (*left - *right).abs() <= EPS_CYLINDER_ANGLE);
@@ -3247,8 +3247,8 @@ fn chordal_hole_constraint(
     }
     ctx.stable_sort_by(
         &mut boundary_angles,
-            |value| value,
-            f64::total_cmp,
+        |value| value,
+        f64::total_cmp,
         "sort SLDPRT circular trim angles",
     )?;
     boundary_angles.dedup_by(|left, right| (*left - *right).abs() <= tolerance / hole.radius);

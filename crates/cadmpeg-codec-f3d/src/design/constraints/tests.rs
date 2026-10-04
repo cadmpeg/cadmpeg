@@ -29,23 +29,27 @@ mod text_allocation;
 fn translated_nurbs_match_borrowed_rational_poles() {
     let source = SketchGeometry::try_from(SketchGeometryDefinition::Nurbs {
         curve: PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(1.0, 0.0), Point2::new(2.0, 0.0)],
             Some(vec![1.0, 2.0]),
             false,
         )
+        .expect("fixture pcurve construction admission")
         .unwrap(),
     })
     .unwrap();
     let shifted = SketchGeometry::try_from(SketchGeometryDefinition::Nurbs {
         curve: PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(4.0, 5.0), Point2::new(5.0, 5.0)],
             Some(vec![1.0, 2.0]),
             false,
         )
+        .expect("fixture pcurve construction admission")
         .unwrap(),
     })
     .unwrap();
@@ -60,23 +64,27 @@ fn translated_nurbs_match_borrowed_rational_poles() {
 fn rotated_nurbs_match_borrowed_rational_poles() {
     let source = SketchGeometry::try_from(SketchGeometryDefinition::Nurbs {
         curve: PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(1.0, 0.0), Point2::new(2.0, 0.0)],
             Some(vec![1.0, 2.0]),
             false,
         )
+        .expect("fixture pcurve construction admission")
         .unwrap(),
     })
     .unwrap();
     let rotated = SketchGeometry::try_from(SketchGeometryDefinition::Nurbs {
         curve: PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.0, 1.0), Point2::new(0.0, 2.0)],
             Some(vec![1.0, 2.0]),
             false,
         )
+        .expect("fixture pcurve construction admission")
         .unwrap(),
     })
     .unwrap();

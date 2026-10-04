@@ -486,15 +486,24 @@ fn deep_drawing_wrapper_graph_resolves_without_call_stack_recursion() {
         target = item;
     }
     source.push_str("ENDSEC;END-ISO-10303-21;");
-    let (exchange, _) =
-        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
-            .expect("deep mapped graph");
+    let (exchange, _) = crate::test_support::with_policy_context(
+        source.as_bytes(),
+        &{
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_work_units = u64::MAX;
+            policy
+        },
+        crate::parse::parse_inner,
+    )
+    .expect("deep mapped graph");
     let identities = std::collections::BTreeMap::from([(
         1,
         std::collections::BTreeSet::from(["step:data:surface#1".into()]),
     )]);
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // The recursion test admits all key comparisons and node movement for the full graph.
+    policy.limits.max_work_units = u64::MAX;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
             .expect("root fits service policy");

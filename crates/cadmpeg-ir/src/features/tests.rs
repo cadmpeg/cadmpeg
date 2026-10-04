@@ -448,16 +448,37 @@ fn body_selection_admission_rejects_invalid_members() {
         vec![" ".to_owned()],
         vec!["a".to_owned(), "a".to_owned()],
     ] {
-        assert!(BodySelection::local(names.clone(), "native".into()).is_err());
+        assert!(BodySelection::local(
+            names.clone(),
+            "native".into(),
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("body selection admission")
+        .is_err());
         assert!(NativeSelections::try_from(names).is_err());
     }
-    assert!(BodySelection::local(vec!["body".into()], " ".into()).is_err());
+    assert!(BodySelection::local(
+        vec!["body".into()],
+        " ".into(),
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("body selection admission")
+    .is_err());
     let state = FeatureInputTopologyId::mint("test:model:feature-input#1").unwrap();
-    assert!(BodySelection::historical(state, vec![], "native".into()).is_err());
+    assert!(BodySelection::historical(
+        state,
+        vec![],
+        "native".into(),
+        &cadmpeg_test_support::service_decode_context()
+    )
+    .expect("selection storage is admitted")
+    .is_err());
     assert!(GeneratedBodyRef::new(
         super::FeatureId::mint("test:test:feature#1").unwrap(),
-        " ".into()
+        " ".into(),
+        &cadmpeg_test_support::service_decode_context(),
     )
+    .expect("selection reference admission")
     .is_err());
     for value in [
         serde_json::json!({"kind":"local","value":{"bodies":[],"native":"source"}}),
@@ -474,19 +495,18 @@ fn topology_membership_admission() {
     use super::{DistinctMembers, FeatureResultTopology};
     let id = crate::ids::FeatureResultTopologyId::mint("test:model:feature-result#1").unwrap();
     let feature = super::FeatureId::mint("test:test:feature#1").unwrap();
-    assert!(FeatureResultTopology::new(
-        id.clone(),
-        feature.clone(),
+    assert!(crate::features::FeatureResultMembers::new(
         vec![],
         vec![],
         vec![],
         vec![],
-        None
+        &cadmpeg_test_support::service_decode_context(),
+        "validate feature result members"
     )
+    .expect("result membership admission")
+    .map(|members| FeatureResultTopology::new(id.clone(), feature.clone(), members, None))
     .is_err());
-    assert!(FeatureResultTopology::new(
-        id.clone(),
-        feature.clone(),
+    assert!(crate::features::FeatureResultMembers::new(
         vec![
             cadmpeg_core::nonblank_literal!("a"),
             cadmpeg_core::nonblank_literal!("a"),
@@ -494,8 +514,11 @@ fn topology_membership_admission() {
         vec![],
         vec![],
         vec![],
-        None
+        &cadmpeg_test_support::service_decode_context(),
+        "validate feature result members"
     )
+    .expect("result membership admission")
+    .map(|members| FeatureResultTopology::new(id.clone(), feature.clone(), members, None))
     .is_err());
     // A blank member identity is refused by the member type, so the wire cannot
     // spell one and the constructor cannot be handed one.
@@ -503,7 +526,11 @@ fn topology_membership_admission() {
         serde_json::json!({"kind": "body", "id": ""})
     )
     .is_err());
-    assert!(DistinctMembers::<String>::try_from(vec!["a".into(), "a".into()]).is_err());
+    assert!(DistinctMembers::<String>::try_from(
+        vec!["a".into(), "a".into()],
+        &cadmpeg_test_support::service_decode_context()
+    )
+    .is_err());
     assert!(
         serde_json::from_value::<DistinctMembers<crate::ids::BodyId>>(serde_json::json!([
             "test:model:body#1",
@@ -1960,3 +1987,5 @@ fn feature_frames_hold_their_admitted_unit_axes() {
         FiniteVector3::new(Vector3::new(0.0, 3.0, 4.0)).unwrap()
     );
 }
+
+mod reference_views;

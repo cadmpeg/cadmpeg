@@ -11,8 +11,9 @@ extern crate rustc_span;
 extern crate rustc_type_ir;
 
 mod allocation;
-mod callee;
+mod bounds;
 mod callback;
+mod callee;
 mod conversion;
 mod extent;
 mod external;
@@ -23,8 +24,8 @@ mod iteration;
 mod key_work;
 mod parser;
 mod replacement;
-mod scope;
 mod scalar;
+mod scope;
 mod serde;
 mod storage;
 mod types;
@@ -61,12 +62,20 @@ impl Callbacks for DecodeCallbacks {
         if std::env::var_os("CADMPEG_POLICY_GRAPH").is_some() {
             graph.print();
             for owner in &owners {
-                if !production(tcx, owner.to_def_id()) { continue; }
+                if !production(tcx, owner.to_def_id()) {
+                    continue;
+                }
                 let mut findings = Findings::default();
                 Analysis {
-                    tcx, typeck: tcx.typeck(*owner), typing_owner: *owner, arguments: None,
-                    fixed_parameters: HashSet::new(), flow: flow::Flow::default(), findings: &mut findings,
-                }.visit_body(tcx.hir_body_owned_by(*owner));
+                    tcx,
+                    typeck: tcx.typeck(*owner),
+                    typing_owner: *owner,
+                    arguments: None,
+                    fixed_parameters: HashSet::new(),
+                    flow: flow::Flow::default(),
+                    findings: &mut findings,
+                }
+                .visit_body(tcx.hir_body_owned_by(*owner));
                 for proof in findings.key_work_proofs {
                     println!("decode_key_work_proof\t{proof}");
                 }
@@ -286,7 +295,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
     }
 
     fn expr_ty(&self, expression: &Expr<'tcx>) -> rustc_middle::ty::Ty<'tcx> {
-        let value = types::reveal_opaque(self.tcx, self.substitute(self.typeck.expr_ty(expression)));
+        let value =
+            types::reveal_opaque(self.tcx, self.substitute(self.typeck.expr_ty(expression)));
         self.tcx
             .try_normalize_erasing_regions(
                 self.typing_env(),
@@ -296,7 +306,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
     }
 
     fn expr_ty_adjusted(&self, expression: &Expr<'tcx>) -> rustc_middle::ty::Ty<'tcx> {
-        let value = types::reveal_opaque(self.tcx, self.substitute(self.typeck.expr_ty_adjusted(expression)));
+        let value = types::reveal_opaque(
+            self.tcx,
+            self.substitute(self.typeck.expr_ty_adjusted(expression)),
+        );
         self.tcx
             .try_normalize_erasing_regions(
                 self.typing_env(),
@@ -343,7 +356,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     .map(|path| path.display().to_string())
             })
             .unwrap_or(path);
-        let replacement = if message.contains("; replacement: ") { String::new() } else {
+        let replacement = if message.contains("; replacement: ") {
+            String::new()
+        } else {
             format!("; replacement: {}", replacement::diagnostic(message))
         };
         let source = span.source_callsite();
@@ -357,7 +372,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 rule.to_owned(),
             ))
             .or_default()
-            .insert(format!("[column {}] {message}{replacement}", location.col.0 + 1));
+            .insert(format!(
+                "[column {}] {message}{replacement}",
+                location.col.0 + 1
+            ));
     }
 
     fn shape_report(&mut self, expression: &'tcx Expr<'tcx>, shape: types::Shape, operation: &str) {

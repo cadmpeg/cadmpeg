@@ -386,7 +386,7 @@ fn composite_coplanarity_refuses_segment_work_active_nodes_and_depth() {
     };
     let mut ir = CadIr::empty();
     ir.model.curves.push(child);
-    let index = ModelIndex::new(&ir);
+    let index = ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
     let plane = (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0));
 
     for (dimension, cap, operation) in [
@@ -1128,9 +1128,13 @@ fn decode_preserves_rational_bspline_weights_and_multiplicities() {
     assert_eq!(nurbs.knots().as_slice(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
     assert_eq!(nurbs.pole_rows().weights(), Some(vec![1.0, 0.5, 1.0]));
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, 0.5)
-            .ok()
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+        cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            nurbs,
+            0.5
+        )
+        .ok()
+        .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(1.0, 1.0 / 3.0, 0.0))
     );
     assert!(result.report().losses.is_empty());
@@ -1390,9 +1394,13 @@ fn decode_projects_a_bounded_polynomial_bspline_curve() {
     assert_eq!(nurbs.weights(), None);
     assert!(!nurbs.periodic());
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, 0.5)
-            .ok()
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+        cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            nurbs,
+            0.5
+        )
+        .ok()
+        .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0))
     );
     assert_eq!(
@@ -1427,9 +1435,13 @@ fn decode_projects_a_degree_zero_polynomial_bspline_curve() {
     assert_eq!(nurbs.control_points().len(), 1);
     assert_eq!(nurbs.weights(), None);
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, 0.5)
-            .ok()
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+        cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            nurbs,
+            0.5
+        )
+        .ok()
+        .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
     );
     assert_eq!(
@@ -1730,7 +1742,8 @@ fn decode_projects_a_line_as_a_normalized_bounded_wire_edge() {
             .source_object
             .as_ref()
             .unwrap()
-            .object_id.as_str(),
+            .object_id
+            .as_str(),
         "D1"
     );
     assert!(result.report().losses.is_empty());
@@ -1754,7 +1767,8 @@ fn decode_preserves_semi_bounded_and_unbounded_line_domains_natively() {
                 .source_object
                 .as_ref()
                 .unwrap()
-                .object_id.as_str(),
+                .object_id
+                .as_str(),
             "D1"
         );
         assert!(result.report().losses.is_empty());

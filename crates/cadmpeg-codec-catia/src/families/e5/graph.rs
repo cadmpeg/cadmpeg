@@ -1693,7 +1693,10 @@ fn solve_absolute_orientation(
             )?;
         }
     }
-    let mut adjacency = ctx.collect_indexed_vec(locations.len(), "catia e5 orientation adjacency", |_| Ok(Vec::<(usize, Sign)>::new()))?;
+    let mut adjacency =
+        ctx.collect_indexed_vec(locations.len(), "catia e5 orientation adjacency", |_| {
+            Ok(Vec::<(usize, Sign)>::new())
+        })?;
     for [(left, left_r), (right, right_r)] in occurrences
         .values()
         .filter_map(|uses| <&[_; 2]>::try_from(uses.as_slice()).ok())

@@ -196,8 +196,8 @@ pub(super) fn sketch_table_headers(
     }
     ctx.stable_sort_by(
         headers.as_mut_slice(),
-            |value| &value.offset,
-            Ord::cmp,
+        |value| &value.offset,
+        Ord::cmp,
         "creo sketch table headers headers ordering",
     )?;
     Ok(headers)

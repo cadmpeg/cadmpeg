@@ -827,9 +827,18 @@ pub(crate) enum TextShapeKind {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for TextShapeKind {
-    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
-    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
     }
 }
 
@@ -2474,8 +2483,8 @@ pub(crate) fn carrier_census(
     }
     ctx.stable_sort_by(
         &mut census,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "FreeCAD carrier census sort",
     )?;
     Ok(census)
@@ -3643,6 +3652,7 @@ fn parse_binary_surface(
             }
             TextSurface::Nurbs(
                 NurbsSurface::from_finite_lanes(
+                    cursor.ctx,
                     NurbsSurfaceAxis::new(
                         u32::try_from(u_degree).map_err(|_| {
                             CodecError::Malformed("binary Bezier u degree exceeds u32".into())
@@ -3664,7 +3674,7 @@ fn parse_binary_surface(
                             .transpose()?,
                     ),
                     false,
-                )
+                )?
                 .map_err(|error| CodecError::Malformed(error.to_string()))?,
             )
         }
@@ -3830,6 +3840,7 @@ fn parse_binary_curve(
             }
             TextCurve::Nurbs(
                 NurbsCurve::from_finite_lanes(
+                    cursor.ctx,
                     u32::try_from(degree).map_err(|_| {
                         CodecError::Malformed("binary Bezier degree exceeds u32".into())
                     })?,
@@ -3837,7 +3848,7 @@ fn parse_binary_curve(
                     control_points,
                     weights,
                     false,
-                )
+                )?
                 .map_err(|error| CodecError::Malformed(error.to_string()))?,
             )
         }
@@ -3871,8 +3882,15 @@ fn parse_binary_curve(
                 padding,
             )?;
             TextCurve::Nurbs(
-                NurbsCurve::from_finite_lanes(degree, knots, control_points, weights, periodic)
-                    .map_err(|error| CodecError::Malformed(error.to_string()))?,
+                NurbsCurve::from_finite_lanes(
+                    cursor.ctx,
+                    degree,
+                    knots,
+                    control_points,
+                    weights,
+                    periodic,
+                )?
+                .map_err(|error| CodecError::Malformed(error.to_string()))?,
             )
         }
         8 => TextCurve::Trimmed {
@@ -5473,6 +5491,7 @@ fn parse_bezier_surface(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsSur
         }
     }
     NurbsSurface::from_finite_lanes(
+        cursor.ctx,
         NurbsSurfaceAxis::new(
             u32::try_from(u_degree)
                 .map_err(|_| CodecError::Malformed("B-rep integer exceeds u32".into()))?,
@@ -5492,7 +5511,7 @@ fn parse_bezier_surface(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsSur
                 .transpose()?,
         ),
         false,
-    )
+    )?
     .map_err(|error| CodecError::Malformed(error.to_string()))
 }
 
@@ -5680,6 +5699,7 @@ fn normalize_periodic_surface(
     let v_count = u32::try_from(new_v)
         .map_err(|_| CodecError::Malformed("periodic B-spline v pole count exceeds u32".into()))?;
     NurbsSurface::from_finite_lanes(
+        ctx,
         NurbsSurfaceAxis::new(degrees[0], u_knots, periodic[0]),
         NurbsSurfaceAxis::new(degrees[1], v_knots, periodic[1]),
         NurbsSurfaceLanes::new(
@@ -5707,7 +5727,7 @@ fn normalize_periodic_surface(
                 .transpose()?,
         ),
         false,
-    )
+    )?
     .map_err(|error| CodecError::Malformed(error.to_string()))
 }
 
@@ -5847,13 +5867,14 @@ fn parse_nurbs_curve(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsCurve,
     )?;
     append_periodic_curve_poles(cursor.ctx, &mut control_points, weights.as_mut(), padding)?;
     NurbsCurve::from_finite_lanes(
+        cursor.ctx,
         u32::try_from(degree)
             .map_err(|_| CodecError::Malformed("B-rep integer exceeds u32".into()))?,
         knots,
         control_points,
         weights,
         periodic,
-    )
+    )?
     .map_err(|error| CodecError::Malformed(error.to_string()))
 }
 
@@ -5875,13 +5896,14 @@ fn parse_bezier_curve(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsCurve
         }
     }
     NurbsCurve::from_finite_lanes(
+        cursor.ctx,
         u32::try_from(degree)
             .map_err(|_| CodecError::Malformed("B-rep integer exceeds u32".into()))?,
         clamped_bezier_knots(cursor.ctx, degree)?,
         control_points,
         weights,
         false,
-    )
+    )?
     .map_err(|error| CodecError::Malformed(error.to_string()))
 }
 
@@ -6087,7 +6109,11 @@ pub(crate) fn transfer_text_curves(
             });
         let association = SourceObjectAssociation {
             format: cadmpeg_ir::CodecFormat::Fcstd,
-            object_id: cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.copy_retained_text(object_id, "FreeCAD curve source object")?, "validate nonblank text")?
+            object_id: cadmpeg_core::text::NonBlankString::for_decode(
+                ctx,
+                ctx.copy_retained_text(object_id, "FreeCAD curve source object")?,
+                "validate nonblank text",
+            )?
             .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
             name: None,
             color: None,
@@ -6371,7 +6397,11 @@ pub(crate) fn transfer_text_surfaces(
             });
         let association = SourceObjectAssociation {
             format: cadmpeg_ir::CodecFormat::Fcstd,
-            object_id: cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.copy_retained_text(object_id, "FreeCAD surface source object")?, "validate nonblank text")?
+            object_id: cadmpeg_core::text::NonBlankString::for_decode(
+                ctx,
+                ctx.copy_retained_text(object_id, "FreeCAD surface source object")?,
+                "validate nonblank text",
+            )?
             .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
             name: None,
             color: None,

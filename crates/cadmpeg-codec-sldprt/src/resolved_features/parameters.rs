@@ -269,7 +269,9 @@ pub(crate) fn enrich_history_parameters<'a>(
         let Some(expression) = expression else {
             continue;
         };
-        let Some(name) = cadmpeg_core::text::NonBlankString::for_decode(ctx, name, "validate nonblank text")? else {
+        let Some(name) =
+            cadmpeg_core::text::NonBlankString::for_decode(ctx, name, "validate nonblank text")?
+        else {
             continue;
         };
         if replace_existing {

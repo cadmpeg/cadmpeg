@@ -214,8 +214,8 @@ pub(super) fn historical_edge_context(
     )?;
     decode.stable_sort_by(
         &mut incident_loops,
-            |value| &value.coedge_slot,
-            Ord::cmp,
+        |value| &value.coedge_slot,
+        Ord::cmp,
         "sort F3D historical incident loops",
     )?;
     Ok(
@@ -397,7 +397,7 @@ pub(super) fn bind_body_recipe_face_selection(
     }
     let native = ctx.copy_retained_text(native, "copy F3D body recipe face selection identity")?;
     if let Ok(historical) =
-        cadmpeg_ir::features::FaceSelection::historical_for_decode(state, faces, native, ctx)?
+        cadmpeg_ir::features::FaceSelection::historical(state, faces, native, ctx)?
     {
         *selection = historical;
     }
@@ -632,8 +632,8 @@ impl HistoricalIdentityIndex {
             )?;
             decode.sort_unstable_by(
                 &mut revision.states,
-            |value| value,
-            Ord::cmp,
+                |value| value,
+                Ord::cmp,
                 "sort F3D reconstructed revision states",
             )?;
             revision.states.dedup();
@@ -825,8 +825,8 @@ fn component_histories<'a>(
     }
     decode.stable_sort_by(
         &mut selected,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort F3D component histories",
     )?;
     selected.dedup_by(|left, right| left.id == right.id);
@@ -1158,8 +1158,8 @@ fn hole_transition_face_candidate(
     )?;
     decode.sort_unstable_by(
         &mut candidates,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "sort F3D Hole transition faces",
     )?;
     candidates.dedup();
@@ -1639,8 +1639,8 @@ pub(super) fn unique_mirror_plane_candidate(
 > {
     decode.stable_sort_by(
         &mut primary,
-            |value| &value.history_id,
-            Ord::cmp,
+        |value| &value.history_id,
+        Ord::cmp,
         "f3d mirror plane primary candidates sort",
     )?;
     primary.dedup();
@@ -1651,8 +1651,8 @@ pub(super) fn unique_mirror_plane_candidate(
     });
     decode.stable_sort_by(
         &mut persistent,
-            |value| &value.history_id,
-            Ord::cmp,
+        |value| &value.history_id,
+        Ord::cmp,
         "f3d mirror plane persistent candidates sort",
     )?;
     persistent.dedup();

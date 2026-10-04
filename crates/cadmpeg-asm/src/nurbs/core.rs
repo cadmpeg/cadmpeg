@@ -136,7 +136,8 @@ pub(super) fn surface_block(
     // order where index `u * v_count + v` is pole `(u, v)`.
     let poles = propagate_resource!(control_points(ctx, &mut cur, pole_count, marker)?);
     let grid = propagate_resource!(poles.into_counted_transposed_grid(ctx, n_poles_u, n_poles_v)?);
-    let surface = NurbsSurface::new(
+    let surface = propagate_resource!(NurbsSurface::new(
+        ctx,
         NurbsSurfaceAxis::new(
             u32::try_from(degree_u).ok()?,
             u_knots,
@@ -149,7 +150,7 @@ pub(super) fn surface_block(
         ),
         grid,
         false,
-    )
+    ))
     .ok()?;
     Some(Ok((surface, cur.pos())))
 }
@@ -186,12 +187,13 @@ pub(super) fn curve_block(
         propagate_resource!(knots(ctx, &mut cur, usize::try_from(n_uniq).ok()?, degree)?);
     let poles = propagate_resource!(control_points(ctx, &mut cur, n_poles, marker)?);
 
-    let curve = NurbsCurve::new(
+    let curve = propagate_resource!(NurbsCurve::new(
+        ctx,
         u32::try_from(degree).ok()?,
         knot_vector,
         poles.into_lane(),
         is_periodic(closure),
-    )
+    ))
     .ok()?;
     Some(Ok((curve, cur.pos())))
 }
@@ -397,6 +399,12 @@ pub(super) fn decode_surface_block(
     marker_pos: usize,
     int_width: RefWidth,
 ) -> Option<SurfacePatchLayout> {
+    // Byte-addressed patch inspection uses an independent desktop writer policy.
+    let writer_arena = cadmpeg_core::decode::DecodeArena::new();
+    let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let (writer_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)
+            .ok()?;
     let marker = marker_at(b, marker_pos)?;
     let mut pos = marker_pos + marker.byte_len();
 
@@ -449,6 +457,7 @@ pub(super) fn decode_surface_block(
     let poles = read_control_points(b, &mut pos, n_poles_u * n_poles_v, marker)?;
     let grid = poles.into_transposed_grid(n_poles_u, n_poles_v)?;
     let surface = NurbsSurface::new(
+        &writer_ctx,
         NurbsSurfaceAxis::new(
             u32::try_from(degree_u).ok()?,
             u_knots,
@@ -462,6 +471,7 @@ pub(super) fn decode_surface_block(
         grid,
         false,
     )
+    .ok()?
     .ok()?;
     Some(SurfacePatchLayout {
         surface,
@@ -531,6 +541,12 @@ pub(super) fn decode_curve_block(
     marker_pos: usize,
     int_width: RefWidth,
 ) -> Option<CurvePatchLayout> {
+    // Byte-addressed patch inspection uses an independent desktop writer policy.
+    let writer_arena = cadmpeg_core::decode::DecodeArena::new();
+    let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let (writer_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)
+            .ok()?;
     let marker = marker_at(b, marker_pos)?;
     let mut pos = marker_pos + marker.byte_len();
 
@@ -556,11 +572,13 @@ pub(super) fn decode_curve_block(
     let poles = read_control_points(b, &mut pos, n_poles, marker)?;
 
     let curve = NurbsCurve::new(
+        &writer_ctx,
         u32::try_from(degree).ok()?,
         knots,
         poles.into_lane(),
         is_periodic(closure),
     )
+    .ok()?
     .ok()?;
     Some(CurvePatchLayout {
         curve,

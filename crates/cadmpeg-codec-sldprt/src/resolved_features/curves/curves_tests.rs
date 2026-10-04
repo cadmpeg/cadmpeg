@@ -377,11 +377,10 @@ fn closed_profile_refuses_retained_limit() {
 #[test]
 fn closed_profile_refuses_work_limit() {
     let entities = closed_profile_limit_entities();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::closed_marker_profiles(&ctx, &entities).unwrap_err();
+    // Admit candidate indexes before refusing incidence traversal.
+    let error = crate::test_support::work_refusal_at("scan SLDPRT closed curve incidence", |ctx| {
+        super::closed_marker_profiles(ctx, &entities)
+    });
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "scan SLDPRT closed curve incidence"));
@@ -1513,8 +1512,10 @@ fn unresolved_fillet_without_tangent_record_remains_native() {
         entity(
             "synthetic:test:id#fillet",
             SketchGeometry::try_from(SketchGeometryDefinition::Native {
-                native_kind: cadmpeg_core::text::NonBlankString::try_from("sldprt:marker-geometry:2")
-                    .expect("nonempty source identity"),
+                native_kind: cadmpeg_core::text::NonBlankString::try_from(
+                    "sldprt:marker-geometry:2",
+                )
+                .expect("nonempty source identity"),
             })
             .unwrap(),
             &["start", "end"],
@@ -1579,8 +1580,10 @@ fn unresolved_fillet_between_arcs_remains_native_without_tangent_relation() {
         entity(
             "synthetic:test:id#fillet",
             SketchGeometry::try_from(SketchGeometryDefinition::Native {
-                native_kind: cadmpeg_core::text::NonBlankString::try_from("sldprt:marker-geometry:2")
-                    .expect("nonempty source identity"),
+                native_kind: cadmpeg_core::text::NonBlankString::try_from(
+                    "sldprt:marker-geometry:2",
+                )
+                .expect("nonempty source identity"),
             })
             .unwrap(),
             &["start", "end"],
@@ -1639,8 +1642,10 @@ fn connected_marker_arc_uses_unique_equidistant_point_witness() {
         entity(
             "synthetic:test:id#arc",
             SketchGeometry::try_from(SketchGeometryDefinition::Native {
-                native_kind: cadmpeg_core::text::NonBlankString::try_from("sldprt:marker-geometry:2")
-                    .expect("nonempty source identity"),
+                native_kind: cadmpeg_core::text::NonBlankString::try_from(
+                    "sldprt:marker-geometry:2",
+                )
+                .expect("nonempty source identity"),
             })
             .unwrap(),
             "curve:300",
@@ -1691,8 +1696,10 @@ fn connected_marker_arc_with_mirror_centers_remains_native() {
             SketchEntityId::mint("synthetic:test:id#arc").unwrap(),
             sketch,
             SketchGeometry::try_from(SketchGeometryDefinition::Native {
-                native_kind: cadmpeg_core::text::NonBlankString::try_from("sldprt:marker-geometry:2")
-                    .expect("nonempty source identity"),
+                native_kind: cadmpeg_core::text::NonBlankString::try_from(
+                    "sldprt:marker-geometry:2",
+                )
+                .expect("nonempty source identity"),
             })
             .unwrap(),
         )
@@ -1770,8 +1777,10 @@ fn connected_marker_arc_uses_one_resolved_arc_in_a_closed_cycle() {
             SketchEntityId::mint("synthetic:test:id#right-arc").unwrap(),
             sketch,
             SketchGeometry::try_from(SketchGeometryDefinition::Native {
-                native_kind: cadmpeg_core::text::NonBlankString::try_from("sldprt:marker-geometry:2")
-                    .expect("nonempty source identity"),
+                native_kind: cadmpeg_core::text::NonBlankString::try_from(
+                    "sldprt:marker-geometry:2",
+                )
+                .expect("nonempty source identity"),
             })
             .unwrap(),
         )

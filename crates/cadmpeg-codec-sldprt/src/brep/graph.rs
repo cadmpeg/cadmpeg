@@ -252,14 +252,13 @@ impl Brep {
                             pcurves: qualified_pcurve_uses(ctx, &vertex_use.pcurves, &tail)?,
                         });
                     }
-                    *ring =
-                        cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedges, vertex_uses)
-                            .map_err(cadmpeg_core::CodecError::from)?
-                            .map_err(|error| {
-                                cadmpeg_core::CodecError::malformed(format_args!(
-                                    "qualified loop ring is invalid: {error}"
-                                ))
-                            })?;
+                    *ring = cadmpeg_ir::topology::LoopRing::new(ctx, coedges, vertex_uses)
+                        .map_err(cadmpeg_core::CodecError::from)?
+                        .map_err(|error| {
+                            cadmpeg_core::CodecError::malformed(format_args!(
+                                "qualified loop ring is invalid: {error}"
+                            ))
+                        })?;
                 }
             }
         }
@@ -382,7 +381,7 @@ impl Brep {
             }
         }
         self.annotations
-            .map_ids_for_decode(ctx, qualify, "qualify SLDPRT annotation identities")?
+            .map_ids(ctx, qualify, "qualify SLDPRT annotation identities")?
             .map_err(cadmpeg_core::CodecError::from)?;
 
         Ok(())
@@ -892,7 +891,7 @@ fn emit_offset_surface(
     support: SurfaceId,
     offset: &OffsetCarrier,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    annotations.note_for_decode(
+    annotations.note(
         sink.ctx,
         surface.as_str(),
         source_stream,
@@ -1008,7 +1007,7 @@ fn ensure_surface_support(
                         Err(_) => return Ok(None),
                     }
                 }
-                annotations.note_for_decode(
+                annotations.note(
                     sink.ctx,
                     id.as_str(),
                     source_stream,
@@ -1079,7 +1078,7 @@ fn ensure_surface_support(
                     .iter()
                     .any(|candidate| candidate.id == surface)
             {
-                annotations.exactness_for_decode(sink.ctx, surface.as_str(), Exactness::Unknown)?;
+                annotations.exactness(sink.ctx, surface.as_str(), Exactness::Unknown)?;
                 sink.out.stats.unknown_procedural_supports += 1;
                 admit_brep_entity(sink.ctx)?;
                 sink.ctx.reserve_vec(
@@ -1384,8 +1383,8 @@ pub(crate) fn decode_bodies(
     ordered.extend(bodies.iter());
     ctx.stable_sort_by(
         &mut ordered,
-            |value| value.1.description.as_str(),
-            |left, right| is_deltas_stream(left).cmp(&is_deltas_stream(right)),
+        |value| value.1.description.as_str(),
+        |left, right| is_deltas_stream(left).cmp(&is_deltas_stream(right)),
         "sort Parasolid body streams",
     )?;
     let mut entity_streams = Vec::new();
@@ -1512,8 +1511,8 @@ fn unique_body_modifiers(
     }
     ctx.stable_sort_by(
         &mut out,
-            |value| &value.body_attr,
-            Ord::cmp,
+        |value| &value.body_attr,
+        Ord::cmp,
         "sort Parasolid body modifiers",
     )?;
     Ok(out)
@@ -1598,8 +1597,8 @@ fn unique_face_colors(
     }
     ctx.stable_sort_by_key(
         &mut out,
-            |value| (value.face_attr,value.offset),
-            Ord::cmp,
+        |value| (value.face_attr, value.offset),
+        Ord::cmp,
         "sort Parasolid face colors",
     )?;
     Ok((out, unresolved))
@@ -1658,8 +1657,8 @@ fn typed_body_records(
                 }
                 ctx.sort_unstable_by(
                     &mut refs,
-            |value| value,
-            Ord::cmp,
+                    |value| value,
+                    Ord::cmp,
                     "sort typed Parasolid shell faces",
                 )?;
                 refs.dedup();
@@ -1672,8 +1671,8 @@ fn typed_body_records(
             }
             ctx.stable_sort_by(
                 &mut shells,
-            |value| &value.attr,
-            Ord::cmp,
+                |value| &value.attr,
+                Ord::cmp,
                 "sort Parasolid topology",
             )?;
             ctx.reserve_vec(&mut regions, 1, "collect typed Parasolid body regions")?;
@@ -1700,8 +1699,8 @@ fn typed_body_records(
     }
     ctx.stable_sort_by(
         &mut records,
-            |value| &value.attr,
-            Ord::cmp,
+        |value| &value.attr,
+        Ord::cmp,
         "sort Parasolid topology",
     )?;
     Ok((!records.is_empty()).then_some(records))
@@ -1719,9 +1718,7 @@ fn sorted_topology_sequences(
     let mut sequences = Vec::new();
     ctx.reserve_vec(&mut sequences, count, operation)?;
     sequences.extend(pairs);
-    ctx.sort_unstable_by(&mut sequences,
-            |value| value,
-            Ord::cmp, operation)?;
+    ctx.sort_unstable_by(&mut sequences, |value| value, Ord::cmp, operation)?;
     sequences.dedup();
     Ok(sequences)
 }
@@ -1738,9 +1735,7 @@ fn sorted_graph_attrs(
     let mut sorted = Vec::new();
     ctx.reserve_vec(&mut sorted, count, operation)?;
     sorted.extend(attrs);
-    ctx.sort_unstable_by(&mut sorted,
-            |value| value,
-            Ord::cmp, operation)?;
+    ctx.sort_unstable_by(&mut sorted, |value| value, Ord::cmp, operation)?;
     Ok(sorted)
 }
 
@@ -1821,7 +1816,7 @@ fn decode_graph(
         ..Brep::default()
     };
     let mut annotations = AnnotationBuilder::new();
-    let source_stream = StreamHandle::new_for_decode(
+    let source_stream = StreamHandle::new(
         ctx,
         copy_graph_stream_name(ctx, stream)?,
         "allocate annotation stream handle",
@@ -1860,7 +1855,7 @@ fn decode_graph(
         ctx.charge_work(work, "resolve Parasolid face owners")?;
         ctx.stable_sort_by_key(
             &mut uses,
-            |value| (value.0.offset,value.0.attr),
+            |value| (value.0.offset, value.0.attr),
             Ord::cmp,
             "sort Parasolid face owners",
         )?;
@@ -1885,8 +1880,8 @@ fn decode_graph(
     }
     ctx.stable_sort_by(
         &mut faces,
-            |value| &value.bridge_attr,
-            Ord::cmp,
+        |value| &value.bridge_attr,
+        Ord::cmp,
         "sort Parasolid topology",
     )?;
     out.stats.ambiguous_face_owners += ambiguous_face_owners;
@@ -1966,7 +1961,7 @@ fn decode_graph(
         sorted_graph_attrs(ctx, kept_points.iter().copied(), "order Parasolid points")?;
     for a in point_attrs {
         let rec = &t.points()[&a];
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             id_point(a).as_str(),
             &source_stream,
@@ -1994,7 +1989,7 @@ fn decode_graph(
     for a in vuse_attrs {
         let rec = &t.vertex_uses()[&a];
         let point_attr = rec.refs[4];
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             id_vertex(a).as_str(),
             &source_stream,
@@ -2042,22 +2037,22 @@ fn decode_graph(
         let (mut start_id, mut end_id) = if let Some(position) = closed_circle_point {
             let point_id = id_closed_point(e);
             let vertex_id = id_closed_vertex(e);
-            annotations.note_for_decode(
+            annotations.note(
                 ctx,
                 point_id.as_str(),
                 &source_stream,
                 0,
                 Some("derived_closed_circle_seam"),
             )?;
-            annotations.exactness_for_decode(ctx, point_id.as_str(), Exactness::Derived)?;
-            annotations.note_for_decode(
+            annotations.exactness(ctx, point_id.as_str(), Exactness::Derived)?;
+            annotations.note(
                 ctx,
                 vertex_id.as_str(),
                 &source_stream,
                 0,
                 Some("derived_closed_circle_seam"),
             )?;
-            annotations.exactness_for_decode(ctx, vertex_id.as_str(), Exactness::Derived)?;
+            annotations.exactness(ctx, vertex_id.as_str(), Exactness::Derived)?;
             let finite_position = cadmpeg_ir::features::FinitePoint3::new(position)
                 .ok_or(Point::NON_FINITE_POSITION)
                 .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -2141,14 +2136,14 @@ fn decode_graph(
                         emit_curve(ctx, &mut out, carrier)?;
                         if matches!(indexed, IndexedCurve::Derived(_)) {
                             let offset = carrier.offset;
-                            annotations.note_for_decode(
+                            annotations.note(
                                 ctx,
                                 id_curve(curve_attr).as_str(),
                                 &source_stream,
                                 u64_from_index(offset),
                                 Some("surface_intersection"),
                             )?;
-                            annotations.exactness_for_decode(
+                            annotations.exactness(
                                 ctx,
                                 id_curve(curve_attr).as_str(),
                                 Exactness::Derived,
@@ -2164,14 +2159,14 @@ fn decode_graph(
                         "track emitted Parasolid curves",
                     )? {
                         let offset = eu.map_or(0, |record| record.offset);
-                        annotations.note_for_decode(
+                        annotations.note(
                             ctx,
                             id_curve(curve_attr).as_str(),
                             &source_stream,
                             u64_from_index(offset),
                             Some("unknown_curve"),
                         )?;
-                        annotations.exactness_for_decode(
+                        annotations.exactness(
                             ctx,
                             id_curve(curve_attr).as_str(),
                             Exactness::Unknown,
@@ -2192,7 +2187,7 @@ fn decode_graph(
             }
         }
         let off = eu.map_or(0, |r| r.offset);
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             id_edge(e).as_str(),
             &source_stream,
@@ -2269,7 +2264,7 @@ fn decode_graph(
                     .filter(|tw| tw.refs[5] == ce_attr)
                     .filter(|_| emitted_coedges.contains(&twin))
                     .map(|_| id_coedge(twin));
-                annotations.note_for_decode(
+                annotations.note(
                     ctx,
                     id_coedge(ce_attr).as_str(),
                     &source_stream,
@@ -2327,7 +2322,7 @@ fn decode_graph(
                             cadmpeg_ir::identity_key!("intersection:").then(ce_attr),
                         );
                         let offset = curve_carrier.offset;
-                        annotations.note_for_decode(
+                        annotations.note(
                             ctx,
                             id.as_str(),
                             &source_stream,
@@ -2342,7 +2337,7 @@ fn decode_graph(
                                 }
                             }),
                         )?;
-                        annotations.exactness_for_decode(ctx, id.as_str(), Exactness::Derived)?;
+                        annotations.exactness(ctx, id.as_str(), Exactness::Derived)?;
                         admit_brep_entity(ctx)?;
                         ctx.reserve_vec(
                             &mut out.pcurves,
@@ -2419,14 +2414,14 @@ fn decode_graph(
             ctx.reserve_vec(&mut coedges, ring.len(), "collect Parasolid loop coedges")?;
             coedges.extend(ring.iter().map(|a| id_coedge(*a)));
             let off = t.loops().get(loop_attr).map_or(0, |r| r.offset);
-            annotations.note_for_decode(
+            annotations.note(
                 ctx,
                 id_loop(*loop_attr).as_str(),
                 &source_stream,
                 u64_from_index(off),
                 Some("00_0f"),
             )?;
-            let Ok(ring) = cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedges, Vec::new())
+            let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(ctx, coedges, Vec::new())
                 .map_err(cadmpeg_core::CodecError::from)?
             else {
                 continue;
@@ -2551,7 +2546,7 @@ fn decode_graph(
         match carriers.surface(f.surface_attr) {
             Some(c) => {
                 surface_orientation_reversed = c.orientation_reversed;
-                annotations.note_for_decode(
+                annotations.note(
                     ctx,
                     id_surf(f.bridge_attr).as_str(),
                     &source_stream,
@@ -2694,7 +2689,7 @@ fn decode_graph(
                             "track Parasolid blend spines",
                         )? {
                             emit_curve(ctx, &mut out, carrier)?;
-                            annotations.note_for_decode(
+                            annotations.note(
                                 ctx,
                                 id_curve(blend.spine).as_str(),
                                 &source_stream,
@@ -2745,7 +2740,7 @@ fn decode_graph(
                         construction: procedural_id,
                         cache: None,
                     };
-                    annotations.note_for_decode(
+                    annotations.note(
                         ctx,
                         id_surf(f.bridge_attr).as_str(),
                         &source_stream,
@@ -2780,7 +2775,7 @@ fn decode_graph(
                     }
                     resolved
                 } {
-                    annotations.note_for_decode(
+                    annotations.note(
                         ctx,
                         id_surf(f.bridge_attr).as_str(),
                         &source_stream,
@@ -2788,11 +2783,7 @@ fn decode_graph(
                         Some(tag),
                     )?;
                     if let Some(exactness) = exactness {
-                        annotations.exactness_for_decode(
-                            ctx,
-                            id_surf(f.bridge_attr).as_str(),
-                            exactness,
-                        )?;
+                        annotations.exactness(ctx, id_surf(f.bridge_attr).as_str(), exactness)?;
                     }
                     admit_brep_entity(ctx)?;
                     ctx.reserve_vec(&mut out.surfaces, 1, "collect Parasolid swept surfaces")?;
@@ -2803,14 +2794,14 @@ fn decode_graph(
                     });
                 } else {
                     out.stats.unknown_surface_faces += 1;
-                    annotations.note_for_decode(
+                    annotations.note(
                         ctx,
                         id_surf(f.bridge_attr).as_str(),
                         &source_stream,
                         u64_from_index(surf_off),
                         Some("unknown_surface"),
                     )?;
-                    annotations.exactness_for_decode(
+                    annotations.exactness(
                         ctx,
                         id_surf(f.bridge_attr).as_str(),
                         Exactness::Unknown,
@@ -2827,7 +2818,7 @@ fn decode_graph(
                 }
             }
         }
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             id_face(f.bridge_attr).as_str(),
             &source_stream,
@@ -2941,14 +2932,8 @@ fn decode_graph(
                     (0, "synthetic_grouping", Exactness::Derived),
                     |(offset, tag)| (offset, tag, Exactness::ByteExact),
                 );
-                annotations.note_for_decode(
-                    ctx,
-                    id,
-                    &source_stream,
-                    u64_from_index(offset),
-                    Some(tag),
-                )?;
-                annotations.exactness_for_decode(ctx, id, exactness)?;
+                annotations.note(ctx, id, &source_stream, u64_from_index(offset), Some(tag))?;
+                annotations.exactness(ctx, id, exactness)?;
                 Ok(())
             };
         annotate_group(
@@ -3136,7 +3121,7 @@ fn decode_graph(
         };
         if let Some(indexed) = carriers.curve(attr) {
             let carrier = indexed.carrier();
-            annotations.note_for_decode(
+            annotations.note(
                 ctx,
                 curve.id.as_str(),
                 &source_stream,
@@ -3147,86 +3132,86 @@ fn decode_graph(
                 curve.geometry,
                 CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
             ) {
-                annotations.exactness_for_decode(ctx, curve.id.as_str(), Exactness::Unknown)?;
+                annotations.exactness(ctx, curve.id.as_str(), Exactness::Unknown)?;
             }
         }
     }
     ctx.stable_sort_by(
         &mut out.bodies,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort Parasolid graph ids",
     )?;
     ctx.stable_sort_by(
         &mut out.regions,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort Parasolid graph ids",
     )?;
     ctx.stable_sort_by(
         &mut out.shells,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort Parasolid graph ids",
     )?;
     ctx.stable_sort_by(
         &mut out.faces,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort Parasolid graph ids",
     )?;
     ctx.stable_sort_by(
         &mut out.loops,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort Parasolid graph ids",
     )?;
     ctx.stable_sort_by(
         &mut out.coedges,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort Parasolid graph ids",
     )?;
     ctx.stable_sort_by(
         &mut out.edges,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort Parasolid graph ids",
     )?;
     ctx.stable_sort_by(
         &mut out.vertices,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort Parasolid graph ids",
     )?;
     ctx.stable_sort_by(
         &mut out.points,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort Parasolid graph ids",
     )?;
     ctx.stable_sort_by(
         &mut out.surfaces,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort Parasolid graph ids",
     )?;
     ctx.stable_sort_by(
         &mut out.procedural_surfaces,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort Parasolid graph ids",
     )?;
     ctx.stable_sort_by(
         &mut out.curves,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort Parasolid graph ids",
     )?;
     ctx.stable_sort_by(
         &mut out.pcurves,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort Parasolid graph ids",
     )?;
     out.annotations = annotations.build();
@@ -3252,11 +3237,31 @@ fn decode_graph(
             .chain(out.pcurves.iter().map(|entity| entity.id.as_str())),
         "index retained Parasolid entities",
     )?;
-    out.annotations
-        .provenance
-        .retain(|id, _| retained_ids.contains(id.as_str()));
+    let mut keep = |id: &str| {
+        let work = retained_ids
+            .len()
+            .checked_add(1)
+            .and_then(|count| {
+                id.len()
+                    .checked_add(1)
+                    .and_then(|bytes| count.checked_mul(bytes))
+            })
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "Parasolid annotation identity lookup",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
+            })?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(work),
+            "Parasolid annotation identity lookup",
+        )?;
+        Ok(retained_ids.contains(id))
+    };
+    out.annotations.retain_provenance(ctx, &mut keep)?;
     let mut annotations = AnnotationBuilder::resume(std::mem::take(&mut out.annotations));
-    annotations.retain_exactness(|id| retained_ids.contains(id));
+    annotations.retain_exactness(ctx, keep)?;
     out.annotations = annotations.build();
     Ok(out)
 }
@@ -3374,18 +3379,13 @@ fn annotate_surface_frame(
         ctx.charge_work(1, "scan Parasolid surface frame annotations")?;
         match geometry {
             SolvedSurfaceGeometry::Plane(_) => {
-                annotations.field_exactness_for_decode(
-                    ctx,
-                    id,
-                    "geometry.u_axis",
-                    Exactness::Derived,
-                )?;
+                annotations.field_exactness(ctx, id, "geometry.u_axis", Exactness::Derived)?;
                 break;
             }
             SolvedSurfaceGeometry::Cylinder(_)
             | SolvedSurfaceGeometry::Cone(_)
             | SolvedSurfaceGeometry::Torus(_) => {
-                annotations.field_exactness_for_decode(
+                annotations.field_exactness(
                     ctx,
                     id,
                     "geometry.ref_direction",
@@ -3394,13 +3394,8 @@ fn annotate_surface_frame(
                 break;
             }
             SolvedSurfaceGeometry::Sphere(_) => {
-                annotations.field_exactness_for_decode(
-                    ctx,
-                    id,
-                    "geometry.axis",
-                    Exactness::Derived,
-                )?;
-                annotations.field_exactness_for_decode(
+                annotations.field_exactness(ctx, id, "geometry.axis", Exactness::Derived)?;
+                annotations.field_exactness(
                     ctx,
                     id,
                     "geometry.ref_direction",
@@ -3629,14 +3624,14 @@ fn derive_planar_pcurves(
             });
             out.coedges[*index].pcurves = uses;
         }
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             id.as_str(),
             source_stream,
             0,
             Some("derived_planar_pcurve"),
         )?;
-        annotations.exactness_for_decode(ctx, id.as_str(), Exactness::Derived)?;
+        annotations.exactness(ctx, id.as_str(), Exactness::Derived)?;
         admit_brep_entity(ctx)?;
         ctx.reserve_vec(&mut out.pcurves, 1, "collect derived Parasolid pcurves")?;
         out.pcurves.push(pcurve);
@@ -3972,39 +3967,15 @@ fn derive_cylindrical_pcurves(
                 } else {
                     None
                 };
-                let admitted_poles = u64_from_index(poles.len());
-                let copied_poles = admitted_poles
-                    .checked_mul(if weights.is_some() { 2 } else { 1 })
-                    .ok_or_else(|| {
-                        ctx.refuse_codec_limit(
-                            "admit cylindrical polar poles",
-                            u64::MAX - 1,
-                            u64::MAX,
-                        )
-                    })?;
-                ctx.charge_collection_items(copied_poles, "admit cylindrical polar poles")?;
-                let admission_work = copied_poles
-                    .checked_mul(32)
-                    .and_then(|work| work.checked_add(u64_from_index(knots.len())))
-                    .ok_or_else(|| {
-                        ctx.refuse_codec_limit(
-                            "admit cylindrical polar poles",
-                            u64::MAX - 1,
-                            u64::MAX,
-                        )
-                    })?;
-                ctx.charge_work(admission_work, "admit cylindrical polar poles")?;
                 let polar = match PolarPcurveNurbs::from_checked_lanes(
+                    ctx,
                     nurbs.degree(),
                     knots,
                     poles,
                     weights,
                     nurbs.periodic(),
-                ) {
+                )? {
                     Ok(polar) => polar,
-                    Err(cadmpeg_ir::geometry::nurbs::NurbsError::ResourceLimit(limit)) => {
-                        return Err(limit.into())
-                    }
                     Err(error) => {
                         let note = crate::loss::spline_lane_refusal(
                             ctx,
@@ -4071,14 +4042,14 @@ fn derive_cylindrical_pcurves(
             });
             out.coedges[*index].pcurves = uses;
         }
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             id.as_str(),
             source_stream,
             0,
             Some("derived_cylindrical_pcurve"),
         )?;
-        annotations.exactness_for_decode(ctx, id.as_str(), Exactness::Derived)?;
+        annotations.exactness(ctx, id.as_str(), Exactness::Derived)?;
         admit_brep_entity(ctx)?;
         ctx.reserve_vec(&mut out.pcurves, 1, "collect derived Parasolid pcurves")?;
         out.pcurves.push(pcurve);
@@ -4297,8 +4268,8 @@ fn unique_inverse_parameter(
     });
     ctx.stable_sort_by(
         &mut candidates,
-            |value| &value.0,
-            f64::total_cmp,
+        |value| &value.0,
+        f64::total_cmp,
         "sort Parasolid inverse parameters",
     )?;
     let parameter_tolerance = (INVERSE_PARAMETER_TOLERANCE * parameter_domain[1]
@@ -4650,14 +4621,14 @@ fn derive_revolved_circle_pcurves(
             });
             out.coedges[*index].pcurves = uses;
         }
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             id.as_str(),
             source_stream,
             0,
             Some("derived_revolved_circle_pcurve"),
         )?;
-        annotations.exactness_for_decode(ctx, id.as_str(), Exactness::Derived)?;
+        annotations.exactness(ctx, id.as_str(), Exactness::Derived)?;
         admit_brep_entity(ctx)?;
         ctx.reserve_vec(&mut out.pcurves, 1, "collect derived Parasolid pcurves")?;
         out.pcurves.push(pcurve);
@@ -4817,9 +4788,10 @@ fn derive_spherical_pcurves(
             std::f64::consts::PI,
             -std::f64::consts::FRAC_PI_2,
         ] {
-            let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, &geometry, parameter)?,
-            )?
+            let Some(uv) =
+                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                    cadmpeg_ir::eval::decode::pcurve_uv(ctx, &geometry, parameter),
+                )?)?
             else {
                 fits = false;
                 break;
@@ -4831,11 +4803,11 @@ fn derive_spherical_pcurves(
                 break;
             };
             let Some(curve_point) = cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::decode::curve_point_for_decode(
+                cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(
                     ctx,
                     &CurveGeometry::Solved(SolvedCurveGeometry::Circle(*circle_curve)),
                     parameter,
-                )?,
+                ))?,
             )?
             else {
                 fits = false;
@@ -4892,14 +4864,14 @@ fn derive_spherical_pcurves(
             });
             out.coedges[*index].pcurves = uses;
         }
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             id.as_str(),
             source_stream,
             0,
             Some("derived_spherical_pcurve"),
         )?;
-        annotations.exactness_for_decode(ctx, id.as_str(), Exactness::Derived)?;
+        annotations.exactness(ctx, id.as_str(), Exactness::Derived)?;
         admit_brep_entity(ctx)?;
         ctx.reserve_vec(&mut out.pcurves, 1, "collect derived Parasolid pcurves")?;
         out.pcurves.push(pcurve);
@@ -5119,7 +5091,7 @@ fn derive_nurbs_isoparametric_pcurves(
             });
             out.coedges[*index].pcurves = uses;
         }
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             id.as_str(),
             source_stream,
@@ -5130,7 +5102,7 @@ fn derive_nurbs_isoparametric_pcurves(
                 "derived_nurbs_isoparametric_pcurve"
             }),
         )?;
-        annotations.exactness_for_decode(ctx, id.as_str(), Exactness::Derived)?;
+        annotations.exactness(ctx, id.as_str(), Exactness::Derived)?;
         admit_brep_entity(ctx)?;
         ctx.reserve_vec(&mut out.pcurves, 1, "collect derived Parasolid pcurves")?;
         out.pcurves.push(pcurve);
@@ -5452,12 +5424,8 @@ fn intersection_support_pcurve(
         let mut knots = Vec::new();
         ctx.reserve_vec(&mut knots, knots_source.len(), "copy intersection support pcurve knots")?;
         knots.extend_from_slice(knots_source);
-        ctx.charge_collection_items(
-            u64::try_from(control_points.len()).map_err(|_| ctx.refuse_codec_limit("admit intersection support pcurve controls", u64::MAX - 1, u64::MAX))?,
-            "admit intersection support pcurve controls",
-        )?;
         let nurbs =
-            match PcurveNurbs::from_lanes(1, knots, control_points, None, false) {
+            match PcurveNurbs::from_lanes(ctx, 1, knots, control_points, None, false)? {
                 Ok(nurbs) => nurbs,
                 Err(error) => {
                     refusal.note(
@@ -5599,8 +5567,7 @@ fn nurbs_boundary_pcurve(
         .into_iter()
         .filter(|parameter| parameter.is_finite())
     {
-        let _scratch = super::evaluation::admit_nurbs_isocurve(ctx, surface, fixed_axis)?;
-        if nurbs_surface_isocurve(surface, fixed_axis, parameter)?
+        if nurbs_surface_isocurve(ctx, surface, fixed_axis, parameter)?
             .is_some_and(|candidate| same_curve(&candidate))
         {
             if fixed.is_some() {
@@ -5946,7 +5913,7 @@ fn insert_nurbs_homogeneous_knot(
         || knots.len() != expected_knots
         || !value.is_finite()
         || knots.iter().any(|knot| !knot.is_finite())
-        || !knots_nondecreasing(knots)
+        || !knots_nondecreasing(knots, |count| ctx.charge_work(count, "IR NURBS knot order"))?
     {
         return Ok(None);
     }
@@ -6161,16 +6128,14 @@ fn clamp_nurbs_curve_to_domain(
     else {
         return Ok(None);
     };
-    Ok(Some(
-        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(
-            ctx,
-            curve.degree(),
-            segment_knots,
-            control_points,
-            weights,
-            false,
-        )??,
-    ))
+    Ok(Some(cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        ctx,
+        curve.degree(),
+        segment_knots,
+        control_points,
+        weights,
+        false,
+    )??))
 }
 
 fn extended_nurbs_isocurve_axis_candidate(
@@ -6291,8 +6256,7 @@ fn extended_nurbs_isocurve_axis_candidate(
     };
     let mut matched = None;
     for fixed in unique_fixed_values {
-        let _scratch = super::evaluation::admit_nurbs_isocurve(ctx, surface, fixed_axis)?;
-        if nurbs_surface_isocurve(surface, fixed_axis, fixed)?
+        if nurbs_surface_isocurve(ctx, surface, fixed_axis, fixed)?
             .is_some_and(|expected| nurbs_representation_matches(&expected, &clamped))
         {
             if matched.is_some() {
@@ -6405,8 +6369,8 @@ fn nurbs_curve_sample_parameters(
     }
     ctx.stable_sort_by(
         &mut parameters,
-            |value| value,
-            f64::total_cmp,
+        |value| value,
+        f64::total_cmp,
         "sort NURBS sample parameters",
     )?;
     // Every distinct sample participates in the fit bound, including tiny spans.
@@ -6561,6 +6525,7 @@ fn nurbs_degree_one_cache_lanes(
             return Ok(None);
         };
         let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(nurbs_pcurve_uv(
+            ctx,
             1,
             curve.knots(),
             &control_points,
@@ -6600,7 +6565,7 @@ fn nurbs_degree_one_cache_pcurve(
         "copy NURBS cache pcurve knots",
     )?;
     knots.extend_from_slice(curve.knots());
-    let nurbs = PcurveNurbs::from_lanes(1, knots, control_points, None, false)?;
+    let nurbs = PcurveNurbs::from_lanes(ctx, 1, knots, control_points, None, false)??;
     Ok(Some((PcurveGeometry::Nurbs { nurbs }, fit_tolerance)))
 }
 
@@ -7163,14 +7128,8 @@ fn synthesize_cylinder_seams(
             seam_a.as_str(),
             seam_b.as_str(),
         ] {
-            annotations.note_for_decode(
-                ctx,
-                id,
-                source_stream,
-                0,
-                Some("derived_periodic_seam"),
-            )?;
-            annotations.exactness_for_decode(ctx, id, Exactness::Derived)?;
+            annotations.note(ctx, id, source_stream, 0, Some("derived_periodic_seam"))?;
+            annotations.exactness(ctx, id, Exactness::Derived)?;
         }
         admit_brep_entity(ctx)?;
         ctx.reserve_vec(&mut out.curves, 1, "collect Parasolid cylinder seam curves")?;
@@ -7261,7 +7220,7 @@ fn synthesize_cylinder_seams(
         for id in &ring_ids {
             ring_members.push(id.try_clone_for_decode(ctx, "SLDPRT seam ring identity")?);
         }
-        let ring = cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, ring_members, Vec::new())
+        let ring = cadmpeg_ir::topology::LoopRing::new(ctx, ring_members, Vec::new())
             .map_err(cadmpeg_core::CodecError::from)?
             .map_err(|error| {
                 cadmpeg_core::CodecError::malformed(format_args!(
@@ -7278,7 +7237,9 @@ fn synthesize_cylinder_seams(
             lp.boundary = cadmpeg_ir::topology::LoopBoundary::Ring(ring);
         }
         if let Some(face) = out.faces.iter_mut().find(|face| face.id == face_id) {
-            face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(ctx.collect_retained_vec([loop_a], "bind Parasolid cylinder seam loop")?);
+            face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(
+                ctx.collect_retained_vec([loop_a], "bind Parasolid cylinder seam loop")?,
+            );
         }
         ctx.insert_hash_set(&mut removed, loop_b, "track replaced Parasolid seam loops")?;
     }
@@ -7416,14 +7377,14 @@ fn synthesize_sphere_seams(
             &cadmpeg_ir::identity_namespace!("sldprt", "brep", "curve"),
             cadmpeg_ir::identity_key!("sphere-seam:").then(out.edges[edge_index].id.key()),
         );
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             curve_id.as_str(),
             source_stream,
             0,
             Some("derived_sphere_seam"),
         )?;
-        annotations.exactness_for_decode(ctx, curve_id.as_str(), Exactness::Derived)?;
+        annotations.exactness(ctx, curve_id.as_str(), Exactness::Derived)?;
         admit_brep_entity(ctx)?;
         ctx.reserve_vec(
             &mut out.curves,
@@ -7528,8 +7489,8 @@ fn synthesize_sphere_seams(
             }
             ctx.stable_sort_by(
                 &mut pole_vertices,
-            |value| value.as_str(),
-            Ord::cmp,
+                |value| value.as_str(),
+                Ord::cmp,
                 "sort Parasolid sphere pole vertices",
             )?;
             pole_vertices.dedup();
@@ -7656,14 +7617,8 @@ fn synthesize_sphere_seams(
                     })
                 }?;
                 for id in [point_id.as_str(), vertex_id.as_str()] {
-                    annotations.note_for_decode(
-                        ctx,
-                        id,
-                        source_stream,
-                        0,
-                        Some("derived_sphere_seam"),
-                    )?;
-                    annotations.exactness_for_decode(ctx, id, Exactness::Derived)?;
+                    annotations.note(ctx, id, source_stream, 0, Some("derived_sphere_seam"))?;
+                    annotations.exactness(ctx, id, Exactness::Derived)?;
                 }
                 admit_brep_entity(ctx)?;
                 ctx.reserve_vec(&mut out.points, 1, "collect Parasolid sphere seam points")?;
@@ -7692,8 +7647,8 @@ fn synthesize_sphere_seams(
             coedge_id.as_str(),
             pcurve_id.as_str(),
         ] {
-            annotations.note_for_decode(ctx, id, source_stream, 0, Some("derived_sphere_seam"))?;
-            annotations.exactness_for_decode(ctx, id, Exactness::Derived)?;
+            annotations.note(ctx, id, source_stream, 0, Some("derived_sphere_seam"))?;
+            annotations.exactness(ctx, id, Exactness::Derived)?;
         }
         admit_brep_entity(ctx)?;
         ctx.reserve_vec(&mut out.curves, 1, "collect Parasolid sphere seam curves")?;
@@ -7760,7 +7715,7 @@ fn synthesize_sphere_seams(
             use_curve: None,
             pcurves: pcurve_uses,
         });
-        let ring = cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, ring, Vec::new())
+        let ring = cadmpeg_ir::topology::LoopRing::new(ctx, ring, Vec::new())
             .map_err(cadmpeg_core::CodecError::from)?
             .map_err(|error| {
                 cadmpeg_core::CodecError::malformed(format_args!(
@@ -7981,12 +7936,14 @@ mod tests {
         weights: Option<Vec<f64>>,
     ) -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
         cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             degree,
             knots,
             control_points,
             weights,
             false,
         )
+        .expect("fixture constructor admission")
         .expect("valid test NURBS curve")
     }
 
@@ -8003,6 +7960,7 @@ mod tests {
         weights: Option<Vec<f64>>,
     ) -> cadmpeg_ir::geometry::nurbs::NurbsSurface {
         cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -8019,6 +7977,7 @@ mod tests {
             ),
             false,
         )
+        .expect("fixture constructor admission")
         .expect("valid test NURBS surface")
     }
 
@@ -8295,12 +8254,22 @@ mod tests {
                 .unwrap(),
             ));
         let endpoints = [
-            cadmpeg_ir::eval::surface_point(&surface, 0.0, 3.0)
-                .expect("cylinder start")
-                .get(),
-            cadmpeg_ir::eval::surface_point(&surface, 0.5, 2.0)
-                .expect("cylinder end")
-                .get(),
+            cadmpeg_ir::eval::decode::surface_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &surface,
+                0.0,
+                3.0,
+            )
+            .expect("cylinder start")
+            .get(),
+            cadmpeg_ir::eval::decode::surface_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &surface,
+                0.5,
+                2.0,
+            )
+            .expect("cylinder end")
+            .get(),
         ];
         let chart = test_nurbs_curve(1, vec![0.0, 0.0, 1.0, 1.0], endpoints.to_vec(), None);
         let support_data = super::super::intersection::IntersectionSupportData {
@@ -8385,12 +8354,22 @@ mod tests {
                 .expect("valid cylinder"),
             ));
         let endpoints = [
-            cadmpeg_ir::eval::surface_point(&surface, 0.0, 3.0)
-                .expect("start")
-                .get(),
-            cadmpeg_ir::eval::surface_point(&surface, 0.5, 2.0)
-                .expect("end")
-                .get(),
+            cadmpeg_ir::eval::decode::surface_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &surface,
+                0.0,
+                3.0,
+            )
+            .expect("start")
+            .get(),
+            cadmpeg_ir::eval::decode::surface_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &surface,
+                0.5,
+                2.0,
+            )
+            .expect("end")
+            .get(),
         ];
         let chart = test_nurbs_curve(1, vec![0.0, 0.0, 1.0, 1.0], endpoints.to_vec(), None);
         let support_data = super::super::intersection::IntersectionSupportData {
@@ -8455,9 +8434,14 @@ mod tests {
             ));
         let model_points = [(3.0, 1.0), (3.2, 2.0), (3.4, 3.0)]
             .map(|(u, v)| {
-                cadmpeg_ir::eval::surface_point(&surface, u, v)
-                    .expect("cylinder point")
-                    .get()
+                cadmpeg_ir::eval::decode::surface_point(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    &surface,
+                    u,
+                    v,
+                )
+                .expect("cylinder point")
+                .get()
             })
             .to_vec();
         let endpoints = [model_points[0], model_points[2]];
@@ -8523,9 +8507,14 @@ mod tests {
         let expected = [(3.0, 3.0), (3.2, 3.2), (3.4, 3.4)];
         let model_points = expected
             .map(|(u, v)| {
-                cadmpeg_ir::eval::surface_point(&surface, u, v)
-                    .expect("torus point")
-                    .get()
+                cadmpeg_ir::eval::decode::surface_point(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    &surface,
+                    u,
+                    v,
+                )
+                .expect("torus point")
+                .get()
             })
             .to_vec();
         let endpoints = [model_points[0], model_points[2]];
@@ -8578,9 +8567,14 @@ mod tests {
         let expected = [(0.2, 0.1), (0.5, 0.4), (0.8, 0.7)];
         let model_points = expected
             .map(|(u, v)| {
-                cadmpeg_ir::eval::nurbs_surface_point(&nurbs, u, v)
-                    .expect("surface point")
-                    .get()
+                cadmpeg_ir::eval::decode::nurbs_surface_point(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    &nurbs,
+                    u,
+                    v,
+                )
+                .expect("surface point")
+                .get()
             })
             .to_vec();
         let endpoints = [model_points[0], model_points[2]];
@@ -8781,10 +8775,12 @@ mod tests {
             face: FaceId::mint(format!("test:model:entity#{face}")).expect("identity grammar"),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                 cadmpeg_ir::topology::LoopRing::new(
+                    &cadmpeg_test_support::service_decode_context(),
                     vec![CoedgeId::mint(format!("test:model:entity#{coedge}"))
                         .expect("identity grammar")],
                     Vec::new(),
                 )
+                .expect("fixture ring admission")
                 .expect("valid loop ring"),
             ),
         };
@@ -9228,6 +9224,7 @@ mod tests {
             .expect("the clamped lanes are a curve")
             .expect("clamped segment");
         let expected = cadmpeg_ir::eval::nurbs_surface_isocurve(
+            &ctx,
             &surface,
             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
             0.5,
@@ -9291,6 +9288,7 @@ mod tests {
             .expect("the clamped lanes are a curve")
             .expect("clamped quadratic segment");
         let expected = cadmpeg_ir::eval::nurbs_surface_isocurve(
+            &ctx,
             &surface,
             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
             0.5,
@@ -9351,6 +9349,7 @@ mod tests {
             .expect("the clamped lanes are a curve")
             .expect("clamped rational segment");
         let expected = cadmpeg_ir::eval::nurbs_surface_isocurve(
+            &ctx,
             &surface,
             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
             0.5,
@@ -9626,8 +9625,13 @@ mod tests {
                 id: loop_id.clone(),
                 face: FaceId::mint("test:model:entity#face").expect("identity grammar"),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                    cadmpeg_ir::topology::LoopRing::new(vec![coedge_id.clone()], Vec::new())
-                        .expect("valid loop ring"),
+                    cadmpeg_ir::topology::LoopRing::new(
+                        &cadmpeg_test_support::service_decode_context(),
+                        vec![coedge_id.clone()],
+                        Vec::new(),
+                    )
+                    .expect("fixture ring admission")
+                    .expect("valid loop ring"),
                 ),
             }],
             coedges: vec![Coedge {
@@ -9680,8 +9684,12 @@ mod tests {
             ..Default::default()
         };
         let mut annotations = AnnotationBuilder::new();
-        let source_stream =
-            cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("test"));
+        let source_stream = cadmpeg_ir::annotations::StreamHandle::new(
+            &cadmpeg_test_support::service_decode_context(),
+            cadmpeg_ir::stream_name!("test"),
+            "fixture stream handle",
+        )
+        .unwrap();
         super::derive_cylindrical_pcurves(&ctx, &mut brep, &mut annotations, &source_stream)
             .expect("cylindrical pcurve derivation");
 

@@ -264,20 +264,21 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
         crate::records::feature::scope::DesignFeatureKind::Sketch,
         200,
     );
-    let binding = DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire::<String> {
-        id: format!("{stream}:design-body-binding#0"),
-        stream: "Design/BulkStream.dat".into(),
-        pair_count: 1,
-        pair_ordinal: 0,
-        asm_body_key: 1,
-        asm_body_key_offset: 0,
-        entity_suffix: 150,
-        entity_suffix_offset: 8,
-        blob_name: "BREP.second.smbh".into(),
-        blob_name_offset: 16,
-        body: None,
-    })
-    .unwrap();
+    let binding =
+        DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire::<String> {
+            id: format!("{stream}:design-body-binding#0"),
+            stream: "Design/BulkStream.dat".into(),
+            pair_count: 1,
+            pair_ordinal: 0,
+            asm_body_key: 1,
+            asm_body_key_offset: 0,
+            entity_suffix: 150,
+            entity_suffix_offset: 8,
+            blob_name: "BREP.second.smbh".into(),
+            blob_name_offset: 16,
+            body: None,
+        })
+        .unwrap();
     let scopes = vec![scope.clone(), next_scope];
     let bindings = crate::test_support::with_decode_context(|decode_ctx| {
         bind_scope_histories(
@@ -1447,9 +1448,11 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         face: FaceId::mint(id(4)).expect("identity grammar"),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
             cadmpeg_ir::topology::LoopRing::new(
+                &cadmpeg_test_support::service_decode_context(),
                 vec![CoedgeId::mint(id(6)).expect("identity grammar")],
                 Vec::new(),
             )
+            .expect("fixture ring admission")
             .expect("valid loop ring"),
         ),
     });

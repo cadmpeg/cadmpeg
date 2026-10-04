@@ -244,9 +244,18 @@ pub(crate) enum ReferenceName {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for ReferenceName {
-    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
-    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
     }
 }
 
@@ -937,13 +946,12 @@ impl Parser<'_, '_, '_> {
                 if records.contains_key(&id) {
                     return self.err("duplicate instance name");
                 }
-                self.budget.admit_btree_node_storage::<u64, RawRecord>(
-                    records.len(),
+                self.budget.insert_btree_map(
+                    &mut records,
+                    id,
+                    record,
                     "step_parse_record_table_storage",
                 )?;
-                self.budget
-                    .charge_collection_items(1, "step_parse_record_table_items")?;
-                records.insert(id, record);
                 self.budget
                     .push_vec(&mut ids, id, "step_parse_section_ids")?;
             }
@@ -1251,8 +1259,8 @@ impl Parser<'_, '_, '_> {
             }
             self.budget.sort_unstable_by(
                 &mut canonical_names,
-            |value| value,
-            Ord::cmp,
+                |value| value,
+                Ord::cmp,
                 "step_parse_canonical_partial_name_sort",
             )?;
             if canonical_names

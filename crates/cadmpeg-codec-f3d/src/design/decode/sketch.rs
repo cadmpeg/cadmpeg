@@ -19,14 +19,16 @@ use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
 use crate::layout::sketch_container_visibility_member_prefix as visibility_member;
 use crate::records::{
+    admission::RecordAdmission,
     decal::DesignRecordHeader,
     entity_header::{DesignEntityHeader, DESIGN_MODULE_SKETCH},
     feature::scope::DesignParameterScope,
     references::{LostEdgeReference, PersistentReference, PersistentReferenceKind},
     sketch_geometry::{
-        SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchPointClosure,
-        SketchPointCompanion, SketchPointCompanionReferenceEncoding, SketchPointRecordForm,
-        SketchSurface, SketchSurfaceGeometry, SketchText, SketchTextAlignment, SketchTextLayout,
+        SketchCurveGeometry, SketchCurveIdentity, SketchGeometryError, SketchPoint,
+        SketchPointClosure, SketchPointCompanion, SketchPointCompanionReferenceEncoding,
+        SketchPointRecordForm, SketchSurface, SketchSurfaceGeometry, SketchText,
+        SketchTextAlignment, SketchTextLayout,
     },
     sketch_placement::{DesignSketchPlacement, DesignSketchVisibility},
     sketch_relations::{SketchGlyphTransform, SketchRelation, SketchRelationOperand},
@@ -478,8 +480,8 @@ pub(crate) fn decode_sketch_placements(
     }
     ctx.stable_sort_by(
         &mut out[..],
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d design sketch 1",
     )?;
     Ok(out)
@@ -903,13 +905,13 @@ fn finish_persistent_references(
 ) -> Result<Vec<PersistentReference>, CodecError> {
     ctx.stable_sort_by_key(
         &mut out[..],
-            |value| {
-                let (entry_ordinal, reference) = value;
-                {
-                    (*entry_ordinal, reference.byte_offset)
-                }
-            },
-            Ord::cmp,
+        |value| {
+            let (entry_ordinal, reference) = value;
+            {
+                (*entry_ordinal, reference.byte_offset)
+            }
+        },
+        Ord::cmp,
         "sort f3d design sketch 2",
     )?;
 
@@ -942,7 +944,9 @@ fn decode_persistent_references_from_stream(
         ),
     ] {
         let mut cursor = 0;
-        while let Some(offset) = ctx.find_bytes_from(bytes, name, cursor, "find F3D persistent reference")? {
+        while let Some(offset) =
+            ctx.find_bytes_from(bytes, name, cursor, "find F3D persistent reference")?
+        {
             cursor = offset + name.len();
             let compact_type_offset = offset + name.len();
             let type_offset = if View::u32_le_at(bytes, compact_type_offset) == Some(23) {
@@ -1555,8 +1559,8 @@ pub(crate) fn decode_entity_headers(
     }
     ctx.stable_sort_by(
         &mut out[..],
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d design sketch 3",
     )?;
     Ok(out)
@@ -1669,8 +1673,8 @@ fn decode_headers_for_indices(
     }
     ctx.stable_sort_by(
         &mut out[..],
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d design sketch 4",
     )?;
     Ok(out)
@@ -3696,15 +3700,17 @@ fn parse_sketch_surface(
         row_points.extend_from_slice(row);
         control_points.push(row_points);
     }
-    let Some(geometry) = SketchSurfaceGeometry::from_checked_parts(
+    let geometry = match SketchSurfaceGeometry::from_checked_parts(
+        RecordAdmission::Charged(ctx),
         frame.u_degree,
         frame.v_degree,
         u_knots,
         v_knots,
         control_points,
-    )
-    .ok() else {
-        return Ok(None);
+    ) {
+        Ok(geometry) => geometry,
+        Err(SketchGeometryError::Invalid(_)) => return Ok(None),
+        Err(SketchGeometryError::Resource(error)) => return Err(error),
     };
     Ok(Some(ParsedSketchSurface {
         entity_genesis: frame.entity_genesis,
@@ -3757,8 +3763,8 @@ pub(crate) fn decode_sketch_surfaces(
     }
     ctx.stable_sort_by(
         &mut out[..],
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d design sketch 5",
     )?;
     Ok(out)
@@ -3818,7 +3824,12 @@ pub(crate) fn bind_sketch_graph(
         let mut owner_text = ctx.retained_string(owner.len(), "f3d sketch relation owner text")?;
         owner_text.push_str(owner);
         relation.owner_entity_id = Some(
-            cadmpeg_core::text::NonBlankString::for_decode(ctx, owner_text, "validate nonblank text")?.ok_or_else(|| {
+            cadmpeg_core::text::NonBlankString::for_decode(
+                ctx,
+                owner_text,
+                "validate nonblank text",
+            )?
+            .ok_or_else(|| {
                 crate::design::text::malformed_design(
                     ctx,
                     format_args!(
@@ -4508,15 +4519,17 @@ fn admit_source_sketch_nurbs(
     ) else {
         return Ok(None);
     };
-    Ok(
-        crate::records::sketch_geometry::SketchNurbsGeometry::from_checked_parts(
-            degree,
-            fit_tolerance_mm,
-            knots,
-            poles,
-        )
-        .ok(),
-    )
+    match crate::records::sketch_geometry::SketchNurbsGeometry::from_checked_parts(
+        RecordAdmission::Charged(ctx),
+        degree,
+        fit_tolerance_mm,
+        knots,
+        poles,
+    ) {
+        Ok(geometry) => Ok(Some(geometry)),
+        Err(SketchGeometryError::Invalid(_)) => Ok(None),
+        Err(SketchGeometryError::Resource(error)) => Err(error),
+    }
 }
 
 fn decode_line(

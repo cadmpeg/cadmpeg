@@ -241,7 +241,12 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
             Representation::CompressedAscii,
             Representation::Binary,
         ] {
-            let matched = classify(&cadmpeg_test_support::service_decode_context(), representation, &global).unwrap();
+            let matched = classify(
+                &cadmpeg_test_support::service_decode_context(),
+                representation,
+                &global,
+            )
+            .unwrap();
             assert_eq!(
                 matched.admission() == &Admission::Admitted,
                 !charged,
@@ -268,7 +273,12 @@ fn each_declaration_classifies_into_the_row_its_discriminants_match() {
                 "iges:5.3-compressed-ascii",
             ),
         ] {
-            let matched = classify(&cadmpeg_test_support::service_decode_context(), representation, &global).unwrap();
+            let matched = classify(
+                &cadmpeg_test_support::service_decode_context(),
+                representation,
+                &global,
+            )
+            .unwrap();
             let context = format!("field 23 {:?} as {representation:?}", case.declaration);
 
             assert_eq!(matched.dialect().as_str(), expected_id, "{context}");
@@ -294,7 +304,9 @@ fn each_declaration_classifies_into_the_row_its_discriminants_match() {
                 assert_eq!(matched.admission(), &Admission::Admitted, "{context}");
             } else {
                 assert_eq!(
-                    matched.using(&cadmpeg_test_support::service_decode_context()).unwrap(),
+                    matched
+                        .using(&cadmpeg_test_support::service_decode_context())
+                        .unwrap(),
                     Some(DialectId::parse(nearest_id).expect("test id has dialect grammar")),
                     "{context}"
                 );
@@ -327,7 +339,9 @@ fn a_legacy_fixed_ascii_declaration_decodes_into_its_own_row_unverified() {
         "iges:ansi-y14.26m-1981-fixed-ascii"
     );
     assert_eq!(
-        matched.using(&cadmpeg_test_support::service_decode_context()).unwrap(),
+        matched
+            .using(&cadmpeg_test_support::service_decode_context())
+            .unwrap(),
         Some(cadmpeg_core::dialect_id!("iges:5.3-fixed-ascii"))
     );
     assert_eq!(matched.declared()["version_flag"], "2");
@@ -365,7 +379,9 @@ fn a_version_flag_outside_the_table_decodes_into_the_totality_row() {
     let matched = only_match(decoded.report().dialects());
     assert_eq!(matched.dialect().as_str(), "iges:unknown");
     assert_eq!(
-        matched.using(&cadmpeg_test_support::service_decode_context()).unwrap(),
+        matched
+            .using(&cadmpeg_test_support::service_decode_context())
+            .unwrap(),
         Some(cadmpeg_core::dialect_id!("iges:5.3-fixed-ascii"))
     );
     assert_eq!(matched.declared()["version_flag"], "99");
@@ -407,7 +423,12 @@ fn the_totality_row_never_carries_a_verified_admission() {
             Representation::CompressedAscii,
             Representation::Binary,
         ] {
-            let matched = classify(&cadmpeg_test_support::service_decode_context(), representation, &global).unwrap();
+            let matched = classify(
+                &cadmpeg_test_support::service_decode_context(),
+                representation,
+                &global,
+            )
+            .unwrap();
             if matched.dialect() == &IGES_UNKNOWN {
                 assert_ne!(
                     matched.admission(),

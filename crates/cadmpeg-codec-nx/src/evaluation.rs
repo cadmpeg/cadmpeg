@@ -232,8 +232,8 @@ pub(crate) fn evaluate_saved_body_census(
     let mut features = ir.model.features.iter().collect::<Vec<_>>();
     ctx.stable_sort_by(
         &mut features,
-            |value| &value.ordinal,
-            Ord::cmp,
+        |value| &value.ordinal,
+        Ord::cmp,
         "nx saved body census features sort",
     )?;
     let rederived = match rederived_body_census(ir, &features) {

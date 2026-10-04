@@ -70,9 +70,19 @@ impl DecodeBudget {
         self.input_bytes.get()
     }
 
-    pub(super) fn charge_input(&self, amount: u64, operation: &'static str) -> Result<(), CodecError> {
-        self.charge(ResourceDimension::InputBytes, &self.input_bytes,
-            self.policy.limits.max_input_bytes, amount, operation).map_err(Into::into)
+    pub(super) fn charge_input(
+        &self,
+        amount: u64,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        self.charge(
+            ResourceDimension::InputBytes,
+            &self.input_bytes,
+            self.policy.limits.max_input_bytes,
+            amount,
+            operation,
+        )
+        .map_err(Into::into)
     }
 
     pub(super) fn charge_decompressed(
@@ -178,7 +188,9 @@ impl DecodeBudget {
         additional: u64,
         operation: &'static str,
     ) -> CodecError {
-        CodecError::ResourceLimit(self.refuse_limit(dimension, reason, limit, used, additional, operation))
+        CodecError::ResourceLimit(
+            self.refuse_limit(dimension, reason, limit, used, additional, operation),
+        )
     }
 
     pub(super) fn reserve_scoped(
@@ -463,6 +475,17 @@ impl DecodeBudget {
             operation,
         )
     }
+
+    pub(super) fn work_bound_overflow_limit(&self, operation: &'static str) -> ResourceLimit {
+        self.refuse_limit(
+            ResourceDimension::WorkUnits,
+            ResourceFailure::BudgetExceeded,
+            self.policy.limits.max_work_units,
+            self.work.get(),
+            u64::MAX,
+            operation,
+        )
+    }
 }
 
 pub(super) struct StorageScope<'a> {
@@ -629,15 +652,22 @@ pub struct WorkBudget<'a> {
 /// RAII guard for one recursive geometry-evaluation frame.
 #[derive(Debug)]
 pub struct WorkBudgetRecursionGuard<'budget, 'session> {
-    budget: &'budget WorkBudget<'session>,
+    account: WorkRecursionAccount<'budget, 'session>,
+}
+
+#[derive(Debug)]
+enum WorkRecursionAccount<'budget, 'session> {
+    Session { _guard: DepthGuard<'session> },
+    Independent(&'budget WorkBudget<'session>),
 }
 
 impl Drop for WorkBudgetRecursionGuard<'_, '_> {
     fn drop(&mut self) {
-        let Some(depth) = self.budget.recursion_depth.get().checked_sub(1) else {
-            return;
-        };
-        self.budget.recursion_depth.set(depth);
+        if let WorkRecursionAccount::Independent(budget) = &self.account {
+            if let Some(depth) = budget.recursion_depth.get().checked_sub(1) {
+                budget.recursion_depth.set(depth);
+            }
+        }
     }
 }
 
@@ -655,6 +685,9 @@ impl WorkBudget<'static> {
 }
 
 impl<'a> WorkBudget<'a> {
+    /// Maximum recursive frames for evaluation without an attached decode session.
+    pub const INDEPENDENT_RECURSION_DEPTH: usize = 256;
+
     pub(super) fn for_session(limit: u64, session: &'a DecodeBudget) -> Self {
         let Ok(limit) = usize::try_from(limit) else {
             drop(session.refuse(
@@ -768,19 +801,108 @@ impl<'a> WorkBudget<'a> {
         self.limit - remaining
     }
 
-    /// Enters one recursive geometry-evaluation frame.
-    ///
-    /// The depth is shared by all model curve and surface calls using this
-    /// slice, so cross-carrier cycles cannot reset a local recursion limit.
-    pub fn recursion_guard(&self) -> Option<WorkBudgetRecursionGuard<'_, 'a>> {
-        const MAX_WORK_RECURSION_DEPTH: usize = 256;
-        if self.remaining.get().is_none() || self.recursion_depth.get() >= MAX_WORK_RECURSION_DEPTH
-        {
-            self.exhaust();
-            return None;
+    /// Enters a session frame, or an independent frame with a 256-frame ceiling.
+    /// Attached child slices share the active session depth.
+    pub fn recursion_guard(&self) -> Result<WorkBudgetRecursionGuard<'_, 'a>, ResourceLimit> {
+        if let Some(session) = self.session {
+            return session.enter_nested("work_budget_recursion").map(|guard| {
+                WorkBudgetRecursionGuard {
+                    account: WorkRecursionAccount::Session { _guard: guard },
+                }
+            });
         }
-        self.recursion_depth.set(self.recursion_depth.get() + 1);
-        Some(WorkBudgetRecursionGuard { budget: self })
+        let depth = self.recursion_depth.get();
+        if depth >= Self::INDEPENDENT_RECURSION_DEPTH {
+            self.exhaust();
+            return Err(ResourceLimit {
+                dimension: ResourceDimension::RecursionDepth,
+                reason: ResourceFailure::BudgetExceeded,
+                limit: u64_from_index(Self::INDEPENDENT_RECURSION_DEPTH),
+                used: u64_from_index(depth),
+                additional: 1,
+                operation: "work_budget_recursion",
+            });
+        }
+        self.recursion_depth.set(depth + 1);
+        Ok(WorkBudgetRecursionGuard {
+            account: WorkRecursionAccount::Independent(self),
+        })
+    }
+
+    /// Copy the active cycle path and admit one new frame slot.
+    /// The reservation covers the copied path until the frame leaves.
+    pub fn copy_recursion_path<T: Copy>(
+        &self,
+        path: &[T],
+    ) -> Result<(Vec<T>, super::work_scratch::WorkScratch<'a>), ResourceLimit> {
+        const OPERATION: &str = "model evaluation cycle path";
+        let path_len = path.len();
+        let capacity = path_len.checked_add(1).ok_or_else(|| ResourceLimit {
+            dimension: ResourceDimension::CollectionItems,
+            reason: ResourceFailure::BudgetExceeded,
+            limit: u64::MAX,
+            used: u64_from_index(path_len),
+            additional: 1,
+            operation: OPERATION,
+        })?;
+        let bytes = u64_from_index(capacity)
+            .checked_mul(u64_from_index(std::mem::size_of::<T>()))
+            .ok_or(ResourceLimit {
+                dimension: ResourceDimension::MaterializedBytes,
+                reason: ResourceFailure::BudgetExceeded,
+                limit: u64::MAX,
+                used: 0,
+                additional: u64::MAX,
+                operation: OPERATION,
+            })?;
+        if let Some(session) = self.session {
+            session.charge_collection_items_limit(u64_from_index(capacity), OPERATION)?;
+            // Copy each path member and compare it once when binding the frame.
+            session.charge_work_limit(
+                bytes.checked_add(u64_from_index(path_len)).ok_or_else(|| {
+                    session.refuse_limit(
+                        ResourceDimension::WorkUnits,
+                        ResourceFailure::BudgetExceeded,
+                        u64::MAX,
+                        bytes,
+                        u64_from_index(path_len),
+                        OPERATION,
+                    )
+                })?,
+                OPERATION,
+            )?;
+            let reservation = session.reserve_scoped_limit(bytes, OPERATION)?;
+            let mut copied = Vec::new();
+            copied
+                .try_reserve_exact(capacity)
+                .map_err(|_| session.scoped_allocation_failed_limit(bytes, OPERATION))?;
+            copied.extend(path.iter().copied());
+            let storage = super::work_scratch::WorkScratch::from_reservation(reservation);
+            return Ok((copied, storage));
+        }
+        if path_len >= Self::INDEPENDENT_RECURSION_DEPTH {
+            self.exhaust();
+            return Err(ResourceLimit {
+                dimension: ResourceDimension::RecursionDepth,
+                reason: ResourceFailure::BudgetExceeded,
+                limit: u64_from_index(Self::INDEPENDENT_RECURSION_DEPTH),
+                used: u64_from_index(path_len),
+                additional: 1,
+                operation: OPERATION,
+            });
+        }
+        let storage = super::work_scratch::WorkScratch::new(None, bytes, OPERATION)?;
+        let mut copied = Vec::new();
+        copied.try_reserve_exact(capacity).map_err(|_| {
+            ResourceLimit::allocation_failed(
+                ResourceDimension::MaterializedBytes,
+                bytes,
+                bytes,
+                OPERATION,
+            )
+        })?;
+        copied.extend(path.iter().copied());
+        Ok((copied, storage))
     }
 
     /// Creates an independent child slice capped by this budget's remainder.
@@ -869,11 +991,26 @@ fn local_limit_error(
 
 #[cfg(test)]
 mod tests {
-    use super::{work_units, DecodeBudget, WorkBudget};
+    use super::{u64_from_index, work_units, DecodeBudget, WorkBudget};
     use crate::decode::{DecodePolicy, ResourceDimension, ResourceFailure};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[derive(Debug, Copy, PartialEq, Eq)]
+    struct CopyWithObservableClone<T>(T);
+
+    static CLONE_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+    // The callback detects a Clone invocation in an operation that must only copy.
+    #[allow(clippy::expl_impl_clone_on_copy)]
+    impl<T: Clone> Clone for CopyWithObservableClone<T> {
+        fn clone(&self) -> Self {
+            CLONE_CALLS.fetch_add(1, Ordering::SeqCst);
+            Self(self.0.clone())
+        }
+    }
 
     fn descend(budget: &WorkBudget<'_>, depth: usize) -> usize {
-        let Some(_guard) = budget.recursion_guard() else {
+        let Ok(_guard) = budget.recursion_guard() else {
             return depth;
         };
         descend(budget, depth + 1)
@@ -884,6 +1021,193 @@ mod tests {
         let budget = WorkBudget::new(10_000);
         assert_eq!(descend(&budget, 0), 256);
         assert!(budget.exhausted());
+    }
+
+    #[test]
+    fn independent_cycle_path_is_bounded_without_charging_local_work() {
+        let budget = WorkBudget::new(10_000);
+        let path = [0u8; WorkBudget::INDEPENDENT_RECURSION_DEPTH - 1];
+        let (copied, storage) = budget
+            .copy_recursion_path(&path)
+            .expect("the maximum independent prior path fits");
+        assert_eq!(copied.len(), path.len());
+        assert_eq!(budget.consumed(), 0);
+        assert!(!budget.exhausted());
+        drop(storage);
+
+        let budget = WorkBudget::new(10_000);
+        let path = [0u8; WorkBudget::INDEPENDENT_RECURSION_DEPTH];
+        let failure = budget
+            .copy_recursion_path(&path)
+            .expect_err("an independent path cannot exceed its frame ceiling");
+        assert_eq!(failure.dimension, ResourceDimension::RecursionDepth);
+        assert_eq!(
+            failure.limit,
+            u64_from_index(WorkBudget::INDEPENDENT_RECURSION_DEPTH)
+        );
+        assert_eq!(failure.used, u64_from_index(path.len()));
+        assert_eq!(failure.additional, 1);
+        assert!(budget.exhausted());
+    }
+
+    #[test]
+    fn recursion_path_copy_does_not_call_a_copy_types_clone_method() {
+        let budget = WorkBudget::new(10);
+        let path = [CopyWithObservableClone(3_u8), CopyWithObservableClone(7_u8)];
+        CLONE_CALLS.store(0, Ordering::SeqCst);
+
+        let (copied, storage) = budget
+            .copy_recursion_path(&path)
+            .expect("independent cycle path fits");
+        assert_eq!(copied, path);
+        assert_eq!(CLONE_CALLS.load(Ordering::SeqCst), 0);
+        drop(storage);
+    }
+
+    #[test]
+    fn attached_cycle_path_keeps_exact_admission_above_independent_ceiling() {
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 257;
+        policy.limits.max_work_units = 513;
+        policy.limits.max_materialized_bytes = 257;
+        let session = DecodeBudget::new(policy, 1);
+        let budget = WorkBudget::for_session(1_000, &session);
+        let path = [0u8; 256];
+
+        let (copied, storage) = budget
+            .copy_recursion_path(&path)
+            .expect("attached session limits admit a path above the independent ceiling");
+        assert_eq!(copied.len(), path.len());
+        assert_eq!(budget.consumed(), 0);
+        assert_eq!(session.collection_items.get(), 257);
+        assert_eq!(session.work.get(), 513);
+        assert_eq!(session.materialized.get(), 257);
+        assert!(session.fused().is_none());
+        drop(storage);
+        assert_eq!(session.materialized.get(), 0);
+    }
+
+    #[test]
+    fn attached_cycle_path_work_refusal_keeps_prior_charges_and_first_fuse() {
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 3;
+        policy.limits.max_work_units = 4;
+        policy.limits.max_materialized_bytes = 3;
+        let session = DecodeBudget::new(policy, 1);
+        let budget = WorkBudget::for_session(10, &session);
+        let path = [0u8; 2];
+
+        let failure = budget
+            .copy_recursion_path(&path)
+            .expect_err("the exact path work exceeds the work limit by one");
+        assert_eq!(failure.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(failure.limit, 4);
+        assert_eq!(failure.used, 0);
+        assert_eq!(failure.additional, 5);
+        assert_eq!(failure.operation, "model evaluation cycle path");
+        assert_eq!(session.collection_items.get(), 3);
+        assert_eq!(session.work.get(), 0);
+        assert_eq!(session.materialized.get(), 0);
+        assert_eq!(budget.consumed(), 0);
+        assert_eq!(session.fused(), Some(failure));
+        assert_eq!(
+            budget
+                .copy_recursion_path(&path)
+                .expect_err("the first refusal remains sticky"),
+            failure
+        );
+        assert_eq!(session.collection_items.get(), 3);
+        assert_eq!(session.work.get(), 0);
+        assert_eq!(session.materialized.get(), 0);
+    }
+
+    #[test]
+    fn attached_cycle_path_storage_refusal_keeps_work_charges_and_first_fuse() {
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 3;
+        policy.limits.max_work_units = 5;
+        policy.limits.max_materialized_bytes = 2;
+        let session = DecodeBudget::new(policy, 1);
+        let budget = WorkBudget::for_session(10, &session);
+        let path = [0u8; 2];
+
+        let failure = budget
+            .copy_recursion_path(&path)
+            .expect_err("the exact scoped allocation exceeds the materialized limit by one");
+        assert_eq!(failure.dimension, ResourceDimension::MaterializedBytes);
+        assert_eq!(failure.reason, ResourceFailure::BudgetExceeded);
+        assert_eq!(failure.limit, 2);
+        assert_eq!(failure.used, 0);
+        assert_eq!(failure.additional, 3);
+        assert_eq!(session.collection_items.get(), 3);
+        assert_eq!(session.work.get(), 5);
+        assert_eq!(session.materialized.get(), 0);
+        assert_eq!(session.fused(), Some(failure));
+        assert_eq!(
+            budget
+                .copy_recursion_path(&path)
+                .expect_err("the storage refusal remains sticky"),
+            failure
+        );
+        assert_eq!(session.collection_items.get(), 3);
+        assert_eq!(session.work.get(), 5);
+        assert_eq!(session.materialized.get(), 0);
+    }
+
+    #[test]
+    fn scoped_allocator_refusal_reports_usage_before_the_request() {
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_materialized_bytes = 20;
+        let session = DecodeBudget::new(policy, 1);
+        let prior = session
+            .reserve_scoped_limit(5, "prior scratch")
+            .expect("prior scoped storage fits");
+        let request = session
+            .reserve_scoped_limit(4, "cycle path")
+            .expect("cycle path storage fits");
+
+        let failure = session.scoped_allocation_failed_limit(4, "cycle path");
+        assert_eq!(failure.dimension, ResourceDimension::MaterializedBytes);
+        assert_eq!(failure.reason, ResourceFailure::AllocationFailed);
+        assert_eq!(failure.limit, 20);
+        assert_eq!(failure.used, 5);
+        assert_eq!(failure.additional, 4);
+        assert_eq!(session.fused(), Some(failure));
+        drop(request);
+        drop(prior);
+        assert_eq!(session.materialized.get(), 0);
+        assert_eq!(session.fused(), Some(failure));
+    }
+
+    #[test]
+    fn attached_recursion_refuses_zero_session_depth() {
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_recursion_depth = 0;
+        let session = DecodeBudget::new(policy, 1);
+        let budget = WorkBudget::for_session(100, &session);
+        let failure = budget
+            .recursion_guard()
+            .expect_err("zero depth refuses first frame");
+        assert_eq!(failure.dimension, ResourceDimension::RecursionDepth);
+        assert_eq!(failure.limit, 0);
+        assert_eq!(failure.used, 0);
+        assert_eq!(failure.additional, 1);
+        assert_eq!(session.fused(), Some(failure));
+    }
+
+    #[test]
+    fn attached_child_preserves_active_session_depth() {
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_recursion_depth = 1;
+        let session = DecodeBudget::new(policy, 1);
+        let budget = WorkBudget::for_session(100, &session);
+        let guard = budget.recursion_guard().expect("first frame fits");
+        let child = budget.session_child_slice(100);
+        let failure = child.recursion_guard().expect_err("child shares depth");
+        assert_eq!(failure.dimension, ResourceDimension::RecursionDepth);
+        assert_eq!(failure.used, 1);
+        drop(guard);
+        assert_eq!(session.recursion_depth.get(), 0);
     }
 
     #[test]
@@ -987,13 +1311,21 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
         let session = DecodeBudget::new(policy, 1);
-        let first = session.charge_work_limit(1, "first work refusal").expect_err("refusal");
+        let first = session
+            .charge_work_limit(1, "first work refusal")
+            .expect_err("refusal");
         let later = session.retained_allocation_failed_limit(7, "later allocator refusal");
         assert_eq!(later, first);
         assert_eq!(session.fused(), Some(first));
-        let later = session.refuse_limit(ResourceDimension::Codec("later codec"), ResourceFailure::BudgetExceeded, 2, 2, 1, "later codec");
+        let later = session.refuse_limit(
+            ResourceDimension::Codec("later codec"),
+            ResourceFailure::BudgetExceeded,
+            2,
+            2,
+            1,
+            "later codec",
+        );
         assert_eq!(later, first);
         assert_eq!(session.fused(), Some(first));
     }
-
 }

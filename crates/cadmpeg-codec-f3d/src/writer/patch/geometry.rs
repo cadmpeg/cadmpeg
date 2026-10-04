@@ -398,7 +398,14 @@ fn patch_asm_geometry(
             }
             if matches!(record.chunk(15), Some(sab::Token::True)) {
                 let mut native_curve = edit.curve.clone();
-                native_curve.reverse_parameterization();
+                let writer_arena = cadmpeg_core::decode::DecodeArena::new();
+                let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
+                let (writer_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &[],
+                    &writer_arena,
+                    &writer_policy,
+                )?;
+                native_curve.reverse_parameterization(&writer_ctx)?;
                 asm_edits.patch_nurbs_curve(
                     bytes,
                     record,

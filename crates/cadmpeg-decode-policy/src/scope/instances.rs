@@ -35,7 +35,9 @@ pub(super) fn enqueue<'tcx>(
     }
     graph.edges.insert((caller.to_owned(), key(tcx, id), kind));
     if instance.args.has_non_region_param() {
-        if kind == EdgeKind::ConstantEvaluation { return; }
+        if kind == EdgeKind::ConstantEvaluation {
+            return;
+        }
         graph
             .symbolic_edges
             .insert((caller.to_owned(), key(tcx, id)));
@@ -108,13 +110,16 @@ impl<'tcx> Edges<'_, 'tcx> {
     }
 
     fn target(&mut self, id: DefId, args: ty::GenericArgsRef<'tcx>, address: bool) {
-        let constant_evaluation = !address && (self.concrete.constant_evaluation || super::constant_owner(self.tcx, id));
+        let constant_evaluation =
+            !address && (self.concrete.constant_evaluation || super::constant_owner(self.tcx, id));
         let instance = match Instance::try_resolve(self.tcx, self.concrete.environment, id, args) {
             Ok(Some(instance)) if !matches!(instance.def, ty::InstanceKind::Virtual(..)) => {
                 instance
             }
             _ => {
-                if constant_evaluation { return; }
+                if constant_evaluation {
+                    return;
+                }
                 if address {
                     let value = Ty::new_fn_def(self.tcx, id, ty::Binder::dummy(args));
                     indirect::address(
