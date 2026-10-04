@@ -815,9 +815,9 @@ fn collect_dimensions(
             }
             Err(PmiParseError::Resource(error)) => return Err(error),
         }
-        seen_storage
-            .with_storage(|| ctx.reserve_set(seen, 1, "index SLDPRT PMI candidate GUID"))?;
-        seen.insert(normalized);
+        seen_storage.with_storage(|| ctx.insert_hash_set(
+            seen, normalized, "index SLDPRT PMI candidate GUID",
+        ))?;
     }
     Ok(())
 }
