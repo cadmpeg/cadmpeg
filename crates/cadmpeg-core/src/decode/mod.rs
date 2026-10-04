@@ -19,6 +19,8 @@ pub mod iter_source;
 mod mutate;
 mod policy;
 mod probe;
+#[cfg(any(test, feature = "test-support"))]
+pub mod refusal_probe;
 pub mod scan;
 mod sort;
 mod space;

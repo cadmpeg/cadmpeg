@@ -34,7 +34,15 @@ pub fn states_the_key(key: &str, message: &str) {
     );
 }
 
-/// Admit preceding allocations, then refuse the named operation one unit below its need.
+/// Refuse the named operation one unit below its need, with every earlier
+/// charge admitted.
+///
+/// `run` decodes with `cap` as the limit of `dimension`. A probe run arms a
+/// [`RefusalProbe`](cadmpeg_core::decode::refusal_probe::RefusalProbe) and no
+/// cap, so the first positive charge of `operation` refuses at its prior usage.
+/// A replay sets the cap one unit below that need and must refuse at the same
+/// operation by the ordinary limit. A route whose charge order depends on hash
+/// iteration order can move the boundary between runs; the pair then repeats.
 ///
 /// # Panics
 ///
@@ -44,32 +52,35 @@ pub fn resource_limit_at<T>(
     operation: &str,
     mut run: impl FnMut(u64) -> Result<T, cadmpeg_core::CodecError>,
 ) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
     use cadmpeg_core::CodecError;
-    let mut cap = 0;
-    for _ in 0..8192 {
-        match run(cap) {
-            Err(CodecError::ResourceLimit(limit)) => {
-                assert_eq!(limit.dimension, dimension);
-                let need = limit
-                    .used
-                    .checked_add(limit.additional)
-                    .expect("resource need fits");
-                assert!(need > cap, "{operation}: {limit:?}");
-                if limit.operation == operation {
-                    let error = run(need - 1)
-                        .err()
-                        .expect("one unit below the resource boundary");
-                    assert!(matches!(error, CodecError::ResourceLimit(ref refusal)
-                        if refusal.dimension == dimension
-                            && refusal.operation == operation
-                            && refusal.used + refusal.additional == need));
-                    return error;
-                }
-                cap = need;
-            }
+    let mut replayed = None;
+    for _ in 0..64 {
+        let probed = {
+            let _probe = RefusalProbe::arm(dimension, operation, None);
+            run(u64::MAX)
+        };
+        let limit = match probed {
+            Err(CodecError::ResourceLimit(limit)) if limit.operation == operation => limit,
             Err(error) => panic!("unexpected refusal before {operation}: {error:?}"),
             Ok(_) => panic!("missing resource boundary: {operation}"),
+        };
+        assert_eq!(limit.dimension, dimension);
+        let need = limit
+            .used
+            .checked_add(limit.additional)
+            .expect("resource need fits");
+        let error = run(need - 1)
+            .err()
+            .expect("one unit below the resource boundary");
+        if matches!(error, CodecError::ResourceLimit(ref refusal)
+            if refusal.dimension == dimension
+                && refusal.operation == operation
+                && refusal.used + refusal.additional == need)
+        {
+            return error;
         }
+        replayed = Some(error);
     }
-    panic!("resource route exceeds the boundary count: {operation}");
+    panic!("{operation}: the replay one unit below the need refused with {replayed:?}");
 }
