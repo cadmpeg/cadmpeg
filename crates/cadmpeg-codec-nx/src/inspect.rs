@@ -364,7 +364,11 @@ fn insert_summary_attribute(
     ctx.append_retained(&mut key, prefix, "NX admitted text append")?;
     if lowercase_suffix {
         for character in ctx.admit_iter(suffix, "NX summary attribute suffix traversal")? {
-            key.push(character.to_ascii_lowercase());
+            ctx.push_retained_char(
+                &mut key,
+                character.to_ascii_lowercase(),
+                "NX summary suffix character",
+            )?;
         }
     } else {
         ctx.append_retained(&mut key, suffix, "NX admitted text append")?;
@@ -382,6 +386,41 @@ fn insert_summary_attribute(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn summary_suffix_character_refusal_precedes_attribute_insertion() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_core::CodecError;
+        for (suffix, expected, character_bytes) in [("AB", "prefix:ab", 1), ("ÅB", "prefix:Åb", 2)] {
+            let error = crate::test_support::resource_refusal_at(
+                &[],
+                ResourceDimension::WorkUnits,
+                "NX summary suffix character",
+                |ctx| {
+                    let mut attributes = std::collections::BTreeMap::new();
+                    let result = super::insert_summary_attribute(
+                        ctx, &mut attributes, "prefix:", suffix, true, super::SummaryValue::Text("text"),
+                    );
+                    if result.is_err() {
+                        assert!(attributes.is_empty());
+                    }
+                    result
+                },
+            );
+            // Character copying counts its encoded UTF-8 bytes.
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "NX summary suffix character"
+                    && limit.additional == character_bytes));
+            crate::test_support::with_decode_context(|ctx| {
+                let mut attributes = std::collections::BTreeMap::new();
+                super::insert_summary_attribute(
+                    ctx, &mut attributes, "prefix:", suffix, true, super::SummaryValue::Text("text"),
+                ).unwrap();
+                assert_eq!(attributes.get(expected).map(String::as_str), Some("text"));
+            });
+        }
+    }
+
     #[test]
     fn inspection_partition_search_refuses_unadmitted_stream_work() {
         let file = crate::test_support::test_prt::single_part_prt();
