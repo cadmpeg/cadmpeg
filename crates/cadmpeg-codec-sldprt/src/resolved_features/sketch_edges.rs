@@ -327,24 +327,28 @@ pub(super) fn project_edge(
         let count = nurbs.pole_count();
         let operation = "project SLDPRT sketch NURBS edge";
         let knots = nurbs.knots().try_clone_for_decode(ctx, operation)?;
-        let mut projected = Vec::new();
-        ctx.reserve_vec(&mut projected, count, operation)?;
-        match nurbs.pole_rows() {
+        let projected = match nurbs.pole_rows() {
             cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
-                projected.extend(
-                    points
-                        .iter()
-                        .map(|point| project_point(point.get(), origin, u_axis, v_axis)),
-                );
+                ctx.collect_indexed_vec(points.len(), operation, |index| {
+                    Ok(project_point(
+                        points[index].get(),
+                        origin,
+                        u_axis,
+                        v_axis,
+                    ))
+                })?
             }
             cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
+                let mut projected = Vec::new();
+                ctx.reserve_vec(&mut projected, count, operation)?;
                 projected.extend(
                     points
                         .iter()
                         .map(|point| project_point(point.point.get(), origin, u_axis, v_axis)),
                 );
+                projected
             }
-        }
+        };
         let weights = match nurbs.pole_rows() {
             cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { .. } => None,
             cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
