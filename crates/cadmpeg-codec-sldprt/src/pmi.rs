@@ -153,22 +153,14 @@ pub(crate) fn unbound_dimension_count(
     storage.with_storage(|| {
         let mut bound = Vec::new();
         for record in ctx.admit_iter(records, "scan SLDPRT unbound_dimension_count values")? {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(record.id.len()),
-                "find SLDPRT bound PMI dimension",
-            )?;
-            if bound_ids.contains(record.id.as_str()) {
+            if ctx.contains_hash_set(&(bound_ids), record.id.as_str(), "test SLDPRT hashed identity")? {
                 ctx.reserve_vec(&mut bound, 1, "collect SLDPRT bound PMI dimensions")?;
                 bound.push(record);
             }
         }
         let mut count = 0usize;
         for record in ctx.admit_iter(records, "scan SLDPRT unbound_dimension_count values")? {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(record.id.len()),
-                "find SLDPRT bound PMI dimension",
-            )?;
-            if bound_ids.contains(record.id.as_str()) {
+            if ctx.contains_hash_set(&(bound_ids), record.id.as_str(), "test SLDPRT hashed identity")? {
                 continue;
             }
             let mut equivalent = false;
@@ -767,7 +759,7 @@ fn collect_dimensions(
         })?;
         normalized.push_str(guid);
         normalized.make_ascii_lowercase();
-        if seen.contains(&normalized) {
+        if ctx.contains_hash_set(&(seen), &normalized, "test SLDPRT hashed identity")? {
             continue;
         }
         match extract_dimension(ctx, payload, offset, &normalized, parent) {
