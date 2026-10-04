@@ -2498,12 +2498,21 @@ pub(in super::super) fn transfer_native_brep(
         let param_range = if model_curve_count == 0 {
             None
         } else {
-            let candidate = exactly_one(
-                ctx.admit_iter(&ir.model.curves, "creo B-rep mutable curve index search")?
-                    .enumerate()
-                    .filter(|(_, candidate)| candidate.id == curve)
-                    .map(|(index, _)| index),
-            ).map(|index| &mut ir.model.curves[index]);
+            let mut matching_curve = None;
+            for (index, candidate) in ctx
+                .admit_iter(&ir.model.curves, "creo B-rep mutable curve index search")?
+                .enumerate()
+            {
+                if !ctx.equal(&candidate.id, &curve, "creo B-rep mutable curve identity comparison")? {
+                    continue;
+                }
+                if matching_curve.is_some() {
+                    matching_curve = None;
+                    break;
+                }
+                matching_curve = Some(index);
+            }
+            let candidate = matching_curve.map(|index| &mut ir.model.curves[index]);
             if let Some(candidate) = candidate {
                 let mut geometry = source_carriers
                     .curve_geometry(candidate)
@@ -2594,7 +2603,14 @@ pub(in super::super) fn transfer_native_brep(
                 tolerance: None,
             },
         )?;
-        if !ctx.admit_iter(&ir.model.curves, "creo B-rep model curve search")?.any(|item| item.id == curve) {
+        let mut identity_present = false;
+        for item in ctx.admit_iter(&ir.model.curves, "creo B-rep model curve search")? {
+            if ctx.equal(&item.id, &curve, "creo model identity comparison")? {
+                identity_present = true;
+                break;
+            }
+        }
+        if !identity_present {
             let offset = row_offsets.get(curve_id).copied().unwrap_or(0);
             annotate(
                 ctx,
@@ -2828,7 +2844,14 @@ pub(in super::super) fn transfer_native_brep(
                 "VisibGeom"
             };
             let surface = native_surface_id(ctx, scan, *face_id)?;
-            if !ctx.admit_iter(&ir.model.surfaces, "creo B-rep model surface search")?.any(|item| item.id == surface) {
+            let mut identity_present = false;
+            for item in ctx.admit_iter(&ir.model.surfaces, "creo B-rep model surface search")? {
+                if ctx.equal(&item.id, &surface, "creo model identity comparison")? {
+                    identity_present = true;
+                    break;
+                }
+            }
+            if !identity_present {
                 annotate(
                     ctx,
                     annotations,
@@ -3102,7 +3125,14 @@ pub(in super::super) fn transfer_native_brep(
                                 format_args!("{}:{face_id}", half_edge.curve_id),
                                 "creo B-rep pcurve identities",
                             )?;
-                            if !ctx.admit_iter(&ir.model.pcurves, "creo B-rep model pcurve search")?.any(|item| item.id == pcurve) {
+                            let mut identity_present = false;
+                            for item in ctx.admit_iter(&ir.model.pcurves, "creo B-rep model pcurve search")? {
+                                if ctx.equal(&item.id, &pcurve, "creo model identity comparison")? {
+                                    identity_present = true;
+                                    break;
+                                }
+                            }
+                            if !identity_present {
                                 annotate(ctx,
                                     annotations,
                                     &pcurve,
@@ -3190,7 +3220,14 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
             pair.surface_id,
             "creo decoded model identity",
         )?;
-        if ctx.admit_iter(&ir.model.surfaces, "creo B-rep model surface search")?.any(|surface| surface.id == id) {
+        let mut identity_present = false;
+        for surface in ctx.admit_iter(&ir.model.surfaces, "creo B-rep model surface search")? {
+            if ctx.equal(&surface.id, &id, "creo model identity comparison")? {
+                identity_present = true;
+                break;
+            }
+        }
+        if identity_present {
             continue;
         }
         let Ok(cylinder_surface) = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -3262,7 +3299,14 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 curve_id,
                 "creo decoded model identity",
             )?;
-            if ctx.admit_iter(&ir.model.curves, "creo B-rep model curve search")?.any(|curve| curve.id == id) {
+            let mut identity_present = false;
+            for curve in ctx.admit_iter(&ir.model.curves, "creo B-rep model curve search")? {
+                if ctx.equal(&curve.id, &id, "creo model identity comparison")? {
+                    identity_present = true;
+                    break;
+                }
+            }
+            if identity_present {
                 continue;
             }
             let Ok(circle_curve) = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(

@@ -251,7 +251,11 @@ pub(in crate::decode) fn resolved_section_radii(
                 )
             })
         {
-            if unique_decoded_section_segment(definition, segment.external_id) != Some(segment) {
+            if !ctx.equal(
+                &unique_decoded_section_segment(definition, segment.external_id),
+                &Some(segment),
+                "creo unique decoded section segment comparison",
+            )? {
                 continue;
             }
             let Some(radius_id) = segment.radius_ref else {

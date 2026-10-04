@@ -682,6 +682,189 @@ pub struct SketchGeometry(
     >,
 );
 
+impl cadmpeg_core::decode::cost::DecodeCost for SketchGeometry {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        use cadmpeg_core::decode::cost::DecodeCost;
+
+        let fields = match self.definition() {
+            SketchGeometryDefinition::Point { position } => {
+                DecodeCost::decode_cost(&(0_u8, position.get()), ctx, operation)?
+            }
+            SketchGeometryDefinition::Line { start, end } => {
+                DecodeCost::decode_cost(&(1_u8, start.get(), end.get()), ctx, operation)?
+            }
+            SketchGeometryDefinition::ReferenceLine { origin, direction } => {
+                DecodeCost::decode_cost(&(2_u8, origin.get(), direction.get()), ctx, operation)?
+            }
+            SketchGeometryDefinition::Circle { center, radius } => {
+                DecodeCost::decode_cost(&(3_u8, center.get(), radius.get()), ctx, operation)?
+            }
+            SketchGeometryDefinition::Arc {
+                center,
+                radius,
+                start_angle,
+                end_angle,
+            } => DecodeCost::decode_cost(
+                &(
+                    4_u8,
+                    center.get(),
+                    radius.get(),
+                    start_angle.get(),
+                    end_angle.get(),
+                ),
+                ctx,
+                operation,
+            )?,
+            SketchGeometryDefinition::Ellipse {
+                center,
+                major_angle,
+                radii,
+                bounds,
+            } => DecodeCost::decode_cost(
+                &(
+                    5_u8,
+                    center.get(),
+                    major_angle.get(),
+                    radii.major().get(),
+                    radii.minor().get(),
+                    bounds
+                        .as_ref()
+                        .map(|[start, end]| (start.get(), end.get())),
+                ),
+                ctx,
+                operation,
+            )?,
+            SketchGeometryDefinition::Hyperbola {
+                center,
+                major_angle,
+                major_radius,
+                minor_radius,
+                bounds,
+            } => DecodeCost::decode_cost(
+                &(
+                    6_u8,
+                    center.get(),
+                    major_angle.get(),
+                    major_radius.get(),
+                    minor_radius.get(),
+                    bounds
+                        .as_ref()
+                        .map(|[start, end]| (start.get(), end.get())),
+                ),
+                ctx,
+                operation,
+            )?,
+            SketchGeometryDefinition::Parabola {
+                vertex,
+                axis_angle,
+                focal_length,
+                bounds,
+            } => DecodeCost::decode_cost(
+                &(
+                    7_u8,
+                    vertex.get(),
+                    axis_angle.get(),
+                    focal_length.get(),
+                    bounds
+                        .as_ref()
+                        .map(|[start, end]| (start.get(), end.get())),
+                ),
+                ctx,
+                operation,
+            )?,
+            SketchGeometryDefinition::Nurbs { curve } => DecodeCost::decode_cost(
+                &(8_u8, curve),
+                ctx,
+                operation,
+            )?,
+            SketchGeometryDefinition::Text {
+                text,
+                font_family,
+                font_weight,
+                height,
+                width_factor,
+                placement,
+                horizontal_alignment,
+                vertical_alignment,
+            } => {
+                let font_weight_tag = match font_weight {
+                    SketchFontWeight::Regular => 0_u8,
+                    SketchFontWeight::Medium => 1_u8,
+                    SketchFontWeight::Bold => 2_u8,
+                };
+                let string_bytes = DecodeCost::decode_cost(&(text, font_family), ctx, operation)?;
+                let scalar_bytes = DecodeCost::decode_cost(
+                    &(
+                        9_u8,
+                        font_weight_tag,
+                        height.get(),
+                        width_factor.as_ref().map(|factor| factor.get()),
+                    ),
+                    ctx,
+                    operation,
+                )?;
+                let placement_bytes = DecodeCost::decode_cost(
+                    &placement.as_ref().map(|placement| {
+                        (placement.anchor.get(), placement.rotation.get())
+                    }),
+                    ctx,
+                    operation,
+                )?;
+                let horizontal_bytes = match horizontal_alignment {
+                    None => DecodeCost::decode_cost(&0_u8, ctx, operation)?,
+                    Some(SketchTextHorizontalAlignment::Left) => {
+                        DecodeCost::decode_cost(&(1_u8, 0_u8), ctx, operation)?
+                    }
+                    Some(SketchTextHorizontalAlignment::Center) => {
+                        DecodeCost::decode_cost(&(1_u8, 1_u8), ctx, operation)?
+                    }
+                    Some(SketchTextHorizontalAlignment::Right) => {
+                        DecodeCost::decode_cost(&(1_u8, 2_u8), ctx, operation)?
+                    }
+                    Some(SketchTextHorizontalAlignment::Native(value)) => {
+                        DecodeCost::decode_cost(&(1_u8, 3_u8, value), ctx, operation)?
+                    }
+                };
+                let vertical_bytes = match vertical_alignment {
+                    None => DecodeCost::decode_cost(&0_u8, ctx, operation)?,
+                    Some(SketchTextVerticalAlignment::Top) => {
+                        DecodeCost::decode_cost(&(1_u8, 0_u8), ctx, operation)?
+                    }
+                    Some(SketchTextVerticalAlignment::Middle) => {
+                        DecodeCost::decode_cost(&(1_u8, 1_u8), ctx, operation)?
+                    }
+                    Some(SketchTextVerticalAlignment::Bottom) => {
+                        DecodeCost::decode_cost(&(1_u8, 2_u8), ctx, operation)?
+                    }
+                    Some(SketchTextVerticalAlignment::Native(value)) => {
+                        DecodeCost::decode_cost(&(1_u8, 3_u8, value), ctx, operation)?
+                    }
+                };
+                let fields = (string_bytes).checked_add(scalar_bytes).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+                let fields = (fields).checked_add(placement_bytes).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+                let fields = (fields).checked_add(horizontal_bytes).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+                (fields).checked_add(vertical_bytes).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?
+            }
+            SketchGeometryDefinition::ExternalReference {
+                document,
+                object,
+                subelements,
+            } => {
+                let fields = DecodeCost::decode_cost(&(10_u8, document, object), ctx, operation)?;
+                (fields).checked_add(DecodeCost::decode_cost(subelements, ctx, operation)?).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?
+            }
+            SketchGeometryDefinition::Native { native_kind } => {
+                DecodeCost::decode_cost(&(11_u8, native_kind), ctx, operation)?
+            }
+        };
+        Ok(fields)
+    }
+}
+
 impl SketchGeometry {
     /// Copy geometry after charging each retained nested allocation.
     pub fn try_clone_for_decode(

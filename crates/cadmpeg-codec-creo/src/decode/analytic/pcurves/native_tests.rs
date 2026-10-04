@@ -158,11 +158,19 @@ fn pcurve_path_activity_refuses_prototype_face_node() {
 fn pcurve_path_activity_keeps_service_paths() {
     let activity = path_activity_result(1_000_000).expect("service path activity");
     assert_eq!(
-        activity.selected_paths(7, [std::num::NonZeroU32::new(5), None], false),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            activity
+                .selected_paths(ctx, 7, [std::num::NonZeroU32::new(5), None], false)
+                .expect("service path lookup")
+        }),
         Some([true, false]),
     );
     assert_eq!(
-        activity.selected_paths(8, [std::num::NonZeroU32::new(6), None], true),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            activity
+                .selected_paths(ctx, 8, [std::num::NonZeroU32::new(6), None], true)
+                .expect("service prototype path lookup")
+        }),
         Some([false, false]),
     );
 }

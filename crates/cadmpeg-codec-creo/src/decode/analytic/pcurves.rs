@@ -394,19 +394,27 @@ impl PcurvePathActivity {
 
     fn selected_paths(
         &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         curve_id: u32,
         faces: [Option<NonZeroU32>; 2],
         prototype: bool,
-    ) -> Option<[bool; 2]> {
+    ) -> Result<Option<[bool; 2]>, cadmpeg_core::CodecError> {
         let topology_faces = if prototype {
             &self.prototype_faces
         } else {
             &self.topology_faces
         };
-        (topology_faces.get(&curve_id) == Some(&faces)).then_some([
+        let recorded_faces = topology_faces.get(&curve_id);
+        let faces_match = ctx.equal(
+            &recorded_faces,
+            &Some(&faces),
+            "creo pcurve topology face comparison",
+        )?;
+        let active_paths = [
             self.active_paths.contains(&(faces[0], curve_id)),
             self.active_paths.contains(&(faces[1], curve_id)),
-        ])
+        ];
+        Ok(faces_match.then_some(active_paths))
     }
 }
 
@@ -1122,7 +1130,7 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
                                   prototype: bool|
      -> Result<(), cadmpeg_core::CodecError> {
         diagnostics.records += 1;
-        if let Some(active) = path_activity.selected_paths(curve_id, faces, prototype) {
+        if let Some(active) = path_activity.selected_paths(ctx, curve_id, faces, prototype)? {
             let active_count = ctx
                 .admit_iter(&active, "creo selected pcurve path count")?
                 .filter(|is_active| **is_active)
@@ -1205,7 +1213,7 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
         } else {
             diagnostics.two_chart_partial_records += 1;
         }
-        if let Some(active) = path_activity.selected_paths(pcurve.curve_id, faces, false) {
+        if let Some(active) = path_activity.selected_paths(ctx, pcurve.curve_id, faces, false)? {
             let active_count = ctx
                 .admit_iter(&active, "creo selected two-chart pcurve path count")?
                 .filter(|is_active| **is_active)
@@ -1249,7 +1257,7 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
     for pcurve in ctx.admit_iter(&short_pcurves, "creo short pcurve endpoint records")? {
         let faces = pcurve.faces.map(NonZeroU32::new);
         diagnostics.records += 1;
-        if let Some(active) = path_activity.selected_paths(pcurve.curve_id, faces, false) {
+        if let Some(active) = path_activity.selected_paths(ctx, pcurve.curve_id, faces, false)? {
             diagnostics.inactive_paths += usize::from(!active[0]);
             diagnostics.inactive_records += usize::from(!active[0]);
         } else {
@@ -1786,10 +1794,20 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
             *curve_id,
             "creo decoded model identity",
         )?;
-        if ctx
-            .admit_iter(&ir.model.curves, "creo existing analytic pcurve curve search")?
-            .any(|curve| curve.id == id)
+        let mut curve_exists = false;
+        for curve in
+            ctx.admit_iter(&ir.model.curves, "creo existing analytic pcurve curve search")?
         {
+            if ctx.equal(
+                &curve.id,
+                &id,
+                "creo existing analytic pcurve curve identity comparison",
+            )? {
+                curve_exists = true;
+                break;
+            }
+        }
+        if curve_exists {
             continue;
         }
         ctx.charge_collection_items(1, "creo transferred analytic pcurve nodes")?;

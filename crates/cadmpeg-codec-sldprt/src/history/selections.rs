@@ -873,7 +873,10 @@ fn resolve_body_selection(
                 Err(error @ cadmpeg_ir::features::FeatureCollectionError::Resource(_)) => {
                     return Err(error.into())
                 }
-                Err(_) => None,
+                Err(cadmpeg_ir::features::FeatureCollectionError::Codec(error)) => {
+                    return Err(error)
+                }
+                Err(cadmpeg_ir::features::FeatureCollectionError::Invalid(_)) => None,
             },
             None => None,
         };

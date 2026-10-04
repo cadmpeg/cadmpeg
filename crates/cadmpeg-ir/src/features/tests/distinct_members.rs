@@ -69,13 +69,25 @@ fn member_insert_admits_only_the_comparisons_it_performs() {
     use std::rc::Rc;
     #[derive(Clone)]
     struct Counted(u8, Rc<Cell<u64>>);
+    impl cadmpeg_core::decode::cost::DecodeCost for Counted {
+        const FIXED_BYTES: Option<u64> = Some(1);
+
+        fn decode_cost(
+            &self,
+            ctx: &DecodeContext<'_>,
+            operation: &'static str,
+        ) -> Result<u64, CodecError> {
+            cadmpeg_core::decode::cost::DecodeCost::decode_cost(&self.0, ctx, operation)
+        }
+    }
     impl PartialEq for Counted {
         fn eq(&self, other: &Self) -> bool {
             self.1.set(self.1.get() + 1);
             self.0 == other.0
         }
     }
-    for allowance in 0..=2 {
+    // Pinned total: two comparison steps and four operand bytes.
+    for allowance in 0..=6 {
         let comparisons = Rc::new(Cell::new(0));
         let mut members = DistinctMembers(vec![
             Counted(1, comparisons.clone()),
@@ -90,9 +102,9 @@ fn member_insert_admits_only_the_comparisons_it_performs() {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = members.insert(&ctx, Counted(2, comparisons.clone()), "member comparisons");
-        assert_eq!(comparisons.get(), allowance);
+        assert_eq!(comparisons.get(), allowance / 3);
         assert_eq!(members.len(), 2);
-        if allowance < 2 {
+        if allowance < 6 {
             let Err(CodecError::ResourceLimit(limit)) = result else {
                 panic!("work refusal required");
             };

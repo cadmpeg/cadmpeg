@@ -617,7 +617,8 @@ fn body_definition(
             Err(cadmpeg_ir::features::FeatureCollectionError::Resource(limit)) => {
                 return Err(limit.into())
             }
-            Err(_) => None,
+            Err(cadmpeg_ir::features::FeatureCollectionError::Codec(error)) => return Err(error),
+            Err(cadmpeg_ir::features::FeatureCollectionError::Invalid(_)) => None,
         }
         .map(|children| {
             FeatureDefinition::Operation(FeatureOperation::TreeNode {

@@ -1728,10 +1728,17 @@ pub(crate) fn bind_feature_body_selections(
                                 let mut selected = admitted!(ctx.collection_vec(1, "validate F3D Combine resolved body"));
                                 selected.push(body);
                                 let bodies = match cadmpeg_ir::features::DistinctMembers::try_from(selected, ctx) {
-    Ok(value) => value,
-    Err(cadmpeg_ir::features::FeatureCollectionError::Invalid(_)) => return,
-    Err(cadmpeg_ir::features::FeatureCollectionError::Resource(limit)) => { edit_result = Err(limit.into()); return; },
-};
+                                    Ok(value) => value,
+                                    Err(cadmpeg_ir::features::FeatureCollectionError::Invalid(_)) => return,
+                                    Err(cadmpeg_ir::features::FeatureCollectionError::Resource(limit)) => {
+                                        edit_result = Err(limit.into());
+                                        return;
+                                    }
+                                    Err(cadmpeg_ir::features::FeatureCollectionError::Codec(error)) => {
+                                        edit_result = Err(error);
+                                        return;
+                                    }
+                                };
                                 BodySelection::Resolved {
                                     bodies,
                                     native,
@@ -2564,6 +2571,9 @@ fn bind_direct_body_recipe_body_selection(
                 Err(cadmpeg_ir::features::FeatureCollectionError::Invalid(_)) => return Ok(()),
                 Err(cadmpeg_ir::features::FeatureCollectionError::Resource(limit)) => {
                     return Err(limit.into())
+                }
+                Err(cadmpeg_ir::features::FeatureCollectionError::Codec(error)) => {
+                    return Err(error)
                 }
             };
             let native =
@@ -3818,7 +3828,7 @@ pub(crate) fn project_feature_input_topologies(
     Ok(projected)
 }
 
-fn project_input_members<T: Eq + std::hash::Hash>(
+fn project_input_members<T: Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     slots: &[i64],
     operation: &'static str,
@@ -3835,6 +3845,9 @@ fn project_input_members<T: Eq + std::hash::Hash>(
             Err(cadmpeg_ir::features::FeatureCollectionError::Invalid(_)) => return Ok(None),
             Err(cadmpeg_ir::features::FeatureCollectionError::Resource(limit)) => {
                 return Err(limit.into())
+            }
+            Err(cadmpeg_ir::features::FeatureCollectionError::Codec(error)) => {
+                return Err(error)
             }
         },
     ))

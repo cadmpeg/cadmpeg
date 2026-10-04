@@ -12,7 +12,7 @@ impl BodySelection {
         bodies: Vec<String>,
         native: String,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::CodecError> {
         let bodies =
             NativeSelections::new(bodies, ctx, "validate distinct decoded native selections")?;
         ctx.charge_work_limit(
@@ -33,7 +33,7 @@ impl BodySelection {
         bodies: Vec<HistoricalBodyId>,
         native: String,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::CodecError> {
         let bodies = match SelectionMembers::new(
             bodies,
             ctx,
@@ -62,7 +62,7 @@ impl BodySelection {
         bodies: Vec<GeneratedBodyRef>,
         native: String,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::CodecError> {
         let bodies =
             match SelectionMembers::new(bodies, ctx, "validate BodySelection generated members")? {
                 Ok(members) => members,

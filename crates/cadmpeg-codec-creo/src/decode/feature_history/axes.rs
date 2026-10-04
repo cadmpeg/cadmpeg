@@ -3,7 +3,7 @@
 
 use super::super::sketch::coordinates::resolved_section_points;
 use super::super::sketch::intersect::section_point_in_model;
-use super::super::uniqueness::{exactly_one, unique_feature_profile_definition};
+use super::super::uniqueness::unique_feature_profile_definition;
 use crate::container::ContainerScan;
 use crate::vecmath::normalize;
 use crate::vecmath::unit_length;
@@ -465,18 +465,30 @@ pub(in super::super) fn section_profile_ref(
     native_ref: String,
 ) -> Result<ProfileRef, CodecError> {
     let native_scope = native_ref.strip_prefix("creo:featdefs:sketch#");
-    let scan_count = u64::try_from(ir.model.sketches.len())
-        .map_err(|_| CodecError::malformed("Creo sketch count exceeds u64"))?;
-    ctx.charge_work(scan_count, "creo section profile sketch lookup")?;
-    let Some(sketch) = exactly_one(
-        ir.model
-            .sketches
-            .iter()
-            .filter(|sketch| match native_scope {
-                Some(scope) => sketch.id.as_str().strip_prefix("creo:model:sketch#") == Some(scope),
-                None => sketch.id.as_str() == native_ref,
-            }),
-    ) else {
+    let mut matching_sketch = None;
+    for sketch in ctx.admit_iter(&ir.model.sketches, "creo section profile sketch lookup")? {
+        let matches = match native_scope {
+            Some(scope) => ctx.equal(
+                &sketch.id.as_str().strip_prefix("creo:model:sketch#"),
+                &Some(scope),
+                "creo section profile sketch identity comparison",
+            )?,
+            None => ctx.equal(
+                sketch.id.as_str(),
+                native_ref.as_str(),
+                "creo section profile sketch identity comparison",
+            )?,
+        };
+        if !matches {
+            continue;
+        }
+        if matching_sketch.is_some() {
+            matching_sketch = None;
+            break;
+        }
+        matching_sketch = Some(sketch);
+    }
+    let Some(sketch) = matching_sketch else {
         return Ok(ProfileRef::Planar(PlanarProfileRef::Native(native_ref)));
     };
     if sketch.profiles.is_empty() {

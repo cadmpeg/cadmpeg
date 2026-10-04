@@ -15,7 +15,6 @@ use crate::decode::quadratic::{real_roots, Coefficient};
 
 use super::super::surfaces::intersection_resolve::curve_contains_points;
 
-use super::super::uniqueness::exactly_one;
 use super::edges::{nonperiodic_nurbs_endpoint_points, planar_conic_equation, PlanarConicEquation};
 use super::equations::{
     common_plane_conic_parameters, plane_intersection_line, CarrierEquation, PlaneConicEquation,
@@ -37,10 +36,19 @@ fn unique_model_curve<'a>(
     ir: &'a CadIr,
     id: &CurveId,
 ) -> Result<Option<&'a Curve>, cadmpeg_core::CodecError> {
-    Ok(exactly_one(
-        ctx.admit_iter(&ir.model.curves, "creo unique model curve search")?
-            .filter(|curve| &curve.id == id),
-    ))
+    let mut matching_curve = None;
+    for curve in ctx.admit_iter(&ir.model.curves, "creo unique model curve search")? {
+        if ctx.equal(
+            &curve.id,
+            id,
+            "creo unique model curve identity comparison",
+        )? {
+            if matching_curve.replace(curve).is_some() {
+                return Ok(None);
+            }
+        }
+    }
+    Ok(matching_curve)
 }
 
 /// Admit a model point for the agreement test. A point outside the finite

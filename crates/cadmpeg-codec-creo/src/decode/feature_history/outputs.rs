@@ -97,20 +97,48 @@ fn feature_output_bodies_with_history(
             format_args!("creo:visibgeom:surface#{surface_id}"),
             "creo generated surface lookup",
         )?;
-        for face in ctx
-            .admit_iter(&ir.model.faces, "creo generated surface face lookup")?
-            .filter(|face| face.surface.as_str() == surface)
-        {
-            let Some(shell) = exactly_one(
-                ctx.admit_iter(&ir.model.shells, "creo generated face shell lookup")?
-                    .filter(|shell| shell.id == face.shell),
-            ) else {
+        for face in ctx.admit_iter(&ir.model.faces, "creo generated surface face lookup")? {
+            if !ctx.equal(
+                face.surface.as_str(),
+                surface.as_str(),
+                "creo generated surface identity comparison",
+            )? {
+                continue;
+            }
+            let mut matching_shell = None;
+            for shell in ctx.admit_iter(&ir.model.shells, "creo generated face shell lookup")? {
+                if !ctx.equal(
+                    &shell.id,
+                    &face.shell,
+                    "creo generated face shell identity comparison",
+                )? {
+                    continue;
+                }
+                if matching_shell.is_some() {
+                    matching_shell = None;
+                    break;
+                }
+                matching_shell = Some(shell);
+            }
+            let Some(shell) = matching_shell else {
                 continue;
             };
-            let Some(region) = exactly_one(
-                ctx.admit_iter(&ir.model.regions, "creo generated shell region lookup")?
-                    .filter(|region| region.id == shell.region),
-            ) else {
+            let mut matching_region = None;
+            for region in ctx.admit_iter(&ir.model.regions, "creo generated shell region lookup")? {
+                if !ctx.equal(
+                    &region.id,
+                    &shell.region,
+                    "creo generated shell region identity comparison",
+                )? {
+                    continue;
+                }
+                if matching_region.is_some() {
+                    matching_region = None;
+                    break;
+                }
+                matching_region = Some(region);
+            }
+            let Some(region) = matching_region else {
                 continue;
             };
             if !outputs.contains(&region.body) {
@@ -164,12 +192,22 @@ fn generated_input_output_bodies(
         format_args!("creo:model:feature#{feature_id}"),
         "creo generated input feature lookup",
     )?;
-    let Some(feature) = exactly_one(
-        ir.model
-            .features
-            .iter()
-            .filter(|feature| feature.id.as_str() == feature_id_text),
-    ) else {
+    let mut matching_feature = None;
+    for feature in ir.model.features.iter() {
+        if !ctx.equal(
+            feature.id.as_str(),
+            feature_id_text.as_str(),
+            "creo generated input feature identity comparison",
+        )? {
+            continue;
+        }
+        if matching_feature.is_some() {
+            matching_feature = None;
+            break;
+        }
+        matching_feature = Some(feature);
+    }
+    let Some(feature) = matching_feature else {
         return Ok(Vec::new());
     };
     drop(feature_id_text);
@@ -241,17 +279,40 @@ fn bodies_containing_edges(
         .admit_iter(&ir.model.coedges, "creo selected edge coedges")?
         .filter(|coedge| selected.contains(&coedge.edge))
     {
-        let lp = exactly_one(
-            ctx.admit_iter(&ir.model.loops, "creo selected edge loops")?
-                .filter(|lp| lp.id == coedge.owner_loop),
-        );
-        let Some(lp) = lp else {
+        let mut matching_loop = None;
+        for lp in ctx.admit_iter(&ir.model.loops, "creo selected edge loops")? {
+            if !ctx.equal(
+                &lp.id,
+                &coedge.owner_loop,
+                "creo selected edge loop identity comparison",
+            )? {
+                continue;
+            }
+            if matching_loop.is_some() {
+                matching_loop = None;
+                break;
+            }
+            matching_loop = Some(lp);
+        }
+        let Some(lp) = matching_loop else {
             continue;
         };
-        let Some(face) = exactly_one(
-            ctx.admit_iter(&ir.model.faces, "creo selected loop face lookup")?
-                .filter(|face| face.id == lp.face),
-        ) else {
+        let mut matching_face = None;
+        for face in ctx.admit_iter(&ir.model.faces, "creo selected loop face lookup")? {
+            if !ctx.equal(
+                &face.id,
+                &lp.face,
+                "creo selected loop face identity comparison",
+            )? {
+                continue;
+            }
+            if matching_face.is_some() {
+                matching_face = None;
+                break;
+            }
+            matching_face = Some(face);
+        }
+        let Some(face) = matching_face else {
             continue;
         };
         lookup_storage.with_storage(|| {
@@ -271,25 +332,58 @@ fn bodies_containing_edges(
     }
     let mut bodies = Vec::new();
     for shell_id in shell_ids {
-        let Some(shell) = exactly_one(
-            ctx.admit_iter(&ir.model.shells, "creo selected shell ID lookup")?
-                .filter(|shell| shell.id == *shell_id),
-        )
-        else {
+        let mut matching_shell = None;
+        for shell in ctx.admit_iter(&ir.model.shells, "creo selected shell ID lookup")? {
+            if !ctx.equal(
+                &shell.id,
+                shell_id,
+                "creo selected shell identity comparison",
+            )? {
+                continue;
+            }
+            if matching_shell.is_some() {
+                matching_shell = None;
+                break;
+            }
+            matching_shell = Some(shell);
+        }
+        let Some(shell) = matching_shell else {
             continue;
         };
-        let Some(region) = exactly_one(
-            ctx.admit_iter(&ir.model.regions, "creo selected shell region lookup")?
-                .filter(|region| region.id == shell.region),
-        ) else {
+        let mut matching_region = None;
+        for region in ctx.admit_iter(&ir.model.regions, "creo selected shell region lookup")? {
+            if !ctx.equal(
+                &region.id,
+                &shell.region,
+                "creo selected shell region identity comparison",
+            )? {
+                continue;
+            }
+            if matching_region.is_some() {
+                matching_region = None;
+                break;
+            }
+            matching_region = Some(region);
+        }
+        let Some(region) = matching_region else {
             continue;
         };
-        if exactly_one(
-            ctx.admit_iter(&ir.model.bodies, "creo selected region body lookup")?
-                .filter(|body| body.id == region.body),
-        )
-        .is_none()
-        {
+        let mut matching_body = None;
+        for body in ctx.admit_iter(&ir.model.bodies, "creo selected region body lookup")? {
+            if !ctx.equal(
+                &body.id,
+                &region.body,
+                "creo selected region body identity comparison",
+            )? {
+                continue;
+            }
+            if matching_body.is_some() {
+                matching_body = None;
+                break;
+            }
+            matching_body = Some(body);
+        }
+        if matching_body.is_none() {
             continue;
         }
         let body = copy_body_id(ctx, &region.body)?;
@@ -320,14 +414,22 @@ pub(in super::super) fn evaluated_sweep_output_bodies(
             ),
             "creo evaluated sweep body candidate",
         )?;
-        if exactly_one(
-            ir.model
-                .bodies
-                .iter()
-                .filter(|body| body.id.as_str() == candidate),
-        )
-        .is_some()
-        {
+        let mut matching_body = None;
+        for body in ir.model.bodies.iter() {
+            if !ctx.equal(
+                body.id.as_str(),
+                candidate.as_str(),
+                "creo evaluated sweep body identity comparison",
+            )? {
+                continue;
+            }
+            if matching_body.is_some() {
+                matching_body = None;
+                break;
+            }
+            matching_body = Some(body);
+        }
+        if matching_body.is_some() {
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(candidate.len()),
                 "creo evaluated sweep body IDs",

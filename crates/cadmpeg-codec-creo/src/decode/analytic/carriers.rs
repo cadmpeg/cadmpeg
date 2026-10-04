@@ -113,10 +113,11 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
         )?;
         let points = topology_bound_face_points(ctx, &solved_vertices, &vertex_faces, row.id)?;
         let mut boundary_curves = Vec::new();
-        for lp in ctx
-            .admit_iter(&scan.topology.loops, "creo topology-bound face loops")?
-            .filter(|lp| lp.face_id() == std::num::NonZeroU32::new(row.id))
-        {
+        let face_id = std::num::NonZeroU32::new(row.id);
+        for lp in ctx.admit_iter(&scan.topology.loops, "creo topology-bound face loops")? {
+            if !ctx.equal(&lp.face_id(), &face_id, "creo topology-bound face ID comparison")? {
+                continue;
+            }
             for half_edge in ctx.admit_iter(
                 lp.half_edges(),
                 "creo topology-bound face half edges",
@@ -128,10 +129,23 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
                         half_edge.curve_id,
                         "creo topology-bound curve lookup identity",
                     )?;
-                    let matching_curves = ctx
-                        .admit_iter(&ir.model.curves, "creo topology-bound model curves")?
-                        .filter(|curve| curve.id == id);
-                    if let Some(curve) = exactly_one(matching_curves) {
+                    let mut matching_curve = None;
+                    for curve in
+                        ctx.admit_iter(&ir.model.curves, "creo topology-bound model curves")?
+                    {
+                        if ctx.equal(
+                            &curve.id,
+                            &id,
+                            "creo topology-bound model curve ID comparison",
+                        )? {
+                            if matching_curve.is_some() {
+                                matching_curve = None;
+                                break;
+                            }
+                            matching_curve = Some(curve);
+                        }
+                    }
+                    if let Some(curve) = matching_curve {
                         ctx.reserve_vec(
                             &mut boundary_curves,
                             1,
@@ -167,17 +181,38 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
         )? else {
             continue;
         };
-        let existing_count = ctx
-            .admit_iter(&ir.model.surfaces, "creo topology-bound existing surfaces")?
-            .filter(|surface| surface.id == id)
-            .count();
+        let mut existing_count = 0_usize;
+        for surface in
+            ctx.admit_iter(&ir.model.surfaces, "creo topology-bound existing surfaces")?
+        {
+            if ctx.equal(
+                &surface.id,
+                &id,
+                "creo topology-bound existing surface ID comparison",
+            )? {
+                existing_count = existing_count.checked_add(1).ok_or_else(|| {
+                    ctx.refuse_codec_limit("creo topology-bound existing surface count", u64::MAX, 1)
+                })?;
+            }
+        }
         if existing_count != 0 {
             let mut conflict = existing_count != 1;
             if !conflict {
-                if let Some(surface) = ctx
-                    .admit_iter(&ir.model.surfaces, "creo topology-bound existing surface lookup")?
-                    .find(|surface| surface.id == id)
-                {
+                let mut matching_surface = None;
+                for surface in ctx.admit_iter(
+                    &ir.model.surfaces,
+                    "creo topology-bound existing surface lookup",
+                )? {
+                    if ctx.equal(
+                        &surface.id,
+                        &id,
+                        "creo topology-bound existing surface lookup ID comparison",
+                    )? {
+                        matching_surface = Some(surface);
+                        break;
+                    }
+                }
+                if let Some(surface) = matching_surface {
                     conflict = existing_plane_agrees_with_topology(
                         ctx,
                         source_carriers.surface_geometry(surface),
@@ -189,15 +224,16 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
                 continue;
             }
             source_carriers.remove_surface(&id);
-            for surface in ir
-                .model
-                .surfaces
-                .iter_mut()
-                .filter(|surface| surface.id == id)
-            {
-                surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                    record: geometry_section_record(ctx, scan, row.offset)?,
-                });
+            for surface in &mut ir.model.surfaces {
+                if ctx.equal(
+                    &surface.id,
+                    &id,
+                    "creo topology-bound mutable surface ID comparison",
+                )? {
+                    surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+                        record: geometry_section_record(ctx, scan, row.offset)?,
+                    });
+                }
             }
             annotate(
                 ctx,
@@ -303,10 +339,20 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                 row.id,
                 "creo decoded model identity",
             )?;
-            if ctx
-                .admit_iter(&ir.model.surfaces, "creo unresolved surface identity lookup")?
-                .any(|surface| surface.id == id)
+            let mut surface_exists = false;
+            for surface in
+                ctx.admit_iter(&ir.model.surfaces, "creo unresolved surface identity lookup")?
             {
+                if ctx.equal(
+                    &surface.id,
+                    &id,
+                    "creo unresolved surface identity comparison",
+                )? {
+                    surface_exists = true;
+                    break;
+                }
+            }
+            if surface_exists {
                 continue;
             }
             annotate(
@@ -370,10 +416,18 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
             row.id,
             "creo decoded model identity",
         )?;
-        if ctx
-            .admit_iter(&ir.model.curves, "creo unresolved curve identity lookup")?
-            .any(|curve| curve.id == id)
-        {
+        let mut curve_exists = false;
+        for curve in ctx.admit_iter(&ir.model.curves, "creo unresolved curve identity lookup")? {
+            if ctx.equal(
+                &curve.id,
+                &id,
+                "creo unresolved curve identity comparison",
+            )? {
+                curve_exists = true;
+                break;
+            }
+        }
+        if curve_exists {
             continue;
         }
         annotate(

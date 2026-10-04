@@ -1990,3 +1990,4 @@ fn numerical_ranges_sketch_axes_use_angular_orthogonality() {
 }
 
 mod angle_wire;
+mod decode_cost;

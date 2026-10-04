@@ -184,7 +184,14 @@ pub(super) fn emit_model_features(
             continue;
         }
         let (id, id_bytes) = compose_feature_id(ctx, datum.feature_id)?;
-        if ctx.admit_iter(&ir.model.features, "creo existing model feature search")?.any(|feature| feature.id == id) {
+        let mut identity_present = false;
+        for feature in ctx.admit_iter(&ir.model.features, "creo existing model feature search")? {
+            if ctx.equal(&feature.id, &id, "creo model identity comparison")? {
+                identity_present = true;
+                break;
+            }
+        }
+        if identity_present {
             continue;
         }
         annotate(
@@ -230,7 +237,14 @@ pub(super) fn emit_model_features(
     for generator in ctx.admit_iter(&generators, "creo geometry generator feature traversal")? {
         let feature_id = generator.feature_id;
         let (id, id_bytes) = compose_feature_id(ctx, feature_id)?;
-        if ctx.admit_iter(&ir.model.features, "creo existing model feature search")?.any(|feature| feature.id == id) {
+        let mut identity_present = false;
+        for feature in ctx.admit_iter(&ir.model.features, "creo existing model feature search")? {
+            if ctx.equal(&feature.id, &id, "creo model identity comparison")? {
+                identity_present = true;
+                break;
+            }
+        }
+        if identity_present {
             continue;
         }
         annotate(
@@ -431,7 +445,13 @@ pub(super) fn emit_model_features(
                 append_regeneration_edge(ctx, &mut regeneration_edges, &id, parent)
             })?;
         }
-        let existing_index = ctx.admit_iter(&ir.model.features, "creo existing feature update search")?.position(|feature| feature.id == id);
+        let mut existing_index = None;
+        for (index, feature) in ctx.admit_iter(&ir.model.features, "creo existing feature update search")?.enumerate() {
+            if ctx.equal(&feature.id, &id, "creo existing feature identity comparison")? {
+                existing_index = Some(index);
+                break;
+            }
+        }
         if let Some(existing_index) = existing_index {
             let existing = &mut ir.model.features[existing_index];
             let upgrade_legacy_round = ctx.admit_iter(&scan.features.legacy_rounds, "creo legacy_rounds feature traversal")?
@@ -530,7 +550,14 @@ pub(super) fn emit_model_features(
     }
     for feature_id in ctx.admit_iter(&row_feature_ids, "creo row model feature traversal")?.copied() {
         let (id, id_bytes) = compose_feature_id(ctx, feature_id)?;
-        if ctx.admit_iter(&ir.model.features, "creo existing model feature search")?.any(|feature| feature.id == id) {
+        let mut identity_present = false;
+        for feature in ctx.admit_iter(&ir.model.features, "creo existing model feature search")? {
+            if ctx.equal(&feature.id, &id, "creo model identity comparison")? {
+                identity_present = true;
+                break;
+            }
+        }
+        if identity_present {
             continue;
         }
         let schema_class = feature_schema_class(ctx, scan, feature_id)?;

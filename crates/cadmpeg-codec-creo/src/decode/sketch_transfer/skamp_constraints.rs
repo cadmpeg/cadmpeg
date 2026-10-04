@@ -733,12 +733,16 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                             admitted_entity(ctx, sketch, source.entity_id, &resource_error)?;
                         let result =
                             admitted_entity(ctx, sketch, result.entity_id, &resource_error)?;
-                        let geometry_agrees = geometry.is_none_or(|geometry| {
-                            geometry
-                                .get(&source)
-                                .zip(geometry.get(&result))
-                                .is_none_or(|(source, result)| source == result)
-                        });
+                        let geometry_agrees = match geometry {
+                            Some(geometry) => match geometry.get(&source).zip(geometry.get(&result)) {
+                                Some((source, result)) => defer_resource(
+                                    ctx.equal(source, result, "creo SKAMP projected geometry agreement"),
+                                    &resource_error,
+                                )?,
+                                None => true,
+                            },
+                            None => true,
+                        };
                         if geometry_agrees {
                             SketchConstraintDefinitionInput::ProjectedCopy { source, result }
                         } else {

@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::NumericRun;
+use cadmpeg_core::decode::cost::DecodeCost;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::decode::index_from_u32;
+use cadmpeg_core::CodecError;
 use serde::Serialize;
 
 /// Numeric source runs whose total count equals the declared extent product.
@@ -11,6 +14,16 @@ pub(crate) struct NumericArray<T> {
     runs: Vec<NumericRun<T>>,
     #[serde(skip)]
     element_count: usize,
+}
+
+impl<T: DecodeCost> DecodeCost for NumericArray<T> {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (&self.dimensions, &self.runs, self.element_count).decode_cost(ctx, operation)
+    }
 }
 
 impl<T> NumericArray<T> {
@@ -70,6 +83,8 @@ impl<T> NumericArray<T> {
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_core::decode::cost::DecodeCost;
+    use cadmpeg_core::decode::u64_from_index;
     use crate::legacy::{NumericPayload, NumericRun};
 
     fn array<T>(dimensions: Vec<u32>, runs: Vec<NumericRun<T>>) -> Option<NumericPayload<T>> {
@@ -110,5 +125,34 @@ mod tests {
             |ctx| NumericPayload::array(ctx, vec![2, 2], vec![NumericRun { count: 4, value: 0 }]),
         );
         assert_eq!(payload.expect("array").element_count(), 4);
+    }
+
+    #[test]
+    fn numeric_array_equality_reads_the_cached_element_count() {
+        let left = super::NumericArray {
+            dimensions: vec![1],
+            runs: vec![NumericRun { count: 1, value: 7_u32 }],
+            element_count: 1,
+        };
+        let right = super::NumericArray {
+            dimensions: vec![1],
+            runs: vec![NumericRun { count: 1, value: 7_u32 }],
+            element_count: 2,
+        };
+        crate::decode::with_test_decode_ctx(|ctx| {
+            let scalar_bytes = u64_from_index(std::mem::size_of::<u32>());
+            let expected_cost = scalar_bytes
+                .checked_mul(3)
+                .and_then(|fields| fields.checked_add(u64_from_index(std::mem::size_of::<usize>())))
+                .expect("derived array field cost fits");
+            assert_eq!(
+                left.decode_cost(ctx, "creo legacy numeric array equality")
+                    .expect("array cost admitted"),
+                expected_cost,
+            );
+            assert!(!ctx
+                .equal(&left, &right, "creo legacy numeric array equality")
+                .expect("array equality cost admitted"));
+        });
     }
 }

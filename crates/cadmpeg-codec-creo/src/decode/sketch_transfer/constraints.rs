@@ -1238,7 +1238,11 @@ fn section_equation_radius_dimension_parameters(
         let candidate = (parameter, dimension_value);
         for variable in [equation.radius_variable, equation.scalar] {
             if let Some(slot) = dimension_parameters.get_mut(&variable) {
-                if slot.as_ref() != Some(&candidate) {
+                if !ctx.equal(
+                    &slot.as_ref(),
+                    &Some(&candidate),
+                    "creo equation dimension parameter agreement",
+                )? {
                     *slot = None;
                 }
             } else {

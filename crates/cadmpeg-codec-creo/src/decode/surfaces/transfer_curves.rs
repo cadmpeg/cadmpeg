@@ -165,7 +165,14 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
             continue;
         };
         let id = curve_id;
-        if ctx.admit_iter(&ir.model.curves, "creo transferred model curve search")?.any(|curve| curve.id == id) {
+        let mut identity_present = false;
+        for curve in ctx.admit_iter(&ir.model.curves, "creo transferred model curve search")? {
+            if ctx.equal(&curve.id, &id, "creo model identity comparison")? {
+                identity_present = true;
+                break;
+            }
+        }
+        if identity_present {
             continue;
         }
         annotate(
@@ -413,7 +420,14 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
             row.id,
             "creo NURBS boundary curve identity",
         )?;
-        if ctx.admit_iter(&ir.model.curves, "creo transferred model curve search")?.any(|curve| curve.id == id) {
+        let mut identity_present = false;
+        for curve in ctx.admit_iter(&ir.model.curves, "creo transferred model curve search")? {
+            if ctx.equal(&curve.id, &id, "creo model identity comparison")? {
+                identity_present = true;
+                break;
+            }
+        }
+        if identity_present {
             continue;
         }
         annotate(

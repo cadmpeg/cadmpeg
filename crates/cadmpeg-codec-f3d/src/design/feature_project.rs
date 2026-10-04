@@ -2929,6 +2929,9 @@ fn design_body_selection(
             Err(cadmpeg_ir::features::FeatureCollectionError::Resource(limit)) => {
                 return Err(limit.into())
             }
+            Err(cadmpeg_ir::features::FeatureCollectionError::Codec(error)) => {
+                return Err(error)
+            }
         }
     }
     Ok(BodySelection::Native(ctx.copy_retained_text(
