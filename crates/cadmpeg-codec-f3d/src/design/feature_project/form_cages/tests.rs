@@ -267,21 +267,25 @@ fn resolves_cage_surface_through_owned_object_chain() {
     let paired = indexed_frame(b"264", 8303, 15);
     let bytes = [object, first_wrapper, second_wrapper, carrier, paired].concat();
     assert_eq!(
-        form_cage_surface(&cadmpeg_test_support::service_decode_context(),
+        form_cage_surface(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             8300,
             2190,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(8304)
     );
     assert_eq!(
-        form_cage_surface(&cadmpeg_test_support::service_decode_context(),
+        form_cage_surface(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             8300,
             2191,
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
 }
@@ -405,7 +409,7 @@ fn form_serializer_name_refuses_materialized_limit() {
 
 #[test]
 fn form_serializer_name_refuses_work_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
     let entry_name = "TSpline.00000000-0000-0000-0000-000000000000.tsm";
     let mut serializer = indexed_frame(b"315", 8305, 132);
@@ -419,17 +423,14 @@ fn form_serializer_name_refuses_work_limit() {
     let following = indexed_frame(b"457", 8306, 15);
     let bytes = [serializer, following].concat();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    // Two measuring visits per offset and the three-pass slot and complete-key bound precede the name.
-    let index_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>());
-    policy.limits.max_work_units = 4 + 6 * index_bytes * 3 * 8;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    assert!(
-        matches!(form_cage_serializers(&ctx, &bytes, &records), Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "f3d form serializer name materialization")
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        "f3d form serializer name materialization",
+        0,
+        |ctx| form_cage_serializers(ctx, &bytes, &records),
     );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "f3d form serializer name materialization"));
 }
 
 #[test]
@@ -712,17 +713,25 @@ fn class_328_form_fixture() -> (
 #[test]
 fn reads_class_328_form_envelope() {
     let (bytes, records, scope) = class_328_form_fixture();
-    assert!(form_class_328_envelope(&cadmpeg_test_support::service_decode_context(), &bytes, &records, &scope).unwrap());
+    assert!(form_class_328_envelope(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        &records,
+        &scope
+    )
+    .unwrap());
 
     let mut wrong_pair = bytes;
     let group_start = crate::layout::form_class_328_scope::LEN + 15;
     let paired_class = group_start + crate::layout::form_class_328_cage_group::LEN + 4;
     wrong_pair[paired_class..paired_class + 3].copy_from_slice(b"266");
-    assert!(!form_class_328_envelope(&cadmpeg_test_support::service_decode_context(),
+    assert!(!form_class_328_envelope(
+        &cadmpeg_test_support::service_decode_context(),
         &wrong_pair,
         &crate::design::test_support::indexed_record_offsets_for_test(&wrong_pair),
         &scope,
-    ).unwrap());
+    )
+    .unwrap());
 }
 
 #[test]
@@ -792,11 +801,13 @@ fn resolves_class_325_cage_surface_from_unique_class_310_reference() {
     let surface = indexed_frame(b"310", 700, 15);
     let bytes = [object, paired, surface].concat();
     assert_eq!(
-        form_class_325_cage_surface(&cadmpeg_test_support::service_decode_context(),
+        form_class_325_cage_surface(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             1_000,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(700)
     );
 }
@@ -814,12 +825,14 @@ fn reads_compact_form_one_cage_envelope() {
     let object = indexed_frame(b"325", 971, 15);
     let bytes = [list, paired, object].concat();
     assert_eq!(
-        legacy_form_cage_count(&cadmpeg_test_support::service_decode_context(),
+        legacy_form_cage_count(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             205,
             201,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(1)
     );
 }
@@ -843,12 +856,14 @@ fn reads_legacy_form_one_cage_owner_envelopes() {
         let nested = indexed_frame(nested_class, 211, 15);
         let bytes = [owner, paired, nested].concat();
         assert_eq!(
-            legacy_form_cage_count(&cadmpeg_test_support::service_decode_context(),
+            legacy_form_cage_count(
+                &cadmpeg_test_support::service_decode_context(),
                 &bytes,
                 &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
                 205,
                 201,
-            ).unwrap(),
+            )
+            .unwrap(),
             Some(1),
             "owner class {owner_class:?}"
         );
@@ -868,12 +883,14 @@ fn rejects_legacy_form_owner_with_wrong_nested_class() {
     let nested = indexed_frame(b"329", 211, 15);
     let bytes = [owner, paired, nested].concat();
     assert_eq!(
-        legacy_form_cage_count(&cadmpeg_test_support::service_decode_context(),
+        legacy_form_cage_count(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             205,
             201,
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
 }
@@ -912,7 +929,13 @@ fn class_328_form_group_rejects_each_duplicate_member_without_heap_growth() {
         form_class_328_scope as scope_layout,
     };
     let (bytes, records, scope) = class_328_form_fixture();
-    assert!(form_class_328_envelope(&cadmpeg_test_support::service_decode_context(), &bytes, &records, &scope).unwrap());
+    assert!(form_class_328_envelope(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        &records,
+        &scope
+    )
+    .unwrap());
     for ordinal in 1..4 {
         let mut duplicate = bytes.clone();
         let at = scope_layout::LEN
@@ -922,7 +945,13 @@ fn class_328_form_group_rejects_each_duplicate_member_without_heap_growth() {
             + entry::RECORD_INDEX;
         duplicate[at..at + 8].copy_from_slice(&301u64.to_le_bytes());
         assert!(
-            !form_class_328_envelope(&cadmpeg_test_support::service_decode_context(), &duplicate, &records, &scope).unwrap(),
+            !form_class_328_envelope(
+                &cadmpeg_test_support::service_decode_context(),
+                &duplicate,
+                &records,
+                &scope
+            )
+            .unwrap(),
             "duplicate group member {ordinal}"
         );
     }
@@ -935,7 +964,13 @@ fn class_328_form_metadata_rejects_each_duplicate_member_without_heap_growth() {
         form_class_328_reference_entry as entry, form_class_328_scope as scope_layout,
     };
     let (bytes, records, scope) = class_328_form_fixture();
-    assert!(form_class_328_envelope(&cadmpeg_test_support::service_decode_context(), &bytes, &records, &scope).unwrap());
+    assert!(form_class_328_envelope(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        &records,
+        &scope
+    )
+    .unwrap());
     for ordinal in 1..19 {
         let mut duplicate = bytes.clone();
         let at = scope_layout::LEN
@@ -947,7 +982,13 @@ fn class_328_form_metadata_rejects_each_duplicate_member_without_heap_growth() {
             + entry::RECORD_INDEX;
         duplicate[at..at + 8].copy_from_slice(&4000u64.to_le_bytes());
         assert!(
-            !form_class_328_envelope(&cadmpeg_test_support::service_decode_context(), &duplicate, &records, &scope).unwrap(),
+            !form_class_328_envelope(
+                &cadmpeg_test_support::service_decode_context(),
+                &duplicate,
+                &records,
+                &scope
+            )
+            .unwrap(),
             "duplicate metadata member {ordinal}"
         );
     }

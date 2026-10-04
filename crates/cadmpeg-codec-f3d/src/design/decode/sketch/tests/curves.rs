@@ -372,7 +372,10 @@ fn assert_arc_diagnostic_limit(values: [f64; 12]) {
 fn sketch_nurbs_decoder_keeps_constructor_refusals_in_the_outer_result() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_core::CodecError;
-    for allowance in 0..=6 {
+    // Every work refusal on the way to an admitted curve stays in the result
+    // and in the session.
+    let mut allowance = 0;
+    loop {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = allowance;
@@ -386,13 +389,16 @@ fn sketch_nurbs_decoder_keeps_constructor_refusals_in_the_outer_result() {
             &[0.0, 0.0, 0.0, 1.0, 0.0, 0.0],
             0,
         );
-        let Err(CodecError::ResourceLimit(original)) = result else {
-            panic!("constructor refusal must not disappear");
+        let original = match result {
+            Ok(_) => break,
+            Err(CodecError::ResourceLimit(original)) => original,
+            Err(error) => panic!("constructor refusal must not change kind: {error:?}"),
         };
-        assert_eq!(original.used, allowance);
-        assert_eq!(original.additional, 1);
+        assert!(original.used <= allowance && original.used + original.additional > allowance);
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
         );
+        allowance = original.used + original.additional;
     }
+    assert!(allowance > 0);
 }

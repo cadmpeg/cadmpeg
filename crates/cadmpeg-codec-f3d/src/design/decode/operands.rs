@@ -15,12 +15,13 @@ use crate::design::decode::dimension_frames::{
     bind_recipe_reference_candidates_charged, contiguous_i32_program,
     decode_recipe_references_charged, recipe_record_prefix,
 };
+use crate::design::decode::reference_runs::admit_reference_values;
 use crate::design::decode::scopes::extrude::is_class_296_two_sided_to_faces_scope;
 use crate::design::decode::scopes::parameter_scope::payload_prologue;
 use crate::design::decode::scopes::shared_frames::marked_record_reference;
 use crate::design::decode::sketch::{
     cached_borrowed_record_offsets, cached_owned_record_offsets, indexed_record_header_at,
-    next_indexed_record_offset, next_indexed_record_offset_with_index, IndexedRecordOffsets,
+    next_indexed_record_header, next_indexed_record_offset, IndexedRecordOffsets,
 };
 use crate::design::decode::text::design_record_id_charged;
 use crate::design::decode::text::relaxed_guid_end;
@@ -78,7 +79,7 @@ use crate::records::{
         sketch_profile::DesignSketchProfileRegionSelection,
     },
 };
-use cadmpeg_core::decode::{index_from_u32, DecodeContext, View};
+use cadmpeg_core::decode::{index_from_u32, u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
@@ -1328,15 +1329,16 @@ pub(crate) fn decode_face_source_groups(
             };
             let parsed_source_members = source_reference_offsets.into_iter()
                 .map(|(offset, source_record_index)| -> Result<Option<_>, CodecError> {
-                    let Some(source_byte_offset) = carrier_byte_offset.checked_add(indexed_header::LEN).and_then(|at| records.first_at_or_after(at, source_record_index)) else { return Ok(None); };
+                    let Some(search) = carrier_byte_offset.checked_add(indexed_header::LEN) else { return Ok(None); };
+                    let Some(source_byte_offset) = records.first_at_or_after(ctx, search, source_record_index)? else { return Ok(None); };
                     let Some((source_class_tag, _)) =
                         lp_ascii_filtered_view(bytes, source_byte_offset, 3..=3, u8::is_ascii_digit) else { return Ok(None); };
                     let Some(member) = parse_extrude_identity_member(ctx, bytes, source_byte_offset).transpose()? else { return Ok(None); };
                     let Ok(source_byte_offset_u64) = u64::try_from(source_byte_offset) else { return Ok(None); };
                     let Ok(offset) = u64::try_from(offset) else { return Ok(None); };
                     let class_tag = match crate::design::decode::text::class_tag_from_view(ctx, source_class_tag) {
-                        Ok(Ok(class_tag)) => class_tag,
-                        Ok(Err(_)) => return Ok(None),
+                        Ok(Some(class_tag)) => class_tag,
+                        Ok(None) => return Ok(None),
                         Err(error) => return Err(error),
                     };
                     let (Ok(asset_id), Ok(context_id)) = (member.asset_id.try_into(), member.context_id.try_into()) else { return Ok(None); };
@@ -1392,16 +1394,16 @@ pub(crate) fn decode_face_source_groups(
             else {
                 continue;
             };
-            let carrier_class_tag =
-                match crate::design::decode::text::class_tag_from_view(ctx, carrier_class_tag)? {
-                    Ok(class_tag) => class_tag,
-                    Err(_) => continue,
-                };
-            let paired_class_tag =
-                match crate::design::decode::text::class_tag_from_view(ctx, paired_class_tag)? {
-                    Ok(class_tag) => class_tag,
-                    Err(_) => continue,
-                };
+            let Some(carrier_class_tag) =
+                crate::design::decode::text::class_tag_from_view(ctx, carrier_class_tag)?
+            else {
+                continue;
+            };
+            let Some(paired_class_tag) =
+                crate::design::decode::text::class_tag_from_view(ctx, paired_class_tag)?
+            else {
+                continue;
+            };
             ctx.push_vec(
                 &mut out,
                 DesignFaceSourceGroup {
@@ -1453,27 +1455,22 @@ fn face_source_reference_headers<'a>(
         references.len(),
         "f3d face source reference headers",
     )?;
-    let unlocated_members = ctx.admit_iter(
-        references.unlocated_values().unwrap_or(&[]),
-        "scan F3D face source references",
-    )?;
-    let located_members = ctx.admit_iter(
-        references.located_rows().unwrap_or(&[]),
-        "scan F3D face source references",
-    )?;
-    for record_index in unlocated_members.chain(located_members.map(|member| &member.value)) {
-        let header = scope_start
-            .checked_add(indexed_header::LEN)
-            .and_then(|at| records.first_at_or_after(at, *record_index))
-            .and_then(|byte_offset| {
-                lp_ascii_filtered_view(bytes, byte_offset, 3..=3, u8::is_ascii_digit).map(
-                    |(class_tag, _)| FaceSourceReferenceHeader {
-                        record_index: *record_index,
-                        byte_offset,
-                        class_tag,
-                    },
-                )
-            });
+    let search = scope_start.checked_add(indexed_header::LEN);
+    for record_index in admit_reference_values(ctx, references, "scan F3D face source references")?
+    {
+        let byte_offset = match search {
+            Some(search) => records.first_at_or_after(ctx, search, *record_index)?,
+            None => None,
+        };
+        let header = byte_offset.and_then(|byte_offset| {
+            lp_ascii_filtered_view(bytes, byte_offset, 3..=3, u8::is_ascii_digit).map(
+                |(class_tag, _)| FaceSourceReferenceHeader {
+                    record_index: *record_index,
+                    byte_offset,
+                    class_tag,
+                },
+            )
+        });
         ctx.push_vec(&mut headers, header, "f3d face source reference headers")?;
     }
     Ok(headers)
@@ -2221,24 +2218,13 @@ fn parse_loft_legacy_body_carrier(
                 let short_paired_offset = start.checked_add(legacy_loft_322::LEN)?;
                 let long_paired_offset = start.checked_add(legacy_loft_322_tail::LEN)?;
                 let pair_matches = |at: usize| {
-                    indexed_record_header_at(ctx, bytes, at).map(|paired| {
-                        paired.is_some_and(|paired| {
-                            paired.record_index == header.record_index
-                                && paired.class_tag.as_str() == "262"
-                        })
+                    indexed_record_header_at(bytes, at).is_some_and(|paired| {
+                        paired.record_index == header.record_index && paired.class_tag == "262"
                     })
                 };
-                let short_pair_matches = match pair_matches(short_paired_offset) {
-                    Ok(matches) => matches,
-                    Err(error) => return Some(Err(error)),
-                };
-                let long_pair_matches = match pair_matches(long_paired_offset) {
-                    Ok(matches) => matches,
-                    Err(error) => return Some(Err(error)),
-                };
-                if short_pair_matches {
+                if pair_matches(short_paired_offset) {
                     ("262", legacy_loft_322::LEN, false)
-                } else if long_pair_matches {
+                } else if pair_matches(long_paired_offset) {
                     ("262", legacy_loft_322_tail::LEN, true)
                 } else {
                     return None;
@@ -2247,11 +2233,7 @@ fn parse_loft_legacy_body_carrier(
             "411" => ("266", legacy_loft_411::LEN, true),
             _ => return None,
         };
-        let parsed_header = match indexed_record_header_at(ctx, bytes, start) {
-            Ok(Some(parsed)) => parsed,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        let parsed_header = indexed_record_header_at(bytes, start)?;
         if parsed_header.record_index != header.record_index
             || bytes.get(
                 start + legacy_loft_322::ZERO_RUN_10..start + legacy_loft_322::ZERO_RUN_10 + 10,
@@ -2315,46 +2297,30 @@ fn parse_loft_legacy_body_carrier(
         if cursor != paired_byte_offset {
             return None;
         }
-        let paired_header = match indexed_record_header_at(ctx, bytes, paired_byte_offset) {
-            Ok(Some(parsed)) => parsed,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
-        if paired_header.record_index != header.record_index {
+        let paired_header = indexed_record_header_at(bytes, paired_byte_offset)?;
+        if paired_header.record_index != header.record_index
+            || paired_header.class_tag != paired_class
+        {
             return None;
         }
-        let paired_class_tag_bytes = bytes.get(
-            paired_byte_offset + indexed_header::CLASS_TAG
-                ..paired_byte_offset + indexed_header::CLASS_TAG + 3,
-        )?;
-        let paired_class_tag = match ctx.validate_utf8(
-            paired_class_tag_bytes,
-            "validate F3D legacy Loft paired class tag",
-        ) {
-            Ok(Ok(class_tag)) => class_tag,
-            Ok(Err(_)) => return None,
-            Err(error) => return Some(Err(error)),
-        };
-        if paired_class_tag != paired_class {
-            return None;
-        }
-        let paired_class_tag = match ctx
-            .copy_retained_text(paired_class_tag, "copy F3D legacy Loft paired class tag")
+        let paired_class_tag =
+            match paired_header.retain_class_tag(ctx, "copy F3D legacy Loft paired class tag") {
+                Ok(class_tag) => class_tag,
+                Err(error) => return Some(Err(error)),
+            };
+        let class_tag = match header
+            .class_tag
+            .try_clone_for_decode(ctx, "copy F3D legacy Loft class tag")
         {
             Ok(class_tag) => class_tag,
             Err(error) => return Some(Err(error)),
-        };
-        let Ok(paired_class_tag) =
-            crate::records::references::DesignClassTag::try_from(paired_class_tag)
-        else {
-            return None;
         };
         Some(Ok(DesignLoftLegacyBodyCarrier {
             id: String::new(),
             scope_record_index: scope.record_index,
             record_index: header.record_index,
             byte_offset: header.byte_offset,
-            class_tag: header.class_tag.clone(),
+            class_tag,
             owner_scope_record_index_offset: u64::try_from(
                 start + legacy_loft_322::OWNER_SCOPE_RECORD_INDEX,
             )
@@ -3473,8 +3439,8 @@ fn parse_construction_operand_path(
     }
     let following_class_tag =
         match crate::design::decode::text::class_tag_from_view(ctx, following_class_tag) {
-            Ok(Ok(class_tag)) => class_tag,
-            Ok(Err(_)) => return None,
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         };
     crate::records::topology::construction::DesignConstructionOperandPath::try_new(
@@ -3522,8 +3488,8 @@ fn parse_construction_operand_transform(
     }
     let following_class_tag =
         match crate::design::decode::text::class_tag_from_view(ctx, following_class_tag) {
-            Ok(Ok(class_tag)) => class_tag,
-            Ok(Err(_)) => return None,
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         };
     crate::records::topology::construction::DesignConstructionOperandTransform::try_new(
@@ -3859,8 +3825,8 @@ fn parse_construction_operand_identity(
         current_record_index = View::u32_le_at(bytes, after_next_tag)?;
         current_class_tag =
             match crate::design::decode::text::class_tag_from_view(ctx, next_class_tag) {
-                Ok(Ok(class_tag)) => class_tag,
-                Ok(Err(_)) => return None,
+                Ok(Some(class_tag)) => class_tag,
+                Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             };
         chain_started = true;
@@ -3975,14 +3941,14 @@ fn parse_construction_tracking_path(
     }
     let carrier_class_tag =
         match crate::design::decode::text::class_tag_from_view(ctx, carrier_class_tag) {
-            Ok(Ok(class_tag)) => class_tag,
-            Ok(Err(_)) => return None,
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         };
     let following_class_tag =
         match crate::design::decode::text::class_tag_from_view(ctx, following_class_tag) {
-            Ok(Ok(class_tag)) => class_tag,
-            Ok(Err(_)) => return None,
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         };
     DesignConstructionTrackingPath::try_new(
@@ -4709,8 +4675,8 @@ pub(super) fn parse_entity_selection_frame(
         record_index,
         byte_offset,
         class_tag: match crate::design::decode::text::class_tag_from_view(ctx, class_tag) {
-            Ok(Ok(class_tag)) => class_tag,
-            Ok(Err(_)) => return None,
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         },
         asset_id: prefix.asset_id,
@@ -4818,12 +4784,14 @@ pub(crate) fn decode_body_recipe_operands(
                 continue;
             };
             let Some(recipe) = unique_body_recipe_with_index(
+                ctx,
                 records,
                 header,
                 body_recipes_by_stream
                     .get(stream)
                     .map_or(&[], Vec::as_slice),
-            ) else {
+            )?
+            else {
                 continue;
             };
             if let Some(operand) = parse_body_recipe_operand_with_index(
@@ -4890,12 +4858,14 @@ pub(crate) fn decode_body_recipe_operands(
                 return Ok(());
             };
             let Some(recipe) = unique_body_recipe_with_index(
+                ctx,
                 records,
                 header,
                 body_recipes_by_stream
                     .get(stream)
                     .map_or(&[], Vec::as_slice),
-            ) else {
+            )?
+            else {
                 return Ok(());
             };
             let owner = DesignOperandOwner::ScopeReference {
@@ -4998,25 +4968,50 @@ fn unique_body_recipe<'a>(
     recipes: &'a [&'a ConstructionRecipe],
 ) -> Option<&'a ConstructionRecipe> {
     let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
-    unique_body_recipe_with_index(&records, header, recipes)
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        unique_body_recipe_with_index(ctx, &records, header, recipes)
+    })
+    .ok()
+    .flatten()
 }
 
+/// `recipes` is in byte order, so the interval is bisected at both ends.
 fn unique_body_recipe_with_index<'a>(
+    ctx: &DecodeContext<'_>,
     records: &IndexedRecordOffsets,
     header: &DesignRecordHeader,
     recipes: &'a [&'a ConstructionRecipe],
-) -> Option<&'a ConstructionRecipe> {
-    let start = usize::try_from(header.byte_offset).ok()?;
-    let prologue_end = body_recipe_prologue_end_with_index(records, start, header.record_index)?;
-    let next_at = records.first_at_or_after(prologue_end, header.record_index.checked_add(4)?)?;
-    let lower = u64::try_from(prologue_end).ok()?;
-    let upper = u64::try_from(next_at).ok()?;
-    let matching = &recipes[recipes.partition_point(|recipe| recipe.byte_offset < lower)
-        ..recipes.partition_point(|recipe| recipe.byte_offset < upper)];
-    let [recipe] = matching else {
-        return None;
+) -> Result<Option<&'a ConstructionRecipe>, CodecError> {
+    let Ok(start) = usize::try_from(header.byte_offset) else {
+        return Ok(None);
     };
-    Some(recipe)
+    let Some(prologue_end) =
+        body_recipe_prologue_end_with_index(ctx, records, start, header.record_index)?
+    else {
+        return Ok(None);
+    };
+    let Some(closing_index) = header.record_index.checked_add(4) else {
+        return Ok(None);
+    };
+    let Some(next_at) = records.first_at_or_after(ctx, prologue_end, closing_index)? else {
+        return Ok(None);
+    };
+    let lower = u64_from_index(prologue_end);
+    let upper = u64_from_index(next_at);
+    let first = ctx.partition_point(
+        recipes,
+        |recipe| Ok(recipe.byte_offset < lower),
+        "find F3D body recipe interval",
+    )?;
+    let end = ctx.partition_point(
+        recipes,
+        |recipe| Ok(recipe.byte_offset < upper),
+        "find F3D body recipe interval",
+    )?;
+    let Some([recipe]) = recipes.get(first..end) else {
+        return Ok(None);
+    };
+    Ok(Some(recipe))
 }
 
 /// Offset past the four consecutively indexed records that open a body-recipe
@@ -5028,25 +5023,25 @@ fn unique_body_recipe_with_index<'a>(
 #[cfg(test)]
 fn body_recipe_prologue_end(bytes: &[u8], start: usize, record_index: u32) -> Option<usize> {
     let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
-    body_recipe_prologue_end_with_index(&records, start, record_index)
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        body_recipe_prologue_end_with_index(ctx, &records, start, record_index)
+    })
+    .ok()
+    .flatten()
 }
 
 fn body_recipe_prologue_end_with_index(
+    ctx: &DecodeContext<'_>,
     records: &IndexedRecordOffsets,
     start: usize,
     record_index: u32,
-) -> Option<usize> {
-    let mut search = start.checked_add(11)?;
-    for expected in [
-        record_index,
-        record_index.checked_add(1)?,
-        record_index.checked_add(2)?,
-        record_index.checked_add(3)?,
-    ] {
-        let at = records.first_at_or_after(search, expected)?;
-        search = at.checked_add(11)?;
-    }
-    Some(search)
+) -> Result<Option<usize>, CodecError> {
+    let Some(position) = start.checked_add(11) else {
+        return Ok(None);
+    };
+    Ok(records
+        .consecutive_headers::<4>(ctx, position, record_index)?
+        .and_then(|[.., last]| last.checked_add(11)))
 }
 
 /// Offset of the record carrying `record_index + 4` that closes a body-recipe
@@ -5060,19 +5055,27 @@ fn body_recipe_operand_end(
     recipe_at: usize,
 ) -> Option<usize> {
     let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
-    body_recipe_operand_end_with_index(&records, prologue_end, record_index, recipe_at)
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        body_recipe_operand_end_with_index(ctx, &records, prologue_end, record_index, recipe_at)
+    })
+    .ok()
+    .flatten()
 }
 
 fn body_recipe_operand_end_with_index(
+    ctx: &DecodeContext<'_>,
     records: &IndexedRecordOffsets,
     prologue_end: usize,
     record_index: u32,
     recipe_at: usize,
-) -> Option<usize> {
+) -> Result<Option<usize>, CodecError> {
+    let Some(closing_index) = record_index.checked_add(4) else {
+        return Ok(None);
+    };
     if recipe_at < prologue_end {
-        return None;
+        return Ok(None);
     }
-    records.first_at_or_after(recipe_at, record_index.checked_add(4)?)
+    records.first_at_or_after(ctx, recipe_at, closing_index)
 }
 
 #[cfg(test)]
@@ -5130,9 +5133,21 @@ fn parse_body_recipe_operand_frame_with_index(
 ) -> Option<Result<DesignBodyRecipeOperand, CodecError>> {
     let start = usize::try_from(header.byte_offset).ok()?;
     let recipe_at = usize::try_from(recipe.byte_offset).ok()?;
-    let prologue_end = body_recipe_prologue_end_with_index(records, start, header.record_index)?;
-    let next_at =
-        body_recipe_operand_end_with_index(records, prologue_end, header.record_index, recipe_at)?;
+    let prologue_end =
+        match body_recipe_prologue_end_with_index(ctx, records, start, header.record_index) {
+            Ok(prologue_end) => prologue_end?,
+            Err(error) => return Some(Err(error)),
+        };
+    let next_at = match body_recipe_operand_end_with_index(
+        ctx,
+        records,
+        prologue_end,
+        header.record_index,
+        recipe_at,
+    ) {
+        Ok(next_at) => next_at?,
+        Err(error) => return Some(Err(error)),
+    };
     let reference_count = usize::try_from(View::u32_le_at(bytes, start + 21)?).ok()?;
     // The legacy Combine form permits an empty persistent-reference table;
     // its marker then starts at the ordinary post-count cursor. The history
@@ -5808,8 +5823,8 @@ pub(in crate::design) fn parse_sketch_profile(
                 ctx,
                 paired_class_tag,
             ) {
-                Ok(Ok(class_tag)) => class_tag,
-                Ok(Err(_)) => return None,
+                Ok(Some(class_tag)) => class_tag,
+                Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             },
             paired_byte_offset: u64::try_from(paired_at).ok()?,
@@ -5833,7 +5848,7 @@ fn parse_sketch_profile_region_selection(
         let Some(at) = next_indexed_record_offset(ctx, bytes, position)? else {
             return Ok(None);
         };
-        Ok(indexed_record_header_at(ctx, bytes, at)?
+        Ok(indexed_record_header_at(bytes, at)
             .filter(|header| header.record_index == expected)
             .map(|_| at))
     };
@@ -6028,8 +6043,8 @@ fn parse_sketch_profile_region_selection(
         record_index: selection_record_index,
         byte_offset: u64::try_from(selection_at).ok()?,
         class_tag: match crate::design::decode::text::class_tag_from_view(ctx, class_tag) {
-            Ok(Ok(class_tag)) => class_tag,
-            Ok(Err(_)) => return None,
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         },
         region_count_offset: u64::try_from(
@@ -6041,8 +6056,8 @@ fn parse_sketch_profile_region_selection(
             ctx,
             companion_class_tag,
         ) {
-            Ok(Ok(class_tag)) => class_tag,
-            Ok(Err(_)) => return None,
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         },
         companion_byte_offset: u64::try_from(companion_at).ok()?,
@@ -6133,19 +6148,20 @@ fn parse_recipe_operand(
         .iter()
         .find_map(|(name, kind)| (*kind == recipe_kind).then_some(*name))?;
     let start = usize::try_from(header.byte_offset).ok()?;
-    let mut offsets = [0usize; 5];
-    let mut position = start.checked_add(11)?;
-    for (delta, slot) in offsets[..4].iter_mut().enumerate() {
-        let record_index = header
-            .record_index
-            .checked_add(u32::try_from(delta).ok()?)?;
-        let offset = records.first_at_or_after(position, record_index)?;
-        *slot = offset;
-        position = offset.checked_add(11)?;
-    }
+    let prologue =
+        match records.consecutive_headers::<4>(ctx, start.checked_add(11)?, header.record_index) {
+            Ok(prologue) => prologue?,
+            Err(error) => return Some(Err(error)),
+        };
+    let position = prologue[3].checked_add(11)?;
+    let mut offsets = [prologue[0], prologue[1], prologue[2], prologue[3], 0];
     offsets[4] = match terminator {
         RecipeOperandTerminator::RecordDelta(delta) => {
-            records.first_at_or_after(position, header.record_index.checked_add(delta)?)?
+            match records.first_at_or_after(ctx, position, header.record_index.checked_add(delta)?)
+            {
+                Ok(offset) => offset?,
+                Err(error) => return Some(Err(error)),
+            }
         }
         RecipeOperandTerminator::NextIndexedAfterRecipe { limit } => {
             let recipe_record_byte_offset = u64::try_from(offsets[3]).ok()?;
@@ -6245,8 +6261,8 @@ fn parse_recipe_operand(
         paired_byte_offset: u64::try_from(offsets[0]).ok()?,
         paired_class_tag: match crate::design::decode::text::class_tag_from_view(ctx, indexed[0].0)
         {
-            Ok(Ok(class_tag)) => class_tag,
-            Ok(Err(_)) => return None,
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         },
         recipe_record_index,
@@ -7061,43 +7077,40 @@ fn face_recipe_next_boundary(
     record_index: u32,
     limit: Option<u64>,
 ) -> Result<Option<(usize, u32)>, CodecError> {
-    let within_limit = |offset: usize| {
-        limit.is_none_or(|limit| {
-            usize::try_from(limit)
-                .ok()
-                .is_some_and(|limit| offset <= limit)
-        })
-    };
-    let Some(expected_indices) = record_index.checked_add(4).zip(record_index.checked_add(5))
-    else {
-        return Ok(None);
-    };
-    let expected_indices = [expected_indices.0, expected_indices.1];
-    let mut selected = None;
-    for expected_index in expected_indices {
-        let Some(offset) =
-            next_indexed_record_offset_with_index(ctx, bytes, position, expected_index)?
-        else {
-            continue;
-        };
-        if within_limit(offset)
-            && selected.is_none_or(|(_, selected_offset)| offset < selected_offset)
-        {
-            selected = Some((expected_index, offset));
+    // A header that opens at or before `limit` lies within `limit + 11` bytes,
+    // so the searches read no further.
+    let (window_end, limit) = match limit {
+        None => (bytes.len(), usize::MAX),
+        Some(limit) => {
+            let Ok(limit) = usize::try_from(limit) else {
+                return Ok(None);
+            };
+            let end = limit
+                .checked_add(11)
+                .map_or(bytes.len(), |end| end.min(bytes.len()));
+            (end, limit)
         }
-    }
-    if let Some((record_index, offset)) = selected {
-        return Ok(Some((offset, record_index)));
-    }
-    let Some(offset) = next_indexed_record_offset(ctx, bytes, position)? else {
+    };
+    let Some(window) = bytes.get(..window_end) else {
         return Ok(None);
     };
-    let Some(record_index) =
-        indexed_record_header_at(ctx, bytes, offset)?.map(|header| header.record_index)
+    let Some((plus_four, plus_five)) = record_index.checked_add(4).zip(record_index.checked_add(5))
     else {
         return Ok(None);
     };
-    Ok(within_limit(offset).then_some((offset, record_index)))
+    let expected = next_indexed_record_header(ctx, window, position, |header| {
+        header.record_index == plus_four || header.record_index == plus_five
+    })?;
+    let header = match expected.filter(|header| header.offset <= limit) {
+        Some(header) => header,
+        None => {
+            let Some(header) = next_indexed_record_header(ctx, window, position, |_| true)? else {
+                return Ok(None);
+            };
+            header
+        }
+    };
+    Ok((header.offset <= limit).then_some((header.offset, header.record_index)))
 }
 
 #[derive(Clone, Copy)]
@@ -7124,16 +7137,13 @@ pub(super) fn parse_face_operand(
         header,
     } = input;
     let start = usize::try_from(header.byte_offset).ok()?;
-    let mut offsets = [0usize; 5];
-    let mut position = start.checked_add(11)?;
-    for (delta, slot) in offsets[..4].iter_mut().enumerate() {
-        let record_index = header
-            .record_index
-            .checked_add(u32::try_from(delta).ok()?)?;
-        let offset = records.first_at_or_after(position, record_index)?;
-        *slot = offset;
-        position = offset.checked_add(11)?;
-    }
+    let prologue =
+        match records.consecutive_headers::<4>(ctx, start.checked_add(11)?, header.record_index) {
+            Ok(prologue) => prologue?,
+            Err(error) => return Some(Err(error)),
+        };
+    let position = prologue[3].checked_add(11)?;
+    let mut offsets = [prologue[0], prologue[1], prologue[2], prologue[3], 0];
     let (immediate_next, next_record_index) = match face_recipe_next_boundary(
         ctx,
         bytes,
@@ -7254,8 +7264,8 @@ pub(super) fn parse_face_operand(
         paired_byte_offset: u64::try_from(offsets[0]).ok()?,
         paired_class_tag: match crate::design::decode::text::class_tag_from_view(ctx, indexed[0].0)
         {
-            Ok(Ok(class_tag)) => class_tag,
-            Ok(Err(_)) => return None,
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         },
         recipe_record_index,

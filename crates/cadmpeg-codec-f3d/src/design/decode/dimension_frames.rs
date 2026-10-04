@@ -1309,14 +1309,14 @@ fn parse_dimension_locus_pair(
         position = at.checked_add(1)?;
     };
     let class_tag = match crate::design::decode::text::class_tag_from_view(ctx, class_tag) {
-        Ok(Ok(class_tag)) => class_tag,
-        Ok(Err(_)) => return None,
+        Ok(Some(class_tag)) => class_tag,
+        Ok(None) => return None,
         Err(error) => return Some(Err(error)),
     };
     let paired_class_tag =
         match crate::design::decode::text::class_tag_from_view(ctx, paired_class_tag) {
-            Ok(Ok(class_tag)) => class_tag,
-            Ok(Err(_)) => return None,
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         };
     let pair = DesignDimensionLocusPair::try_new(
@@ -1550,14 +1550,14 @@ fn parse_dimension_null_locus_pair(
         position = at.checked_add(1)?;
     };
     let class_tag = match crate::design::decode::text::class_tag_from_view(ctx, class_tag) {
-        Ok(Ok(class_tag)) => class_tag,
-        Ok(Err(_)) => return None,
+        Ok(Some(class_tag)) => class_tag,
+        Ok(None) => return None,
         Err(error) => return Some(Err(error)),
     };
     let paired_class_tag =
         match crate::design::decode::text::class_tag_from_view(ctx, paired_class_tag) {
-            Ok(Ok(class_tag)) => class_tag,
-            Ok(Err(_)) => return None,
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         };
     let pair = DesignDimensionLocusPair::try_new(
@@ -2037,14 +2037,14 @@ fn parse_dimension_annotation_frame(
         Err(error) => return Some(Err(error)),
     };
     let class_tag = match crate::design::decode::text::class_tag_from_view(ctx, class_tag) {
-        Ok(Ok(class_tag)) => class_tag,
-        Ok(Err(_)) => return None,
+        Ok(Some(class_tag)) => class_tag,
+        Ok(None) => return None,
         Err(error) => return Some(Err(error)),
     };
     let paired_class_tag =
         match crate::design::decode::text::class_tag_from_view(ctx, paired_class_tag) {
-            Ok(Ok(class_tag)) => class_tag,
-            Ok(Err(_)) => return None,
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         };
     let draft = crate::records::dimensions::DesignDimensionAnnotationFrameDraft {
@@ -2189,10 +2189,8 @@ pub(crate) fn decode_dimension_presentation_frames(
         }
         let bytes = scan.entry_bytes(&entry.name)?;
         for header in indexed_record_offsets(ctx, bytes)? {
-            let header = header?;
             let start = header.offset;
-            let Some(primary_type_guid) =
-                presentation_classes.get(&u64::from(header.class_tag.code()))
+            let Some(primary_type_guid) = presentation_classes.get(&u64::from(header.class_code))
             else {
                 continue;
             };
@@ -2344,14 +2342,14 @@ fn parse_dimension_presentation_frame(
         Err(error) => return Some(Err(error)),
     };
     let class_tag = match crate::design::decode::text::class_tag_from_view(ctx, class_tag) {
-        Ok(Ok(class_tag)) => class_tag,
-        Ok(Err(_)) => return None,
+        Ok(Some(class_tag)) => class_tag,
+        Ok(None) => return None,
         Err(error) => return Some(Err(error)),
     };
     let paired_class_tag =
         match crate::design::decode::text::class_tag_from_view(ctx, paired_class_tag) {
-            Ok(Ok(class_tag)) => class_tag,
-            Ok(Err(_)) => return None,
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         };
     Some(Ok(DesignDimensionPresentationFrame {
@@ -2745,14 +2743,14 @@ fn parse_dimension_locus_group(
         return None;
     }
     let class_tag = match crate::design::decode::text::class_tag_from_view(ctx, class_tag) {
-        Ok(Ok(class_tag)) => class_tag,
-        Ok(Err(_)) => return None,
+        Ok(Some(class_tag)) => class_tag,
+        Ok(None) => return None,
         Err(error) => return Some(Err(error)),
     };
     let next_class_tag = match crate::design::decode::text::class_tag_from_view(ctx, next_class_tag)
     {
-        Ok(Ok(class_tag)) => class_tag,
-        Ok(Err(_)) => return None,
+        Ok(Some(class_tag)) => class_tag,
+        Ok(None) => return None,
         Err(error) => return Some(Err(error)),
     };
     Some(Ok(DesignDimensionLocusGroup {

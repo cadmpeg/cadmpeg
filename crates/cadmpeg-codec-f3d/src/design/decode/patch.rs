@@ -34,7 +34,7 @@ pub(super) fn surface_patch_boundaries(
         .enumerate()
     {
         let Some(mut boundary) = records
-            .first_at_or_after(0, *record_index)
+            .first_offset(*record_index)
             .and_then(|at| exact_surface_patch_boundary(bytes, at))
         else {
             continue;

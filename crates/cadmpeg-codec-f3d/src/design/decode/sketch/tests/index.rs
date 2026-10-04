@@ -53,12 +53,13 @@ fn indexed_record_offsets_charge_each_key_and_offset() {
     bytes.extend_from_slice(&indexed_header(7));
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 3;
+    // One order slot, one key and two offsets.
+    policy.limits.max_collection_items = 4;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let records = IndexedRecordOffsets::build(&ctx, &bytes).unwrap();
     assert_eq!(records.offsets(7), &[0, 11]);
 
-    policy.limits.max_collection_items = 2;
+    policy.limits.max_collection_items = 3;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     assert!(matches!(
         IndexedRecordOffsets::build(&ctx, &bytes),
@@ -380,8 +381,8 @@ fn indexed_record_search_refuses_work_before_header_scanning() {
         crate::design::decode::sketch::next_indexed_record_offset(&ctx, &bytes, 0),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "scan F3D indexed record headers"
-                && limit.additional == 11
+                && limit.operation == "find F3D indexed record header"
+                && limit.additional == 1
     ));
 }
 
@@ -405,8 +406,8 @@ fn indexed_record_frames_preserve_work_refusal() {
 #[test]
 fn indexed_record_groups_preserve_work_refusal() {
     let records = crate::design::test_support::indexed_record_offsets_for_test(&indexed_header(7));
-    // Hash traversal admits all allocated buckets.
-    let expected = u64_from_index(records.by_record_index.capacity());
+    // The traversal visits one record index.
+    let expected = 1;
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;

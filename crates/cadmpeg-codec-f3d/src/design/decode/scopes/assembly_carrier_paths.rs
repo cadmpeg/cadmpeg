@@ -495,19 +495,11 @@ fn exact_class_264_record_frame(
         if Some(paired_at) != start.checked_add(frame_length) {
             return None;
         }
-        let start_class_tag = match exact_indexed_header_at(ctx, bytes, start, record_index) {
-            Ok(Some(class_tag)) => class_tag,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        let start_class_tag = exact_indexed_header_at(bytes, start, record_index)?;
         if start_class_tag != class_tag {
             return None;
         }
-        let paired_class_tag = match exact_indexed_header_at(ctx, bytes, paired_at, record_index) {
-            Ok(Some(class_tag)) => class_tag,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        let paired_class_tag = exact_indexed_header_at(bytes, paired_at, record_index)?;
         (paired_class_tag == "264").then_some(Ok((start, paired_at)))
     });
     let candidate = match candidates.next() {

@@ -564,26 +564,8 @@ fn direct_work_axis_carriers_project_both_admitted_generations() {
             })
             .unwrap();
         let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-        let error = crate::test_support::resource_refusal_at(
-            cadmpeg_core::decode::ResourceDimension::WorkUnits,
-            "scan F3D indexed record frames",
-            0,
-            |ctx| exact_work_axis_construction(ctx, &bytes, &records, &scope),
-        );
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(refusal)
-                if refusal.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                    && refusal.operation == "scan F3D indexed record frames"
-        ));
-        let construction = exact_work_axis_construction(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            &records,
-            &scope,
-        )
-        .unwrap()
-        .expect("direct WorkAxis carrier");
+        let construction = exact_work_axis_construction(&bytes, &records, &scope)
+            .expect("direct WorkAxis carrier");
         assert_eq!(construction.origin_offset, 25);
         assert_eq!(construction.displacement_offset, 49);
         assert!(matches!(

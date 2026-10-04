@@ -457,7 +457,7 @@ mod tests {
         let (bytes, scope) = fixture();
         let error = crate::test_support::resource_refusal_at(
             ResourceDimension::WorkUnits,
-            "scan F3D indexed record headers",
+            "find F3D indexed record header",
             0,
             |ctx| parse_canvas_image(ctx, &bytes, "Design/BulkStream.dat", &scope).map(|_| ()),
         );
@@ -465,7 +465,7 @@ mod tests {
             error,
             cadmpeg_core::CodecError::ResourceLimit(refusal)
                 if refusal.dimension == ResourceDimension::WorkUnits
-                    && refusal.operation == "scan F3D indexed record headers"
+                    && refusal.operation == "find F3D indexed record header"
         ));
     }
 

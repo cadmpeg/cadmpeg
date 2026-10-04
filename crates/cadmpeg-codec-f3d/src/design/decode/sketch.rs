@@ -53,6 +53,8 @@ const EPS_SKETCH_DECODE_LINE_COMPONENTS_E12: f64 = 1.0e-12;
 /// the record index carried at header offset seven.
 pub(in crate::design) struct IndexedRecordOffsets {
     by_record_index: HashMap<u32, Vec<usize>>,
+    /// Record indexes in the byte order of their first header.
+    record_indexes: Vec<u32>,
 }
 
 impl IndexedRecordOffsets {
@@ -62,8 +64,19 @@ impl IndexedRecordOffsets {
         bytes: &[u8],
     ) -> Result<Self, CodecError> {
         let mut by_record_index = HashMap::<u32, Vec<usize>>::new();
+        let mut record_indexes = Vec::new();
         for header in indexed_record_offsets(ctx, bytes)? {
-            let header = header?;
+            if !ctx.contains_key_hash_map(
+                &by_record_index,
+                &header.record_index,
+                "f3d indexed record key",
+            )? {
+                ctx.push_vec(
+                    &mut record_indexes,
+                    header.record_index,
+                    "f3d indexed record order",
+                )?;
+            }
             ctx.push_hash_group(
                 &mut by_record_index,
                 header.record_index,
@@ -72,7 +85,10 @@ impl IndexedRecordOffsets {
                 "f3d indexed record offset",
             )?;
         }
-        Ok(Self { by_record_index })
+        Ok(Self {
+            by_record_index,
+            record_indexes,
+        })
     }
 
     /// Ascending header offsets carrying `record_index`.
@@ -82,22 +98,97 @@ impl IndexedRecordOffsets {
             .map_or(&[], Vec::as_slice)
     }
 
-    /// Record indexes and their ascending header offsets.
+    /// Record indexes and their ascending header offsets, in the byte order of
+    /// each index's first header.
     pub(in crate::design) fn records(
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<impl Iterator<Item = (u32, &[usize])> + '_, CodecError> {
         Ok(ctx
-            .admit_iter(&self.by_record_index, "scan F3D indexed record groups")?
-            .map(|(record_index, offsets)| (*record_index, offsets.as_slice())))
+            .admit_iter(&self.record_indexes, "scan F3D indexed record groups")?
+            .map(|record_index| (*record_index, self.offsets(*record_index))))
+    }
+
+    /// The first header that carries `record_index`.
+    pub(in crate::design) fn first_offset(&self, record_index: u32) -> Option<usize> {
+        self.offsets(record_index).first().copied()
     }
 
     /// The first header at or after `position` that carries `record_index`.
-    pub(super) fn first_at_or_after(&self, position: usize, record_index: u32) -> Option<usize> {
+    /// The ascending offsets are bisected, so the search visits a logarithmic
+    /// number of them.
+    pub(super) fn first_at_or_after(
+        &self,
+        ctx: &DecodeContext<'_>,
+        position: usize,
+        record_index: u32,
+    ) -> Result<Option<usize>, CodecError> {
         let offsets = self.offsets(record_index);
-        offsets
-            .get(offsets.partition_point(|offset| *offset < position))
-            .copied()
+        let index = ctx.partition_point(
+            offsets,
+            |offset| Ok(*offset < position),
+            "find F3D indexed record at or after offset",
+        )?;
+        Ok(offsets.get(index).copied())
+    }
+
+    /// Headers carrying `record_index`, `record_index + 1`, and so on for `N`
+    /// indexes: each is the first header of its index at or after `position`
+    /// or, after the first, at least one header length past its predecessor.
+    pub(in crate::design) fn consecutive_headers<const N: usize>(
+        &self,
+        ctx: &DecodeContext<'_>,
+        position: usize,
+        record_index: u32,
+    ) -> Result<Option<[usize; N]>, CodecError> {
+        let mut offsets = [0; N];
+        let mut search = Some(position);
+        for (delta, slot) in offsets.iter_mut().enumerate() {
+            let expected = u32::try_from(delta)
+                .ok()
+                .and_then(|delta| record_index.checked_add(delta));
+            let (Some(at), Some(expected)) = (search, expected) else {
+                return Ok(None);
+            };
+            let Some(offset) = self.first_at_or_after(ctx, at, expected)? else {
+                return Ok(None);
+            };
+            *slot = offset;
+            search = offset.checked_add(11);
+        }
+        Ok(Some(offsets))
+    }
+
+    /// The only frame of `record_index`: exactly two headers carry it.
+    pub(in crate::design) fn only_frame(&self, record_index: u32) -> Option<(usize, usize)> {
+        match self.offsets(record_index) {
+            [start, paired] => Some((*start, *paired)),
+            _ => None,
+        }
+    }
+
+    /// The first frame of `record_index`: its first two headers.
+    pub(in crate::design) fn first_frame(&self, record_index: u32) -> Option<(usize, usize)> {
+        let [start, paired] = self.offsets(record_index).first_chunk::<2>()?;
+        Some((*start, *paired))
+    }
+
+    /// The frame of `record_index` that opens at `start`: the header after the
+    /// one at `start`. The ascending offsets are bisected.
+    pub(in crate::design) fn frame_at(
+        &self,
+        ctx: &DecodeContext<'_>,
+        record_index: u32,
+        start: usize,
+    ) -> Result<Option<usize>, CodecError> {
+        let offsets = self.offsets(record_index);
+        let Ok(index) = ctx.binary_search(offsets, &start, "find F3D indexed record frame")? else {
+            return Ok(None);
+        };
+        Ok(index
+            .checked_add(1)
+            .and_then(|next| offsets.get(next))
+            .copied())
     }
 
     /// Consecutive header offsets carrying `record_index`, each pair delimiting
@@ -708,15 +799,17 @@ fn parse_member_run_head_placement(
         let start = usize::try_from(entity_byte_offset).ok()?;
         // Locate the paired same-index record after the entity header.
         let entity_index = u32::try_from(entity_id.suffix()).ok()?;
-        let paired_at = records.first_at_or_after(start.checked_add(1)?, entity_index)?;
+        let paired_at = match records.first_at_or_after(ctx, start.checked_add(1)?, entity_index) {
+            Ok(paired_at) => paired_at?,
+            Err(error) => return Some(Err(error)),
+        };
         let (paired_class_tag, paired_after_tag) =
             lp_ascii_filtered_view(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
         let paired_class_tag =
-            (match crate::design::decode::text::class_tag_from_view(ctx, paired_class_tag) {
-                Ok(value) => value,
+            match crate::design::decode::text::class_tag_from_view(ctx, paired_class_tag) {
+                Ok(value) => value?,
                 Err(error) => return Some(Err(error)),
-            })
-            .ok()?;
+            };
         // The paired record's prologue: the u32 index, zero bytes to offset 19,
         // then a marked u64 reference naming the head record.
         if paired_after_tag != paired_at + 7
@@ -733,11 +826,10 @@ fn parse_member_run_head_placement(
         let head_at = records.offsets(head_index).first().copied()?;
         let (class_tag, after_tag) =
             lp_ascii_filtered_view(bytes, head_at, 0..=2000, u8::is_ascii_graphic)?;
-        let class_tag = (match crate::design::decode::text::class_tag_from_view(ctx, class_tag) {
-            Ok(value) => value,
+        let class_tag = match crate::design::decode::text::class_tag_from_view(ctx, class_tag) {
+            Ok(value) => value?,
             Err(error) => return Some(Err(error)),
-        })
-        .ok()?;
+        };
         if after_tag != head_at + 7 {
             return None;
         }
@@ -828,11 +920,11 @@ fn parse_sketch_placement_candidates(
         {
             continue;
         }
-        let Ok(class_tag) = crate::design::decode::text::class_tag_from_view(ctx, class_tag)?
+        let Some(class_tag) = crate::design::decode::text::class_tag_from_view(ctx, class_tag)?
         else {
             continue;
         };
-        let Ok(paired_class_tag) =
+        let Some(paired_class_tag) =
             crate::design::decode::text::class_tag_from_view(ctx, paired_class_tag)?
         else {
             continue;
@@ -1525,9 +1617,7 @@ pub(crate) fn decode_entity_headers(
             .as_ref()
             .and_then(|(_, name)| entity_modules.get(name.as_str()));
         for header in indexed_record_offsets(ctx, bytes)? {
-            let header = header?;
             let start = header.offset;
-            let class_tag = header.class_tag.clone();
             let settled = parse_settled_entity_header(ctx, bytes, start)?;
             let genesis_form = settled.is_none();
             let Some(NamedEntityHeader {
@@ -1580,7 +1670,7 @@ pub(crate) fn decode_entity_headers(
                     byte_offset: u64_from_index(start),
 
                     entity_id,
-                    class_tag,
+                    class_tag: header.retain_class_tag(ctx, "copy F3D entity header class tag")?,
                     optional_slot_present,
                     registration: crate::records::entity_header::DesignEntityRegistration::new(
                         module,
@@ -1618,13 +1708,11 @@ pub(crate) fn decode_entity_headers(
                 .map(|_| ())?;
         }
         for header in indexed_record_offsets(ctx, bytes)? {
-            let header = header?;
             let start = header.offset;
             let entity_suffix = header.record_index;
             if !candidates.contains(&entity_suffix) || existing.contains(&entity_suffix) {
                 continue;
             }
-            let class_tag = header.class_tag.clone();
             let Some(members) =
                 parse_legacy_sketch_container_members(ctx, bytes, start, entity_suffix, &records)?
             else {
@@ -1648,7 +1736,8 @@ pub(crate) fn decode_entity_headers(
                         "Sketch",
                         u64::from(entity_suffix),
                     ),
-                    class_tag,
+                    class_tag: header
+                        .retain_class_tag(ctx, "copy F3D legacy sketch header class tag")?,
                     optional_slot_present: false,
                     registration: crate::records::entity_header::DesignEntityRegistration::new(
                         Some(DESIGN_MODULE_SKETCH.to_owned()),
@@ -1801,7 +1890,6 @@ fn decode_headers_for_indices_from_stream(
 ) -> Result<(), CodecError> {
     let mut emitted = std::collections::HashSet::new();
     for header in indexed_record_offsets(ctx, bytes)? {
-        let header = header?;
         let position = header.offset;
         let record_index = header.record_index;
         if wanted.contains(&(scope, record_index)) && !emitted.contains(&record_index) {
@@ -1818,7 +1906,7 @@ fn decode_headers_for_indices_from_stream(
                     "f3d record header ID",
                 )?,
                 record_index,
-                class_tag: header.class_tag,
+                class_tag: header.retain_class_tag(ctx, "copy F3D record header class tag")?,
                 byte_offset: u64_from_index(position),
             });
         }
@@ -3934,7 +4022,9 @@ pub(crate) fn decode_sketch_surfaces(
                 record_index,
                 owner_reference: None,
                 class_tag: crate::design::decode::text::class_tag_from_view(ctx, class_tag)?
-                    .map_err(CodecError::Malformed)?,
+                    .ok_or_else(|| {
+                        CodecError::malformed("F3D sketch surface class tag must be three digits")
+                    })?,
                 byte_offset: u64_from_index(record_at),
                 entity_genesis: surface.entity_genesis,
                 persistent_id: surface.persistent_id,
@@ -5453,39 +5543,85 @@ fn parse_text_glyph_run(
 }
 
 /// Validated indexed-record identity and byte offset.
-pub(in crate::design::decode) struct IndexedRecordHeader {
+#[derive(Clone, Copy)]
+pub(in crate::design::decode) struct IndexedRecordHeader<'bytes> {
     pub(super) offset: usize,
     pub(super) record_index: u32,
-    pub(super) class_tag: crate::records::references::DesignClassTag,
+    /// Three ASCII digits borrowed from the header.
+    pub(super) class_tag: &'bytes str,
+    /// Numeric value of the three-digit class tag.
+    pub(super) class_code: u32,
 }
 
-pub(super) fn indexed_record_header_at(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    at: usize,
-) -> Result<Option<IndexedRecordHeader>, CodecError> {
-    if View::u32_le_at(bytes, at) != Some(3) {
-        return Ok(None);
+impl IndexedRecordHeader<'_> {
+    /// Copy the class tag into retained output storage.
+    pub(super) fn retain_class_tag(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<crate::records::references::DesignClassTag, CodecError> {
+        crate::records::references::DesignClassTag::try_from(
+            ctx.copy_retained_text(self.class_tag, operation)?,
+        )
+        .map_err(CodecError::Malformed)
     }
-    let Some(class_tag) = bytes.get(at + 4..at + 7) else {
-        return Ok(None);
-    };
-    let class_tag = match ctx.validate_utf8(class_tag, "validate F3D indexed record class tag")? {
-        Ok(class_tag) => class_tag,
-        Err(_) => return Ok(None),
-    };
-    let class_tag = ctx.copy_retained_text(class_tag, "copy F3D indexed record class tag")?;
-    let Ok(class_tag) = crate::records::references::DesignClassTag::try_from(class_tag) else {
-        return Ok(None);
-    };
-    let Some(record_index) = View::u32_le_at(bytes, at + 7) else {
-        return Ok(None);
-    };
-    Ok(Some(IndexedRecordHeader {
+}
+
+/// The indexed-record header at `at`: marker `3`, a three-digit class tag and
+/// a record index. The test reads eleven bytes and allocates nothing.
+pub(super) fn indexed_record_header_at(bytes: &[u8], at: usize) -> Option<IndexedRecordHeader<'_>> {
+    if View::u32_le_at(bytes, at) != Some(3) {
+        return None;
+    }
+    let tag = bytes.get(at.checked_add(4)?..)?.first_chunk::<3>()?;
+    if !tag.iter().all(u8::is_ascii_digit) {
+        return None;
+    }
+    let class_code = tag
+        .iter()
+        .fold(0, |value, digit| value * 10 + u32::from(digit - b'0'));
+    let class_tag = std::str::from_utf8(tag).ok()?;
+    let record_index = View::u32_le_at(bytes, at.checked_add(7)?)?;
+    Some(IndexedRecordHeader {
         offset: at,
         record_index,
         class_tag,
-    }))
+        class_code,
+    })
+}
+
+/// The first indexed-record header at or after `position` that `accept`
+/// selects. Each byte the search visits is admitted once before its marker
+/// test, so a forward scan that resumes after each result pays for the bytes
+/// it reads and no more.
+pub(super) fn next_indexed_record_header<'bytes>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'bytes [u8],
+    position: usize,
+    mut accept: impl FnMut(&IndexedRecordHeader<'bytes>) -> bool,
+) -> Result<Option<IndexedRecordHeader<'bytes>>, CodecError> {
+    let mut cursor = position;
+    loop {
+        let Some(tail) = bytes.get(cursor..) else {
+            return Ok(None);
+        };
+        let Some(relative) = ctx.position_by(
+            tail,
+            |byte| Ok(*byte == 3),
+            "find F3D indexed record header",
+        )?
+        else {
+            return Ok(None);
+        };
+        // `relative` indexes `tail`, so both sums stay within `bytes.len()`.
+        let at = cursor + relative;
+        if let Some(header) = indexed_record_header_at(bytes, at) {
+            if accept(&header) {
+                return Ok(Some(header));
+            }
+        }
+        cursor = at + 1;
+    }
 }
 
 pub(in crate::design) fn next_indexed_record_offset(
@@ -5493,61 +5629,34 @@ pub(in crate::design) fn next_indexed_record_offset(
     bytes: &[u8],
     position: usize,
 ) -> Result<Option<usize>, CodecError> {
-    let Some(tail) = bytes.get(position..) else {
-        return Ok(None);
-    };
-    let Some(header) = indexed_record_offsets(ctx, tail)?.next().transpose()? else {
-        return Ok(None);
-    };
-    Ok(Some(position + header.offset))
+    Ok(next_indexed_record_header(ctx, bytes, position, |_| true)?.map(|header| header.offset))
 }
 
-/// Header offsets of every indexed record whose class tag is three characters.
+/// Every indexed record whose class tag is three characters, in byte order.
 ///
 /// A class tag is `256` plus an index into the segment's own type table, so a
 /// tag reaches four characters only in a segment registering more than 744
 /// types. No segment registers that many.
 pub(super) fn indexed_record_offsets<'input>(
-    ctx: &'input DecodeContext<'_>,
+    ctx: &DecodeContext<'_>,
     bytes: &'input [u8],
-) -> Result<impl Iterator<Item = Result<IndexedRecordHeader, CodecError>> + 'input, CodecError> {
-    let width = std::num::NonZeroUsize::new(4)
-        .ok_or_else(|| CodecError::malformed("F3D indexed header marker width is zero"))?;
+) -> Result<impl Iterator<Item = IndexedRecordHeader<'input>> + 'input, CodecError> {
     Ok(ctx
         .admit_iter(bytes, "scan F3D indexed record headers")?
-        .windows(width)
         .enumerate()
-        .filter_map(move |(at, marker)| {
-            if marker != [3, 0, 0, 0] {
-                return None;
-            }
-            match indexed_record_header_at(ctx, bytes, at) {
-                Ok(Some(header)) => Some(Ok(header)),
-                Ok(None) => None,
-                Err(error) => Some(Err(error)),
-            }
-        }))
+        .filter_map(move |(at, _)| indexed_record_header_at(bytes, at)))
 }
 
 pub(super) fn next_indexed_record_offset_with_index(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
-    mut position: usize,
+    position: usize,
     record_index: u32,
 ) -> Result<Option<usize>, CodecError> {
-    loop {
-        let Some(offset) = next_indexed_record_offset(ctx, bytes, position)? else {
-            return Ok(None);
-        };
-        match indexed_record_header_at(ctx, bytes, offset)? {
-            Some(header) if header.record_index == record_index => return Ok(Some(offset)),
-            Some(_) | None => {}
-        }
-        let Some(next) = offset.checked_add(1) else {
-            return Ok(None);
-        };
-        position = next;
-    }
+    Ok(next_indexed_record_header(ctx, bytes, position, |header| {
+        header.record_index == record_index
+    })?
+    .map(|header| header.offset))
 }
 
 fn marked_u32(bytes: &[u8], position: usize) -> Option<(u32, usize)> {

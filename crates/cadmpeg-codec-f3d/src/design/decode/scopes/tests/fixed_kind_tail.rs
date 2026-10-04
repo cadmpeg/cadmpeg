@@ -758,12 +758,10 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
         })
         .unwrap();
     let construction = exact_work_axis_construction(
-        &cadmpeg_test_support::service_decode_context(),
         &axis_bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&axis_bytes),
         &axis_scope,
     )
-    .unwrap()
     .expect("exact two-point WorkAxis construction");
     assert_eq!(
         construction.origin.map(cadmpeg_ir::scalar::FiniteReal::get),

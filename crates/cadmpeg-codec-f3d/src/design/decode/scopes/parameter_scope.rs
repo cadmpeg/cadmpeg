@@ -197,8 +197,7 @@ pub(crate) fn decode_parameter_scopes(
                     }
                 }
             }
-            if let Some(construction) = exact_work_axis_construction(ctx, bytes, &records, &scope)?
-            {
+            if let Some(construction) = exact_work_axis_construction(bytes, &records, &scope) {
                 if let scope::DesignScopePayloadMut::WorkAxis(slot) = scope.payload_mut() {
                     *slot = Some(construction);
                 }
@@ -674,15 +673,15 @@ pub(crate) fn admit_history_bound_scope_variants(
         .filter(|selected| **selected)
         .count();
 
-    let mut retained = Vec::new();
-    ctx.reserve_capacity(
-        &mut retained,
-        retained_count,
-        "f3d scope admission retained output",
+    // Every admission precedes the move, so a refusal leaves `scopes` intact.
+    let mut retained = ctx.collection_vec(retained_count, "f3d scope admission retained output")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(scopes.len()),
+        "move F3D retained scope admission candidates",
     )?;
-    for (index, scope) in std::mem::take(scopes).into_iter().enumerate() {
-        if admitted[index] {
-            ctx.push_vec(&mut retained, scope, "f3d scope admission retained output")?;
+    for (scope, selected) in std::mem::take(scopes).into_iter().zip(admitted.iter()) {
+        if *selected {
+            retained.push(scope);
         }
     }
     *scopes = retained;
@@ -947,10 +946,9 @@ pub(super) fn parameter_scope_candidate_headers(
             else {
                 continue;
             };
-            let class_tag = match crate::design::decode::text::class_tag_from_view(ctx, class_tag)?
-            {
-                Ok(class_tag) => class_tag,
-                Err(_) => continue,
+            let Some(class_tag) = crate::design::decode::text::class_tag_from_view(ctx, class_tag)?
+            else {
+                continue;
             };
             let byte_offset = u64::try_from(*at)
                 .map_err(|_| ctx.refuse_codec_limit("f3d Design scope header offset", 0, 1))?;
@@ -1024,9 +1022,16 @@ pub(in crate::design::decode) fn parse_parameter_scope(
     class_tag: &crate::records::references::DesignClassTag,
     byte_offset: u64,
 ) -> Result<Option<DesignParameterScope>, CodecError> {
+    let Some(start) = usize::try_from(byte_offset).ok() else {
+        return Ok(None);
+    };
+    let Some(search) = start.checked_add(11) else {
+        return Ok(None);
+    };
+    let Some(paired_at) = records.first_at_or_after(ctx, search, record_index)? else {
+        return Ok(None);
+    };
     (|| {
-        let start = usize::try_from(byte_offset).ok()?;
-        let paired_at = records.first_at_or_after(start.checked_add(11)?, record_index)?;
         let (paired_class_tag, _) =
             lp_ascii_filtered_view(bytes, paired_at, 3..=3, u8::is_ascii_digit)?;
         let mut fixed_candidate = None;
@@ -1399,8 +1404,8 @@ pub(in crate::design::decode) fn parse_parameter_scope(
         );
         let paired_class_tag =
             match crate::design::decode::text::class_tag_from_view(ctx, paired_class_tag) {
-                Ok(Ok(class_tag)) => class_tag,
-                Ok(Err(_)) => return None,
+                Ok(Some(class_tag)) => class_tag,
+                Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             };
         let mut scope = DesignParameterScope::try_new(scope::DesignParameterScopeDraft {

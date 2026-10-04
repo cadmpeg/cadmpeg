@@ -162,8 +162,8 @@ fn exact_hole_face_selection(
                 continue;
             };
             let class_tag = match crate::design::decode::text::class_tag_from_view(ctx, class_tag) {
-                Ok(Ok(class_tag)) => class_tag,
-                Ok(Err(_)) => continue,
+                Ok(Some(class_tag)) => class_tag,
+                Ok(None) => continue,
                 Err(error) => return Err(error),
             };
             if after_tag != start + 7 || View::u32_le_at(bytes, after_tag) != Some(record_index) {

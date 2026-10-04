@@ -100,14 +100,7 @@ pub(super) fn exact_coil_placement(
             Err(error) => return Some(Err(error)),
         };
         let transform_record_index = transform_references.next()?;
-        let mut selection_frames = match records.frames(ctx, selection_record_index) {
-            Ok(frames) => frames,
-            Err(error) => return Some(Err(error)),
-        };
-        let (selection_start, _) = selection_frames.next()?;
-        if selection_frames.next().is_some() {
-            return None;
-        }
+        let (selection_start, _) = records.only_frame(selection_record_index)?;
         let (selection_class_tag, selection_after_tag) =
             lp_ascii_filtered_view(bytes, selection_start, 3..=3, u8::is_ascii_digit)?;
         if selection_after_tag != selection_start.checked_add(7)?
@@ -115,14 +108,7 @@ pub(super) fn exact_coil_placement(
         {
             return None;
         }
-        let mut transform_frames = match records.frames(ctx, transform_record_index) {
-            Ok(frames) => frames,
-            Err(error) => return Some(Err(error)),
-        };
-        let (transform_start, transform_paired) = transform_frames.next()?;
-        if transform_frames.next().is_some() {
-            return None;
-        }
+        let (transform_start, transform_paired) = records.only_frame(transform_record_index)?;
         let (transform_class_tag, transform_after_tag) =
             lp_ascii_filtered_view(bytes, transform_start, 3..=3, u8::is_ascii_digit)?;
         if transform_after_tag != transform_start.checked_add(7)?
@@ -131,11 +117,7 @@ pub(super) fn exact_coil_placement(
             return None;
         }
         let transform_paired_class_tag =
-            match exact_indexed_header_at(ctx, bytes, transform_paired, transform_record_index) {
-                Ok(Some(class_tag)) => class_tag,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
+            exact_indexed_header_at(bytes, transform_paired, transform_record_index)?;
         let frame_length = transform_paired.checked_sub(transform_start)?;
         let explicit_transform = match frame_length {
             coil_legacy_identity::LEN
@@ -297,8 +279,8 @@ pub(super) fn exact_coil_placement(
                 ctx,
                 selection_class_tag,
             ) {
-                Ok(Ok(class_tag)) => class_tag,
-                Ok(Err(_)) => return None,
+                Ok(Some(class_tag)) => class_tag,
+                Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             },
             selection,
@@ -308,8 +290,8 @@ pub(super) fn exact_coil_placement(
                 ctx,
                 transform_class_tag,
             ) {
-                Ok(Ok(class_tag)) => class_tag,
-                Ok(Err(_)) => return None,
+                Ok(Some(class_tag)) => class_tag,
+                Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             },
             explicit_transform,

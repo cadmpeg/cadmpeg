@@ -548,11 +548,7 @@ fn indexed_record_header_requires_a_complete_class_header() {
     use crate::design::decode::sketch::indexed_record_header_at;
 
     let index_at = |bytes: &[u8], at: usize| {
-        crate::test_support::with_decode_context(|ctx| {
-            indexed_record_header_at(ctx, bytes, at)
-                .unwrap()
-                .map(|header| header.record_index)
-        })
+        indexed_record_header_at(bytes, at).map(|header| header.record_index)
     };
     let header = [3, 0, 0, 0, b'2', b'5', b'7', 42, 0, 0, 0];
     assert_eq!(index_at(&header, 0), Some(42));
@@ -573,38 +569,23 @@ fn indexed_record_header_class_tag_copy_refuses_retained_bytes() {
     use cadmpeg_core::decode::ResourceDimension;
 
     let header = [3, 0, 0, 0, b'2', b'5', b'7', 42, 0, 0, 0];
+    let parsed = indexed_record_header_at(&header, 0).unwrap();
+    assert_eq!((parsed.class_tag, parsed.class_code), ("257", 257));
     let refusal = crate::test_support::resource_refusal_at(
         ResourceDimension::RetainedBytes,
         "copy F3D indexed record class tag",
         0,
-        |ctx| indexed_record_header_at(ctx, &header, 0).map(|_| ()),
+        |ctx| {
+            parsed
+                .retain_class_tag(ctx, "copy F3D indexed record class tag")
+                .map(|_| ())
+        },
     );
     assert!(matches!(
         refusal,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "copy F3D indexed record class tag"
-                && limit.additional == 3
-    ));
-}
-
-#[test]
-fn indexed_record_header_class_tag_validation_refuses_work() {
-    use crate::design::decode::sketch::indexed_record_header_at;
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let header = [3, 0, 0, 0, b'2', b'5', b'7', 42, 0, 0, 0];
-    let refusal = crate::test_support::resource_refusal_at(
-        ResourceDimension::WorkUnits,
-        "validate F3D indexed record class tag",
-        0,
-        |ctx| indexed_record_header_at(ctx, &header, 0).map(|_| ()),
-    );
-    assert!(matches!(
-        refusal,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "validate F3D indexed record class tag"
                 && limit.additional == 3
     ));
 }

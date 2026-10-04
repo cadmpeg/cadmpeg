@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{class_369_wrapper_two, class_412_path, path_locator};
 use crate::test_support::{indexed_header, lp_utf16};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::ResourceDimension;
 
 fn scope() -> crate::records::feature::scope::DesignParameterScope {
     use crate::records::feature::scope::{
@@ -110,21 +110,12 @@ fn legacy_path_limit(dimension: ResourceDimension, operation: &str) {
     let bytes = path_fixture();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let scope = scope();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    match dimension {
-        // Two paths each admit four identity GUIDs before the two occurrence GUIDs.
-        ResourceDimension::CollectionItems => policy.limits.max_collection_items = 2 * 4 + 1,
-        ResourceDimension::WorkUnits => policy.limits.max_work_units = 1,
-        _ => panic!("unsupported test limit"),
-    }
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+        super::exact_legacy_class_388_operand_path_envelope(ctx, &bytes, &records, &scope, 10, 1, 0)
+    });
     assert!(
-        matches!(super::exact_legacy_class_388_operand_path_envelope(
-        &ctx, &bytes, &records, &scope, 10, 1, 0),
-        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
-            if failure.dimension == dimension && failure.operation == operation)
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+        if failure.dimension == dimension && failure.operation == operation)
     );
     crate::design::test_support::with_test_decode_context(|ctx| {
         let path = super::exact_legacy_class_388_operand_path_envelope(

@@ -1451,23 +1451,24 @@ fn counted_extrude_selection_fixture() -> (Vec<u8>, DesignParameterScope, Design
 
 #[test]
 fn extrude_selection_group_member_copies_refuse_collection_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
     let (bytes, scope, record) = counted_extrude_selection_fixture();
-    for (limit, operation) in [
-        (1, "parse F3D extrude selection members"),
-        (3, "parse F3D extrude selection member offsets"),
-        (5, "index F3D extrude selection members"),
-        (7, "admit F3D extrude selection members"),
+    for operation in [
+        "parse F3D extrude selection members",
+        "parse F3D extrude selection member offsets",
+        "index F3D extrude selection members",
+        "admit F3D extrude selection members",
     ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            0,
+            |ctx| parse_extrude_selection_group(ctx, &bytes, &scope, 0, &record),
+        );
         assert!(matches!(
-            parse_extrude_selection_group(&ctx, &bytes, &scope, 0, &record),
-            Err(CodecError::ResourceLimit(failure))
+            error,
+            CodecError::ResourceLimit(failure)
                 if failure.dimension == ResourceDimension::CollectionItems
                     && failure.operation == operation
         ));
@@ -1676,22 +1677,23 @@ fn region_selection_frame() -> (Vec<u8>, usize, usize, usize) {
 
 #[test]
 fn sketch_profile_regions_and_members_refuse_collection_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
     let (bytes, _, _, _) = region_selection_frame();
-    for (limit, operation) in [
-        (1, "f3d sketch profile regions"),
-        (2, "f3d sketch profile region members"),
-        (4, "f3d sketch profile region members"),
+    for (skip, operation) in [
+        (0, "f3d sketch profile regions"),
+        (0, "f3d sketch profile region members"),
+        (1, "f3d sketch profile region members"),
     ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            skip,
+            |ctx| parse_sketch_profile_region_selection(ctx, &bytes, 100, 0).transpose(),
+        );
         assert!(matches!(
-            parse_sketch_profile_region_selection(&ctx, &bytes, 100, 0).transpose(),
-            Err(CodecError::ResourceLimit(failure))
+            error,
+            CodecError::ResourceLimit(failure)
                 if failure.dimension == ResourceDimension::CollectionItems
                     && failure.operation == operation
         ));

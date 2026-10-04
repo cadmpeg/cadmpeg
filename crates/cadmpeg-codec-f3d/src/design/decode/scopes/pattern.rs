@@ -193,7 +193,7 @@ fn exact_rectangular_pattern_instances(
         for record_index in references {
             if let Err(error) = ctx.push_vec(
                 &mut reference_starts,
-                (record_index, records.first_at_or_after(0, record_index)?),
+                (record_index, records.first_offset(record_index)?),
                 "f3d rectangular pattern reference starts",
             ) {
                 return Some(Err(error));

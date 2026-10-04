@@ -1609,7 +1609,7 @@ fn dimension_annotation_interval_refuses_collection_limit() {
 
 #[test]
 fn dimension_annotation_stream_scan_refuses_work_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use std::io::{Cursor, Write};
     use zip::CompressionMethod;
 
@@ -1642,16 +1642,18 @@ fn dimension_annotation_stream_scan_refuses_work_limit() {
             points: &[],
             curves: &[],
         };
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_work_units = 0;
-
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            "deduplicate F3D dimension annotation streams",
+            0,
+            |ctx| super::decode_dimension_annotation_frames(ctx, &inputs, &[]),
+        );
         assert!(matches!(
-            super::decode_dimension_annotation_frames(&ctx, &inputs, &[]),
-            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(failure)
                 if failure.dimension == ResourceDimension::WorkUnits
-                    && failure.operation == "f3d dimension annotation stream scan"
+                    && failure.operation == "deduplicate F3D dimension annotation streams"
+                    && failure.additional == 1
         ));
     });
 }

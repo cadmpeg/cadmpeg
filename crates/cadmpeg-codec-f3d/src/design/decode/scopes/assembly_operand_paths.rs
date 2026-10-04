@@ -8,6 +8,7 @@ use crate::bytes::lp_ascii_filtered_view;
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::fixed_relaxed_guid_text;
+use crate::design::decode::text::retain_class_tag;
 use crate::layout::assembly_operand_path_locator as path_locator;
 use crate::layout::assembly_operand_path_locator_reference_run as path_locator_run;
 use crate::layout::assembly_operand_path_wrapper as path_wrapper;
@@ -122,12 +123,7 @@ fn exact_assembly_operand_path_envelope(
     locator_at: usize,
 ) -> Result<Option<DesignAssemblyOperandPath>, CodecError> {
     (|| {
-        let locator_class_tag =
-            match exact_indexed_header_at(ctx, bytes, locator_at, locator_record_index) {
-                Ok(Some(class_tag)) => class_tag,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
+        let locator_class_tag = exact_indexed_header_at(bytes, locator_at, locator_record_index)?;
         let variable_reference = crate::design::assembly::variable_reference_assembly_generation(
             scope.class_tag.as_str(),
             scope.paired_class_tag.as_str(),
@@ -247,12 +243,7 @@ fn exact_assembly_operand_path_envelope(
             record_index = record_index.checked_add(1)?;
             record_at = next;
         };
-        let wrapper_class_tag =
-            match exact_indexed_header_at(ctx, bytes, wrapper_at, wrapper_record_index) {
-                Ok(Some(class_tag)) => class_tag,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
+        let wrapper_class_tag = exact_indexed_header_at(bytes, wrapper_at, wrapper_record_index)?;
         let wrapper_end = match next_indexed_record_offset(ctx, bytes, wrapper_at.checked_add(1)?) {
             Ok(Some(end)) => end,
             Ok(None) => return None,
@@ -310,12 +301,26 @@ fn exact_assembly_operand_path_envelope(
         let link = DesignAssemblyOperandPathLink {
             locator_reference_offset,
             locator_record_index,
-            locator_class_tag: locator_class_tag.try_into().ok()?,
+            locator_class_tag: match retain_class_tag(
+                ctx,
+                locator_class_tag,
+                "copy F3D assembly operand path class tag",
+            ) {
+                Ok(class_tag) => class_tag,
+                Err(error) => return Some(Err(error)),
+            },
             locator_byte_offset: u64::try_from(locator_at).ok()?,
             locator_scope_reference_offset,
             wrapper_record_index,
             wrapper_reference_offset,
-            wrapper_class_tag: wrapper_class_tag.try_into().ok()?,
+            wrapper_class_tag: match retain_class_tag(
+                ctx,
+                wrapper_class_tag,
+                "copy F3D assembly operand path class tag",
+            ) {
+                Ok(class_tag) => class_tag,
+                Err(error) => return Some(Err(error)),
+            },
             wrapper_byte_offset: u64::try_from(wrapper_at).ok()?,
             path_reference_offset,
         };
@@ -565,8 +570,8 @@ fn exact_assembly_operand_path(
             link,
             record_index,
             match crate::design::decode::text::class_tag_from_view(ctx, class_tag) {
-                Ok(Ok(tag)) => tag,
-                Ok(Err(_)) => return None,
+                Ok(Some(tag)) => tag,
+                Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             },
             u64::try_from(start).ok()?,
