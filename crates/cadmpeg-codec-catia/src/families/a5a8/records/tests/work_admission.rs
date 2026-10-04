@@ -1,3 +1,6 @@
+use super::assert_a5_surface_collection_refusal;
+use crate::test_support::test_a5a8::{a5_surface_short_tail, a5_surface_stream, a5_surface_tail};
+
 use super::super::{a5_knots, a5_nurbs_curves};
 use cadmpeg_core::decode::{DecodeContext, ResourceDimension};
 use cadmpeg_core::CodecError;
@@ -420,4 +423,59 @@ fn external_rational_grid_inspection_and_weight_copy_refuse_caller_work() {
             .concat(),
         vec![2.0; 9]
     );
+}
+
+#[test]
+fn surface_tail_scans_continuation_without_materializing_a_lane() {
+    let mut short = a5_surface_short_tail();
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            super::super::parse_surface_tail(ctx, &short, 0, short.len())
+        })
+        .expect("service work"),
+        Some(short.len())
+    );
+    short[71..79].copy_from_slice(&1.0f64.to_le_bytes());
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            super::super::parse_surface_tail(ctx, &short, 0, short.len())
+        })
+        .expect("service work"),
+        None
+    );
+    let mut long = a5_surface_tail();
+    long[71..79].copy_from_slice(&1.0f64.to_le_bytes());
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            super::super::parse_surface_tail(ctx, &long, 0, long.len())
+        })
+        .expect("service work"),
+        Some(long.len())
+    );
+    long[71..79].copy_from_slice(&f64::NAN.to_le_bytes());
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            super::super::parse_surface_tail(ctx, &long, 0, long.len())
+        })
+        .expect("service work"),
+        None
+    );
+}
+
+#[test]
+fn a5_distinct_knots_refuse_collection_limit_before_materialization() {
+    let bytes = a5_surface_stream();
+    assert_a5_surface_collection_refusal(&bytes, 0, "catia_a5_distinct_knots");
+}
+
+#[test]
+fn a5_multiplicities_refuse_collection_limit_before_materialization() {
+    let bytes = a5_surface_stream();
+    assert_a5_surface_collection_refusal(&bytes, 4, "catia_a5_knot_multiplicities");
+}
+
+#[test]
+fn a5_expanded_knots_refuse_collection_limit_before_materialization() {
+    let bytes = a5_surface_stream();
+    assert_a5_surface_collection_refusal(&bytes, 6, "catia_a5_expanded_knots");
 }
