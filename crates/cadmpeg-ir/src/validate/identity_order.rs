@@ -4,7 +4,7 @@
 use crate::index::identities::BorrowedIdentities;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
-use std::collections::{btree_map::Entry, BTreeMap};
+use std::collections::BTreeMap;
 
 use crate::document::CadIr;
 use crate::report::{
@@ -50,21 +50,22 @@ fn push_identity<'a>(
     Ok(())
 }
 
-fn check_order<'a>(
+fn check_order<T>(
     ctx: &DecodeContext<'_>,
     arena: &str,
-    ids: impl IntoIterator<Item = &'a str>,
+    values: &[T],
+    identity: impl Fn(&T) -> &str,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let mut previous: Option<&str> = None;
-    for id in ids {
-        ctx.charge_work(
-            u64_from_index(id.len()).checked_add(1).ok_or_else(|| {
-                ctx.refuse_codec_limit("compare validation arena order", u64::MAX - 1, u64::MAX)
-            })?,
-            "compare validation arena order",
-        )?;
-        if previous.is_some_and(|value| value >= id) {
+    for value in ctx.admit_iter(values, "compare validation arena order")? {
+        let id = identity(value);
+        let unordered = match previous {
+            Some(value) => ctx.compare(value, id, "compare validation arena order")?
+                != std::cmp::Ordering::Less,
+            None => false,
+        };
+        if unordered {
             super::record_finding(
                 ctx,
                 findings,
@@ -92,10 +93,11 @@ macro_rules! define_model_identity_checks {
                 check_order(
                     ctx,
                     stringify!($field),
-                    ir.model.$field.iter().map(crate::schema::EntitySchema::identity),
+                    &ir.model.$field,
+                    crate::schema::EntitySchema::identity,
                     findings,
                 )?;
-                for entity in &ir.model.$field {
+                for entity in ctx.admit_iter(&ir.model.$field, "validation model identity scan")? {
                     push_identity(ctx, seen, findings, crate::schema::EntitySchema::identity(entity))?;
                 }
             )*
@@ -120,7 +122,15 @@ pub(super) fn check_identity_and_order(
     view.visit(
         |work| ctx.charge_work(u64_from_index(work), "validation native arena scan"),
         |format, arena, records| {
-            for record in records.records() {
+            use crate::native::view::{NativeArena, NativeEntity};
+            let (products, sources, order): (&[_], &[_], &[_]) = match records {
+                NativeArena::Product(records) => (records, &[], &[]),
+                NativeArena::Source(records, order) => (&[], records, order),
+            };
+            for record in ctx.admit_iter(products, "validation native identity scan")?
+                .map(NativeEntity::Product)
+                .chain(ctx.admit_iter(order, "validation native identity scan")?
+                    .map(|index| NativeEntity::Source(&sources[*index]))) {
                 push_identity(ctx, &mut seen, findings, record.id())?;
             }
             if records.len() == 0 {
@@ -131,35 +141,24 @@ pub(super) fn check_identity_and_order(
                     format_args!("native.{format}.{arena}"),
                     "validation native arena name",
                 )?;
-                let work = label
-                    .len()
-                    .checked_add(1)
-                    .and_then(|bytes| {
-                        by_arena
-                            .0
-                            .len()
-                            .checked_add(1)
-                            .and_then(|count| bytes.checked_mul(count))
-                    })
-                    .ok_or_else(|| {
-                        ctx.refuse_codec_limit(
-                            "group validation native arenas",
-                            u64::MAX - 1,
-                            u64::MAX,
-                        )
-                    })?;
-                ctx.charge_work(u64_from_index(work), "group validation native arenas")?;
-                if !by_arena.0.contains_key(&label) {
-                    ctx.charge_work(1, "validation native arena slots")?;
-                }
-                ctx.admit_btree_entry(&by_arena.0, &label, "validation native arena slots")?;
-                let ids = match by_arena.0.entry(label) {
-                    Entry::Occupied(entry) => entry.into_mut(),
-                    Entry::Vacant(entry) => entry.insert(Vec::new()),
+                let mut new_ids = Vec::new();
+                let ids = if ctx.contains_key_btree_map(
+                    &by_arena.0, &label, "group validation native arenas",
+                )? {
+                    ctx.get_mut_btree_map(&mut by_arena.0, &label, "group validation native arenas")?
+                        .ok_or_else(|| CodecError::malformed("validation arena group disappeared"))?
+                } else {
+                    &mut new_ids
                 };
                 for record in records.records() {
                     ctx.charge_work(1, "validation native order scan")?;
                     ctx.push_vec(ids, record.id(), "validation native order slots")?;
+                }
+                if !new_ids.is_empty() {
+                    // discarded-value: lookup found no group for this arena label.
+                    let _ = ctx.insert_btree_map(
+                        &mut by_arena.0, label, new_ids, "validation native arena slots",
+                    )?;
                 }
                 Ok::<_, CodecError>(())
             })?;
@@ -167,7 +166,7 @@ pub(super) fn check_identity_and_order(
         },
     )?;
     for (arena, ids) in &by_arena.0 {
-        check_order(ctx, arena, ids.iter().copied(), findings)?;
+        check_order(ctx, arena, ids, |id| *id, findings)?;
     }
     Ok(())
 }
