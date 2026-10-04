@@ -448,3 +448,23 @@ fn reserved_relation_symbol_comparison_refuses_work() {
         "creo relation text comparison",
     );
 }
+
+#[test]
+fn relation_lookup_case_fold_refuses_before_missing_symbol() {
+    assert_work(
+        &crate::test_support::last_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            "creo relation identifier case fold",
+            |ctx| {
+                crate::curve::parse_relation_expression::<f64>(
+                    ctx,
+                    "MISSING",
+                    &BTreeMap::new(),
+                    RelationEvaluationContext::default(),
+                )
+            },
+        ),
+        "creo relation identifier case fold",
+    );
+}

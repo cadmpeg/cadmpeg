@@ -1352,7 +1352,7 @@ impl ExternalRelationSymbols {
     ) -> Result<(), cadmpeg_core::CodecError> {
         use std::collections::btree_map::Entry;
 
-        name.make_ascii_lowercase();
+        ctx.make_ascii_lowercase(&mut name, "creo relation identifier case fold")?;
         ctx.admit_btree_entry(&self.values, &name, "creo external relation symbol nodes")?;
         match self.values.entry(name) {
             Entry::Vacant(entry) => {
@@ -2183,7 +2183,7 @@ fn evaluate_expression_program_details(
     for assignment in parsed_assignments.iter().flatten() {
         if let Some((name, _)) = assignment.scalar_target() {
             let mut key = ctx.copy_retained_text(name, "creo existing assignment symbol names")?;
-            key.make_ascii_lowercase();
+            ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
             ctx.insert_btree_set(
                 &mut existing_symbols,
                 key,
@@ -2197,7 +2197,7 @@ fn evaluate_expression_program_details(
         .flat_map(|block| &block.unknowns)
     {
         let mut key = ctx.copy_retained_text(&unknown.name, "creo existing solve symbol names")?;
-        key.make_ascii_lowercase();
+        ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
         ctx.insert_btree_set(
             &mut existing_symbols,
             key,
@@ -2253,7 +2253,7 @@ fn evaluate_expression_program_details(
                     format_args!("{}", unknown.name),
                     "creo solve snapshot lookup",
                 )?;
-                key.make_ascii_lowercase();
+                ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
                 let value = values.get(&key);
                 *dimension = value
                     .and_then(quantity_parts_ref)
@@ -2338,7 +2338,7 @@ fn evaluate_expression_program_details(
                     .zip(&solution)
                 {
                     let mut key = ctx.copy_retained_text(variable, "creo solved value names")?;
-                    key.make_ascii_lowercase();
+                    ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
                     for assignment in &mut assignments {
                         if match assignment
                             .scalar_target() { Some((name, _)) => ctx.eq_ignore_ascii_case(name, &key, "creo relation text comparison")?, None => false }
@@ -2404,7 +2404,7 @@ fn evaluate_expression_program_details(
             continue;
         };
         let mut key = ctx.copy_retained_text(name, "creo evaluated symbol names")?;
-        key.make_ascii_lowercase();
+        ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
         let declaration_is_valid = declared_unit.is_none() || !defined_symbols.contains(&key);
         if !defined_symbols.contains(&key) {
             ctx.insert_btree_set(
@@ -5033,7 +5033,7 @@ impl ExpressionValue for DimensionProbeValue {
                             format_args!("{name}"),
                             "creo dimension exists lookup key",
                         )?;
-                        key.make_ascii_lowercase();
+                        ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
                         symbols.contains(&key).then_some(1.0)
                     }
                     _ => None,
@@ -5482,7 +5482,7 @@ impl ExpressionValue for CurveExpressionValue {
                 };
                 let (mut key, _reservation) =
                     ctx.format_scoped(format_args!("{name}"), "creo relation exists lookup key")?;
-                key.make_ascii_lowercase();
+                ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
                 Ok(symbols
                     .contains(&key)
                     .then_some(Number(cadmpeg_ir::scalar::FiniteReal::ONE)))
@@ -6003,7 +6003,7 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             }
             let (mut key, _reservation) = self.ctx
                     .format_scoped(format_args!("{name}"), "creo relation lookup key")?;
-            key.make_ascii_lowercase();
+            self.ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
             let copied = { let Some(value) = self.values.get(&key) else { return Ok(None); }; value }.clone_admitted(self.ctx);
             return Ok(Some(copied?));
         }
@@ -6636,7 +6636,7 @@ fn infer_solve_variable_dimensions(
     for unknown in &block.unknowns {
         ctx.reserve_vec(&mut variable_keys, 1, "creo dimension variable keys")?;
         let mut key = ctx.copy_retained_text(&unknown.name, "creo dimension variable key text")?;
-        key.make_ascii_lowercase();
+        ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(variable_keys.len()),
             "creo dimension duplicate checks",
@@ -6934,7 +6934,7 @@ fn solve_affine_expression_block(
     for unknown in &block.unknowns {
         ctx.reserve_vec(&mut variable_keys, 1, "creo affine variable keys")?;
         let mut key = ctx.copy_retained_text(&unknown.name, "creo affine variable names")?;
-        key.make_ascii_lowercase();
+        ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
         variable_keys.push(key);
     }
     let mut affine_values = BTreeMap::new();
@@ -7445,7 +7445,7 @@ fn evaluate_nonlinear_residuals(
             return Ok(None);
         }
         let mut key = ctx.copy_retained_text(variable, "creo nonlinear unknown value names")?;
-        key.make_ascii_lowercase();
+        ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
         let Some(value) = quantity_value(*value, *dimension) else {
             return Ok(None);
         };
@@ -7681,7 +7681,7 @@ fn evaluate_affine_program(
             continue;
         };
         let mut key = ctx.copy_retained_text(name, "creo affine assignment names")?;
-        key.make_ascii_lowercase();
+        ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
         let declaration_is_valid = declared_unit.is_none() || !defined_symbols.contains(&key);
         if !defined_symbols.contains(&key) {
             ctx.insert_btree_set(

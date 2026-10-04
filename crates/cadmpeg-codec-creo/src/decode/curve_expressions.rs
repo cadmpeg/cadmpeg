@@ -206,7 +206,7 @@ fn curve_expression_parameter_order(
                 format_args!("{name}"),
                 "creo curve-expression ordering lookup",
             )?;
-            key.make_ascii_lowercase();
+            ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
             let Some(&index) = unique_assignment_indices.get(&key) else {
                 continue;
             };
@@ -268,7 +268,7 @@ fn curve_expression_parameter_names(
     for assignment in assignments {
         if let Some((name, _)) = assignment.parameter_target() {
             let mut key = ctx.copy_retained_text(name, "creo curve-expression name key")?;
-            key.make_ascii_lowercase();
+            ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
             ctx.admit_btree_entry(&counts, &key, "creo curve-expression unique names")?;
             match counts.entry(key) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
@@ -285,7 +285,7 @@ fn curve_expression_parameter_names(
     for assignment in assignments {
         let name = if let Some((name, _)) = assignment.parameter_target() {
             let mut key = ctx.copy_retained_text(name, "creo curve-expression occurrence key")?;
-            key.make_ascii_lowercase();
+            ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
             if counts[&key] == 1 {
                 Some(ctx.copy_retained_text(name, "creo curve-expression parameter name")?)
             } else {
@@ -351,7 +351,7 @@ fn curve_expression_assignment_indices(
             continue;
         };
         let mut key = ctx.copy_retained_text(name, "creo curve-expression assignment key")?;
-        key.make_ascii_lowercase();
+        ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
         ctx.admit_btree_entry(&by_name, &key, "creo curve-expression assignment indices")?;
         match by_name.entry(key) {
             std::collections::btree_map::Entry::Vacant(entry) => {
@@ -560,7 +560,7 @@ fn curve_expression_properties(
                 format_args!("{name}"),
                 "creo curve-expression external lookup",
             )?;
-            key.make_ascii_lowercase();
+            ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
             Ok(key != "t"
                 && !assignment_indices_by_name.contains_key(&key)
                 && !dimension_parameters.contains_key(&key))
@@ -575,7 +575,7 @@ fn curve_expression_properties(
                 format_args!("{name}"),
                 "creo curve-expression ambiguous lookup",
             )?;
-            key.make_ascii_lowercase();
+            ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
             Ok(matches!(assignment_indices_by_name.get(&key), Some(None)))
         },
         "creo curve-expression ambiguous dependency text",
@@ -656,7 +656,7 @@ fn curve_expression_properties(
             format_args!("{name}"),
             "creo curve-expression cyclic lookup",
         )?;
-        key.make_ascii_lowercase();
+        ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
         if unique_assignment_indices
             .get(&key)
             .is_some_and(|dependency| cyclic_edges.contains(&(assignment_ordinal, *dependency)))
@@ -765,7 +765,7 @@ fn curve_expression_parameter_dependencies(
             format_args!("{name}"),
             "creo curve-expression dependency key",
         )?;
-        key.make_ascii_lowercase();
+        ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
         if let Some(&dependency) = unique_assignment_indices.get(&key) {
             if cyclic_edges.contains(&(assignment_ordinal, dependency))
                 || seen.contains(&dependency)
