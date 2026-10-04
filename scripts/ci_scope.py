@@ -29,9 +29,13 @@ PYTHON_ONLY |= {'test_' + name.replace('-', '_') for name in PYTHON_ONLY}
 
 def select(root: Path, paths: list[str], *, full: bool = False) -> dict:
     manifest = tomllib.loads((root / 'Cargo.toml').read_text())
+    excluded = {directory for pattern in manifest['workspace'].get('exclude', [])
+                for directory in root.glob(pattern)}
     members = {}
     for pattern in manifest['workspace']['members']:
         for directory in root.glob(pattern):
+            if directory in excluded:
+                continue
             package = tomllib.loads((directory / 'Cargo.toml').read_text())
             members[directory.relative_to(root).as_posix()] = package
     names = {package['package']['name'] for package in members.values()}
@@ -50,12 +54,17 @@ def select(root: Path, paths: list[str], *, full: bool = False) -> dict:
     affected = set()
     fuzz = False
     for path in paths:
+        if path.startswith('crates/cadmpeg-fuzz/'):
+            fuzz = True
+            continue
+        if Path(path).name in {'Cargo.toml', 'Cargo.lock'}:
+            # Feature unification can change crates outside the dependency closure.
+            full = True
+            continue
         owner = next((directory for directory in sorted(members, key=len, reverse=True)
                       if path.startswith(directory + '/')), None)
         if owner:
             affected.add(members[owner]['package']['name'])
-        elif path.startswith('crates/cadmpeg-fuzz/'):
-            fuzz = True
         elif path in {'scripts/inventor-evidence.py', 'scripts/test_inventor_evidence.py'}:
             affected.add('cadmpeg-codec-inventor')
         elif path == 'scripts/verify-iges-bounded.py':
@@ -81,10 +90,10 @@ def select(root: Path, paths: list[str], *, full: bool = False) -> dict:
                 pending.append(dependent)
     return {
         'packages': sorted(affected),
-        'rust': bool(affected),
+        'rust': full or bool(affected),
         'features': bool(affected) or fuzz,
-        'schema': bool(affected & {'cadmpeg-core', 'cadmpeg-ir', 'cadmpeg-asm'}),
-        'iges': 'cadmpeg-codec-iges' in affected or cli_changed,
+        'schema': full or bool(affected & {'cadmpeg-core', 'cadmpeg-ir', 'cadmpeg-asm'}),
+        'iges': full or 'cadmpeg-codec-iges' in affected or cli_changed,
         'full': full,
     }
 

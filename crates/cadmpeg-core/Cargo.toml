@@ -10,6 +10,8 @@ homepage.workspace = true
 rust-version.workspace = true
 
 [features]
+# Charge probes are enabled only by the unpublished test-support dependency.
+test-support = []
 # `schema` builds the `JsonSchema` derives. It is off by default: the
 # derives are only consumed by `cadmpeg_ir::cadir_json_schema()`, and
 # generating them costs 22% of this crate tree's compile time.

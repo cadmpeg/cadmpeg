@@ -4,9 +4,11 @@
 
 from pathlib import Path
 import unittest
+import tempfile
+from unittest.mock import patch
 
 from scripts.ci_scope import select
-from scripts.ci_cargo import command
+from scripts.ci_cargo import command, main as cargo_main
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -18,6 +20,54 @@ class ScopeTests(unittest.TestCase):
                           '-p', 'cadmpeg-ir', '--doc'])
         with self.assertRaises(ValueError):
             command(['test'], [])
+
+    def test_cli_only_has_no_library_doc_tests(self):
+        with patch.dict('os.environ', {'CI_PACKAGES': '["cadmpeg"]', 'CI_FULL': 'false'}), \
+                patch('sys.argv', ['ci_cargo.py', 'test', '--doc']), \
+                patch('scripts.ci_cargo.subprocess.run') as run:
+            self.assertEqual(cargo_main(), 0)
+            run.assert_not_called()
+
+    def test_documentation_gate_keeps_selected_features(self):
+        with patch.dict('os.environ', {'CI_PACKAGES': '["cadmpeg","cadmpeg-ir"]', 'CI_FULL': 'false'}), \
+                patch('sys.argv', ['ci_cargo.py', 'test', '--doc']), \
+                patch('scripts.ci_cargo.subprocess.run') as run:
+            run.return_value.returncode = 0
+            self.assertEqual(cargo_main(), 0)
+            run.assert_called_once_with(['cargo', 'test', '-q', '-p', 'cadmpeg',
+                                         '-p', 'cadmpeg-ir', '--doc'])
+
+    def test_full_gate_uses_cargo_workspace_membership(self):
+        self.assertEqual(command(['test', '--bins', '--tests'], [], full=True),
+                         ['cargo', 'test', '-q', '--workspace', '--bins', '--tests'])
+
+    def test_package_manifest_changes_keep_feature_unification_coverage(self):
+        self.assertTrue(select(ROOT, ['crates/cadmpeg-codec-rhino/Cargo.toml'])['full'])
+        scope = select(ROOT, ['crates/cadmpeg-fuzz/Cargo.toml'])
+        self.assertFalse(scope['rust'])
+        self.assertTrue(scope['features'])
+
+    def test_graph_keeps_renamed_workspace_target_build_and_dev_dependencies(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'Cargo.toml').write_text(
+                '[workspace]\nmembers=["crates/*"]\nexclude=["crates/excluded"]\n'
+                '[workspace.dependencies]\nalias={package="shared",path="crates/shared"}\n')
+            manifests = {
+                'shared': '',
+                'dev-child': '[dev-dependencies]\nalias={workspace=true}\n',
+                'target-child': '[target.\'cfg(windows)\'.dependencies]\nrenamed={package="shared",path="../shared"}\n',
+                'build-child': '[build-dependencies]\nshared={path="../shared"}\n',
+                'application': '[dependencies]\n"dev-child"={path="../dev-child"}\n"target-child"={path="../target-child"}\n"build-child"={path="../build-child"}\n',
+                'excluded': '',
+            }
+            for name, dependencies in manifests.items():
+                directory = root / 'crates' / name
+                directory.mkdir(parents=True)
+                (directory / 'Cargo.toml').write_text(f'[package]\nname="{name}"\n' + dependencies)
+            expected = sorted(set(manifests) - {'excluded'})
+            self.assertEqual(select(root, ['crates/shared/src/lib.rs'])['packages'], expected)
+            self.assertEqual(select(root, [], full=True)['packages'], expected)
 
     def test_bounded_gate_tool_change_selects_iges(self):
         scope = select(ROOT, ['scripts/verify-iges-bounded.py'])

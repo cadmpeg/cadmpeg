@@ -941,25 +941,17 @@ fn decode_bound_pmi_report_refuses_collection_limit() {
         &pmi_semantic_payload(),
     ));
     let mut options = DecodeOptions::default();
-    options.policy.limits.max_collection_items = 0;
-    for _ in 0..1024 {
-        let error = SldprtCodec
-            .decode(&mut Cursor::new(&source), &options)
-            .expect_err("collection limit must refuse the PMI decode route");
-        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) =
-            error
-        else {
-            panic!("expected a collection resource refusal");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-        if limit.operation == "collect SLDPRT bound PMI dimensions" {
-            assert_eq!(options.policy.limits.max_collection_items, limit.used);
-            assert_eq!(limit.additional, 1);
-            return;
-        }
-        options.policy.limits.max_collection_items = limit.used + limit.additional;
-    }
-    panic!("bound PMI report charge was not reached");
+    let limit = cadmpeg_test_support::decode::resource_refusal_at(
+        &SldprtCodec,
+        &source,
+        &mut options,
+        ResourceDimension::CollectionItems,
+        "collect SLDPRT bound PMI dimensions",
+        0,
+    );
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(options.policy.limits.max_collection_items, limit.used);
+    assert_eq!(limit.additional, 1);
 }
 
 fn pmi_projection_collection_refusal(
@@ -967,30 +959,22 @@ fn pmi_projection_collection_refusal(
     operation: &str,
 ) -> cadmpeg_core::decode::ResourceLimit {
     use cadmpeg_core::decode::ResourceDimension;
-
     let source = pmi_projection_source();
     let mut options = DecodeOptions {
         container_only,
         ..DecodeOptions::default()
     };
-    options.policy.limits.max_collection_items = 0;
-    for _ in 0..1024 {
-        let error = SldprtCodec
-            .decode(&mut Cursor::new(&source), &options)
-            .expect_err("collection limit must refuse the PMI projection route");
-        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) =
-            error
-        else {
-            panic!("expected a collection resource refusal");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-        if limit.operation == operation {
-            assert_eq!(options.policy.limits.max_collection_items, limit.used);
-            return limit;
-        }
-        options.policy.limits.max_collection_items = limit.used + limit.additional;
-    }
-    panic!("PMI projection collection charge was not reached");
+    let limit = cadmpeg_test_support::decode::resource_refusal_at(
+        &SldprtCodec,
+        &source,
+        &mut options,
+        ResourceDimension::CollectionItems,
+        operation,
+        0,
+    );
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(options.policy.limits.max_collection_items, limit.used);
+    limit
 }
 
 fn pmi_projection_source() -> Vec<u8> {
@@ -1013,39 +997,21 @@ fn pmi_projection_retained_refusal(
     operation: &str,
 ) -> cadmpeg_core::decode::ResourceLimit {
     use cadmpeg_core::decode::ResourceDimension;
-
     let source = pmi_projection_source();
     let mut options = DecodeOptions {
         container_only,
         ..DecodeOptions::default()
     };
-    options.policy.limits.max_retained_bytes = 0;
-    for _ in 0..1024 {
-        let error = SldprtCodec
-            .decode(&mut Cursor::new(&source), &options)
-            .expect_err("retained limit must refuse the PMI projection route");
-        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) =
-            error
-        else {
-            panic!("expected a retained resource refusal");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-        if limit.operation == operation {
-            options.policy.limits.max_retained_bytes = limit.used + limit.additional - 1;
-            let repeated = SldprtCodec
-                .decode(&mut Cursor::new(&source), &options)
-                .expect_err("one byte below PMI retained copy must refuse");
-            assert!(matches!(
-                repeated,
-                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                    if refusal.dimension == ResourceDimension::RetainedBytes
-                        && refusal.operation == operation
-            ));
-            return limit;
-        }
-        options.policy.limits.max_retained_bytes = limit.used + limit.additional;
-    }
-    panic!("PMI projection retained charge was not reached");
+    let limit = cadmpeg_test_support::decode::resource_refusal_at(
+        &SldprtCodec,
+        &source,
+        &mut options,
+        ResourceDimension::RetainedBytes,
+        operation,
+        0,
+    );
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    limit
 }
 
 #[test]

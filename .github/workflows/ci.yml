@@ -34,6 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       packages: ${{ steps.scope.outputs.packages }}
+      full: ${{ steps.scope.outputs.full }}
       rust: ${{ steps.scope.outputs.rust }}
       features: ${{ steps.scope.outputs.features }}
       schema: ${{ steps.scope.outputs.schema }}
@@ -65,6 +66,7 @@ jobs:
     name: fmt / clippy (stable)
     env:
       CI_PACKAGES: ${{ needs.changes.outputs.packages }}
+      CI_FULL: ${{ needs.changes.outputs.full }}
     runs-on: ubuntu-latest
     steps:
       - name: Require valid gate selection
@@ -163,6 +165,7 @@ jobs:
     name: test (stable)
     env:
       CI_PACKAGES: ${{ needs.changes.outputs.packages }}
+      CI_FULL: ${{ needs.changes.outputs.full }}
     runs-on: ubuntu-latest
     steps:
       - name: Require valid gate selection
@@ -196,6 +199,7 @@ jobs:
         # These two tooling tests need the default CLI built by the Rust gate.
         # The lint job runs the remaining Python tests without a CLI build.
         run: |
+          test -x target/debug/cadmpeg
           python3 -m unittest -q \
             scripts.test_inventor_evidence.EvidenceTest.test_primary_carrier_parity_when_cli_is_built \
             scripts.test_inventor_evidence.EvidenceTest.test_cli_sweep_is_per_profile_and_deterministic
@@ -296,6 +300,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CI_PACKAGES: ${{ needs.changes.outputs.packages }}
+      CI_FULL: ${{ needs.changes.outputs.full }}
       RUSTUP_TOOLCHAIN: "1.88"
       # `[workspace.lints]` denies warnings on every toolchain, and 1.88's lint
       # set differs from the pinned one's. This job checks compilation, not
@@ -331,6 +336,7 @@ jobs:
     name: build / test (${{ matrix.os }})
     env:
       CI_PACKAGES: ${{ needs.changes.outputs.packages }}
+      CI_FULL: ${{ needs.changes.outputs.full }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

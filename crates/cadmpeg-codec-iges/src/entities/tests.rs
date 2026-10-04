@@ -6,7 +6,7 @@ use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 use crate::IgesCodec;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 
@@ -30,41 +30,21 @@ fn diagnostic_error_text_refuses_before_retained_copy() {
 }
 
 fn assert_entity_loss_limit(bytes: &[u8], operation: &str, retained: bool) {
-    let mut cap = 0_u64;
-    for _ in 0..4096 {
-        let mut policy = DecodePolicy::service();
+    cadmpeg_test_support::decode::resource_refusal_at(
+        &crate::IgesCodec,
+        bytes,
+        &mut DecodeOptions {
+            policy: DecodePolicy::service(),
+            ..DecodeOptions::default()
+        },
         if retained {
-            policy.limits.max_retained_bytes = cap;
+            ResourceDimension::RetainedBytes
         } else {
-            policy.limits.max_collection_items = cap;
-        }
-        match IgesCodec.decode(
-            &mut Cursor::new(bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        ) {
-            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                assert_eq!(
-                    limit.dimension,
-                    if retained {
-                        ResourceDimension::RetainedBytes
-                    } else {
-                        ResourceDimension::CollectionItems
-                    }
-                );
-                if limit.operation == operation {
-                    return;
-                }
-                let next = limit.used.checked_add(limit.additional).unwrap();
-                assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
-                cap = next;
-            }
-            other => panic!("did not reach {operation} at cap {cap}: {other:?}"),
-        }
-    }
-    panic!("did not reach {operation} within 4096 admission boundaries");
+            ResourceDimension::CollectionItems
+        },
+        operation,
+        0,
+    );
 }
 
 #[test]
