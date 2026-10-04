@@ -564,6 +564,27 @@ fn propagates_unique_pcurve_endpoints_through_a_vertex_component() {
 }
 
 #[test]
+fn fixed_pcurve_domain_retention_refuses_work_and_preserves_service_result() {
+    let a = [1.0, 0.0, 0.0];
+    let b = [2.0, 0.0, 0.0];
+    let constraints = [([1, 2], [a, b])];
+    let fixed_points = BTreeMap::from([(1, a)]);
+    let solved = crate::test_support::assert_work_boundaries(
+        &["creo fixed pcurve domain retention"],
+        |ctx| {
+            super::solve_pcurve_vertex_domains(
+                ctx,
+                &constraints,
+                &fixed_points,
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+            )
+        },
+    );
+    assert_eq!(solved, BTreeMap::from([(1, a), (2, b)]));
+}
+
+#[test]
 fn authoritative_native_endpoint_survives_conflicting_inferred_domain() {
     let witness = [1.0, 0.0, 0.0];
     let adjacent = [2.0, 0.0, 0.0];

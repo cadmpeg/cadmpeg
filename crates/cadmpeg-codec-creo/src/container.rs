@@ -224,6 +224,22 @@ pub(crate) struct Section {
     expanded_length: Option<usize>,
 }
 
+impl DecodeCost for Section {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (
+            &self.raw_name,
+            self.offset,
+            self.length,
+            self.expanded_length,
+        )
+            .decode_cost(ctx, operation)
+    }
+}
+
 /// One declared section together with the bytes it was admitted against.
 ///
 /// [`Section::scan`] is the only constructor. It admits `offset..end` against

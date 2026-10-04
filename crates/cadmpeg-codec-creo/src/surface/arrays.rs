@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::decode::cost::DecodeCost;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -169,6 +170,27 @@ impl<Shape: Copy> Scalars<Shape> {
         };
         *self = array;
         Ok(Some(()))
+    }
+}
+
+impl DecodeCost for DimensionedScalars {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (self.dimensions(), self.count(), self.values(), self.tokens())
+            .decode_cost(ctx, operation)
+    }
+}
+
+impl DecodeCost for CountedScalars {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (self.count(), self.values(), self.tokens()).decode_cost(ctx, operation)
     }
 }
 

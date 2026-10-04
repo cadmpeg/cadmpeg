@@ -2,6 +2,7 @@
 //! Surface prototype parameters and first-instance prototype surfaces.
 
 use crate::vecmath::normalize;
+use cadmpeg_core::decode::cost::DecodeCost;
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::document::CadIr;
@@ -295,6 +296,22 @@ impl<'a> SupportedPrototype<'a> {
     }
 }
 
+impl DecodeCost for SupportedPrototype<'_> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::Plane(record) => (0_u8, *record).decode_cost(ctx, operation),
+            Self::Cylinder(record) => (1_u8, *record).decode_cost(ctx, operation),
+            Self::Cone(record) => (2_u8, *record).decode_cost(ctx, operation),
+            Self::Torus(record) => (3_u8, *record).decode_cost(ctx, operation),
+            Self::Spline(record) => (4_u8, *record).decode_cost(ctx, operation),
+        }
+    }
+}
+
 /// Every surface prototype record that binds to exactly one first-instance row.
 ///
 /// A section whose declared extent runs past the scanned buffer is a refusal,
@@ -376,7 +393,11 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
         };
         *count += 1;
     }
-    associations.retain(|(_, row, _)| association_counts.get(&row.offset) == Some(&1));
+    ctx.retain_vec(
+        &mut associations,
+        |(_, row, _)| Ok(association_counts.get(&row.offset) == Some(&1)),
+        "creo unique surface prototype associations retention",
+    )?;
     Ok(associations)
 }
 

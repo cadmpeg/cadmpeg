@@ -371,7 +371,11 @@ fn conic_conic_intersections(
         };
         let line = CurveGeometry::Solved(SolvedCurveGeometry::Line(line));
         let mut points = line_conic_intersections(ctx, &line, first)?;
-        points.retain(|point| curve_contains_points(second, [*point, *point]));
+        ctx.retain_vec(
+            &mut points,
+            |point| Ok(curve_contains_points(second, [*point, *point])),
+            "creo line-conic candidate retention",
+        )?;
         return Ok(points);
     }
     let delta: [f64; 3] = std::array::from_fn(|coordinate| {

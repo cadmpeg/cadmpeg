@@ -207,7 +207,11 @@ pub(in super::super) fn reconcile_constraint_entity_references(
     };
     Ok(match definition {
         SketchConstraintDefinitionInput::Native { entities, .. } => {
-            entities.retain(|entity| emitted.contains(entity));
+            ctx.retain_vec(
+                entities,
+                |entity| Ok(emitted.contains(entity)),
+                "creo constraint emitted entity retention",
+            )?;
             true
         }
         SketchConstraintDefinitionInput::Coincident { entities }
@@ -2950,6 +2954,8 @@ pub(in super::super) fn section_linear_distance_vectors(vectors: [[Option<u32>; 
 
 #[cfg(test)]
 mod tests {
+    mod retain_vec;
+
     use super::{
         close_sketch_constraint_parameter_references, insert_native_equation_property,
         insert_relation_property, native_equation_operands, push_relation_operand,
