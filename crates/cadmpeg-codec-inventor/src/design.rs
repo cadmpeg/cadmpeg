@@ -2615,19 +2615,15 @@ mod tests {
             native_ref: None,
         };
         let parameters = vec![make("c", Some("b")), make("b", Some("a")), make("a", None)];
-        // The dynamic cap reaches the first reverse-edge visit after identity admission.
-        let error = cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::WorkUnits,
-            "visit Inventor parameter edge",
-            |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_work_units = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-                    .expect("empty fixture view");
-                close_parameter_graph(&ctx, parameters.clone())
-            },
-        );
+        let id_bytes = parameters[0].id.as_str().len() as u64;
+        // Indexing, dependency visits, closure flags, and the first queue step use 174 units.
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = (3 + 4 + 6 * id_bytes) + 3 + 3
+            + (3 + 2 + 2 * id_bytes) + 3 + 1;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty fixture view");
+        let error = close_parameter_graph(&ctx, parameters).expect_err("reverse-edge work refusal");
         assert!(matches!(
             error,
             CodecError::ResourceLimit(limit)
