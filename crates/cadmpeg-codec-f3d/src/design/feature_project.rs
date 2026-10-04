@@ -2058,7 +2058,7 @@ fn project_work_point_construction(
             )?)));
         };
         let feature_id = crate::design::identity::neutral_feature_id(ctx, scope)?;
-        let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
+        let feature_key = crate::design::identity::identity_key(ctx, feature_id.as_str())?;
         let prefix = crate::design::identity::history_input_prefix(ctx, feature_key, state_id)?;
         Ok(Some(match cadmpeg_ir::features::EdgeSelection::historical(
             crate::design::identity::feature_input_topology_id(ctx, &feature_id, state_id)?,
@@ -2126,7 +2126,7 @@ fn project_work_point_construction(
                     let state_id = resolution.state_id;
                     let vertex_slot = resolution.vertex_slot();
                     let feature_id = crate::design::identity::neutral_feature_id(ctx, scope)?;
-                    let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
+                    let feature_key = crate::design::identity::identity_key(ctx, feature_id.as_str())?;
                     let prefix =
                         crate::design::identity::history_input_prefix(ctx, feature_key, state_id)?;
                     match VertexSelection::historical(
@@ -2215,7 +2215,7 @@ fn project_work_plane(
         }));
     };
     let feature_id = crate::design::identity::neutral_feature_id(ctx, scope)?;
-    let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
+    let feature_key = crate::design::identity::identity_key(ctx, feature_id.as_str())?;
     let prefix = crate::design::identity::history_input_prefix(ctx, feature_key, state_id)?;
     let vertex = |recipe: &crate::records::feature::work_geometry::DesignVertexRecipe|
         -> Result<Option<VertexSelection>, CodecError> {
@@ -3665,7 +3665,7 @@ fn selected_historical_face_selection(
         return Ok(None);
     }
     let feature = crate::design::identity::neutral_feature_id(ctx, scope)?;
-    let feature_key = crate::design::identity::identity_key(feature.as_str())?;
+    let feature_key = crate::design::identity::identity_key(ctx, feature.as_str())?;
     let prefix =
         crate::design::identity::history_input_prefix(ctx, feature_key, previous_state_id)?;
     Ok(Some(match cadmpeg_ir::features::FaceSelection::historical(
@@ -3881,7 +3881,7 @@ fn resolved_split_face_path(
     ));
     let stream = or_none!(native_stream(&scope.id));
     let feature = crate::design::identity::neutral_feature_id(ctx, scope)?;
-    let feature_key = crate::design::identity::identity_key(feature.as_str())?;
+    let feature_key = crate::design::identity::identity_key(ctx, feature.as_str())?;
     let prefix =
         crate::design::identity::history_input_prefix(ctx, feature_key, previous_state_id)?;
     let mut edge_slots = Vec::new();
@@ -5060,7 +5060,7 @@ pub(crate) fn direct_face_selection(
         )?;
     }
     let feature_id = crate::design::identity::neutral_feature_id(ctx, scope)?;
-    let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
+    let feature_key = crate::design::identity::identity_key(ctx, feature_id.as_str())?;
     let historical_face = |previous_state_id, slot| -> Result<_, CodecError> {
         let face = crate::design::identity::history_input_face_id(
             ctx,

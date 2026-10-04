@@ -307,7 +307,7 @@ pub(super) fn neutral_dimension_constraint_id(
     form: &str,
 ) -> Result<cadmpeg_ir::sketches::SketchConstraintId, CodecError> {
     let operation = "f3d dimension constraint identifier";
-    let key = identity_key(parameter.as_str())?;
+    let key = identity_key(ctx, parameter.as_str())?;
     let form_len = encoded_length(ctx, form, operation)?;
     mint(
         ctx,
@@ -322,8 +322,8 @@ pub(super) fn neutral_dimension_constraint_id(
     )
 }
 
-pub(super) fn identity_key(id: &str) -> Result<&str, CodecError> {
-    id.split_once('#')
+pub(super) fn identity_key<'id>(ctx: &DecodeContext<'_>, id: &'id str) -> Result<&'id str, CodecError> {
+    ctx.split_once(id, "#", "f3d identity key split")?
         .map(|(_, key)| key)
         .ok_or_else(|| CodecError::malformed("validated identity has no key"))
 }
@@ -397,7 +397,7 @@ pub(super) fn feature_input_topology_id(
     feature: &cadmpeg_ir::features::FeatureId,
     previous: i64,
 ) -> Result<cadmpeg_ir::ids::FeatureInputTopologyId, CodecError> {
-    let key = identity_key(feature.as_str())?;
+    let key = identity_key(ctx, feature.as_str())?;
     mint(
         ctx,
         ctx.format_retained(

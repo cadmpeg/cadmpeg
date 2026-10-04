@@ -936,7 +936,7 @@ fn historical_face_profile_selection(
     if selected_faces.is_empty() {
         return Ok(None);
     }
-    let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
+    let feature_key = crate::design::identity::identity_key(ctx, feature_id.as_str())?;
     let mut face_ids = Vec::new();
     for face in selected_faces {
         let id = crate::design::identity::history_input_face_id(
