@@ -30,11 +30,11 @@ pub(super) fn preserve_passthrough_sections(
     annotations: &mut AnnotationBuilder,
 ) -> Result<Vec<UnknownRecord>, CodecError> {
     let mut unknowns = Vec::new();
-    for section in scan.framing.sections.iter().filter(|section| {
+    for section in ctx.admit_iter(&scan.framing.sections, "creo passthrough sections")?.filter(|section| {
         section.role() == SectionRole::PsbGeometry || section.role() == SectionRole::Thumbnail
     }) {
         let Some(section_bytes) = container::section_region(&scan.framing.data, section) else {
-            return Err(CodecError::malformed(ctx.format_retained(
+            return Err(CodecError::Malformed(ctx.format_retained(
                 format_args!(
                     "creo section `{}` declares the region {}..{}, past the scanned file length {}",
                     section.name(),
@@ -58,9 +58,9 @@ pub(super) fn preserve_passthrough_sections(
                 let Some(expanded) = container::expanded_section_for(scan, section) else {
                     continue;
                 };
-                let Some(marker_offset) = expanded
-                    .data
-                    .windows(3)
+                let Some(marker_offset) = ctx
+                    .admit_iter(&expanded.data, "creo compressed thumbnail marker search")?
+                    .windows(std::num::NonZeroUsize::new(3).ok_or_else(|| CodecError::malformed("zero JPEG marker width"))?)
                     .position(|window| window == container::JPEG_MAGIC)
                 else {
                     continue;
@@ -123,12 +123,11 @@ pub(super) fn preserve_passthrough_sections(
     Ok(unknowns)
 }
 
-fn legacy_source_stream<'a>(scan: &'a ContainerScan<'_>, offset: usize) -> &'a str {
-    scan.framing
-        .sections
-        .iter()
+fn legacy_source_stream<'a>(ctx: &DecodeContext<'_>, scan: &'a ContainerScan<'_>, offset: usize) -> Result<&'a str, CodecError> {
+    Ok(ctx
+        .admit_iter(&scan.framing.sections, "creo legacy source stream sections")?
         .find(|section| section.contains(offset))
-        .map_or("legacy_ascii", |section| section.name())
+        .map_or("legacy_ascii", |section| section.name()))
 }
 
 fn emit_legacy_value_arena<K: crate::legacy::LegacyCode>(
@@ -148,7 +147,7 @@ where
             ctx,
             annotations,
             record.id(),
-            legacy_source_stream(scan, record.offset),
+            legacy_source_stream(ctx, scan, record.offset)?,
             cadmpeg_core::decode::u64_from_index(record.offset),
             tag,
             Exactness::ByteExact,
@@ -177,7 +176,7 @@ pub(super) fn emit_legacy_arenas(
                 ctx,
                 annotations,
                 record.id(),
-                legacy_source_stream(scan, record.offset),
+                legacy_source_stream(ctx, scan, record.offset)?,
                 cadmpeg_core::decode::u64_from_index(record.offset),
                 "legacy_type_0_object",
                 Exactness::ByteExact,
@@ -287,7 +286,7 @@ pub(super) fn emit_legacy_arenas(
                     ctx,
                     annotations,
                     record.id(),
-                    legacy_source_stream(scan, record.offset),
+                    legacy_source_stream(ctx, scan, record.offset)?,
                     cadmpeg_core::decode::u64_from_index(record.offset),
                     "legacy_configuration_driver_table",
                     Exactness::ByteExact,
@@ -301,8 +300,53 @@ pub(super) fn emit_legacy_arenas(
 
 #[cfg(test)]
 mod tests {
-    use super::preserve_passthrough_sections;
+    use super::{legacy_source_stream, preserve_passthrough_sections};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    #[test]
+    fn passthrough_sections_refuse_work_limit() {
+        let mut scan = crate::test_support::empty_container_scan();
+        scan.framing.sections.push(
+            crate::container::Section::scan("ND:0:VisibGeom:0".to_owned(), 0, 48, None, &[0u8; 48])
+                .expect("section extent")
+                .section,
+        );
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let error = preserve_passthrough_sections(
+            &ctx,
+            &scan,
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+        ).expect_err("section traversal exceeds work limit");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::WorkUnits
+                && resource.operation == "creo passthrough sections"));
+    }
+
+    #[test]
+    fn passthrough_legacy_source_stream_refuses_work_limit() {
+        let mut scan = crate::test_support::empty_container_scan();
+        scan.framing.sections.push(
+            crate::container::Section::scan("ND:0:VisibGeom:0".to_owned(), 0, 48, None, &[0u8; 48])
+                .expect("section extent")
+                .section,
+        );
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let error = legacy_source_stream(&ctx, &scan, 1).expect_err("source search exceeds work limit");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::WorkUnits
+                && resource.operation == "creo legacy source stream sections"));
+        crate::decode::with_test_decode_ctx(|ctx| {
+            assert_eq!(legacy_source_stream(ctx, &scan, 1)?, "VisibGeom");
+            assert_eq!(legacy_source_stream(ctx, &scan, 49)?, "legacy_ascii");
+            Ok::<(), cadmpeg_core::CodecError>(())
+        }).expect("service source searches admitted");
+    }
 
     #[test]
     fn passthrough_unknown_record_refuses_collection_limit() {
