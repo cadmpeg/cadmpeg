@@ -14,7 +14,8 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<(), CodecError> {
         self.charge_work(0, operation)?;
-        let suffix = values.get(index..)
+        let suffix = values
+            .get(index..)
             .ok_or_else(|| CodecError::malformed("vector insertion index exceeds length"))?;
         self.admit_moves(suffix, 1, operation)?;
         self.admit_moves(std::slice::from_ref(&value), 1, operation)?;
@@ -987,14 +988,30 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let mut values = Vec::with_capacity(4);
         values.extend([1_u8, 3, 4]);
-        ctx.insert_vec(&mut values, 1, 2, "insert").expect("suffix and value moves");
+        ctx.insert_vec(&mut values, 1, 2, "insert")
+            .expect("suffix and value moves");
         assert_eq!(values, [1, 2, 3, 4]);
-        let CodecError::ResourceLimit(first) = ctx.insert_vec(&mut values, 0, 0, "next insertion").expect_err("move refusal") else { panic!("resource refusal") };
+        let CodecError::ResourceLimit(first) = ctx
+            .insert_vec(&mut values, 0, 0, "next insertion")
+            .expect_err("move refusal")
+        else {
+            panic!("resource refusal")
+        };
         assert_eq!(first.used, 6);
         assert_eq!(values, [1, 2, 3, 4]);
-        let CodecError::ResourceLimit(repeated) = ctx.insert_vec(&mut values, 4, 5, "later").expect_err("sticky refusal") else { panic!("resource refusal") };
+        let CodecError::ResourceLimit(repeated) = ctx
+            .insert_vec(&mut values, 4, 5, "later")
+            .expect_err("sticky refusal")
+        else {
+            panic!("resource refusal")
+        };
         assert_eq!(first, repeated);
-        let CodecError::ResourceLimit(invalid) = ctx.insert_vec(&mut values, 5, 5, "invalid after refusal").expect_err("sticky refusal precedes invalid index") else { panic!("resource refusal") };
+        let CodecError::ResourceLimit(invalid) = ctx
+            .insert_vec(&mut values, 5, 5, "invalid after refusal")
+            .expect_err("sticky refusal precedes invalid index")
+        else {
+            panic!("resource refusal")
+        };
         assert_eq!(first, invalid);
     }
 
@@ -1006,10 +1023,15 @@ mod tests {
         policy.limits.max_materialized_bytes = 8;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let (mut values, mut storage) = ctx.temporary_vec::<u8>(0, "temporary").expect("empty");
-        assert!(matches!(ctx.insert_scoped_vec(&mut storage, &mut values, 1, 1, "invalid"), Err(CodecError::Malformed(_))));
+        assert!(matches!(
+            ctx.insert_scoped_vec(&mut storage, &mut values, 1, 1, "invalid"),
+            Err(CodecError::Malformed(_))
+        ));
         assert!(values.is_empty());
-        ctx.insert_scoped_vec(&mut storage, &mut values, 0, 1, "insert").expect("scoped growth");
-        ctx.insert_scoped_vec(&mut storage, &mut values, 1, 2, "end").expect("end insertion");
+        ctx.insert_scoped_vec(&mut storage, &mut values, 0, 1, "insert")
+            .expect("scoped growth");
+        ctx.insert_scoped_vec(&mut storage, &mut values, 1, 2, "end")
+            .expect("end insertion");
         assert_eq!(values, [1, 2]);
         drop((values, storage));
         ctx.reserve_scoped(8, "released vector").expect("released");
@@ -1020,17 +1042,22 @@ mod tests {
         for scoped in [false, true] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
-            if scoped { policy.limits.max_materialized_bytes = 0; }
-            else { policy.limits.max_retained_bytes = 0; }
+            if scoped {
+                policy.limits.max_materialized_bytes = 0;
+            } else {
+                policy.limits.max_retained_bytes = 0;
+            }
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
             let mut values = Vec::<u8>::new();
             let mut storage = ctx.reserve_scoped(0, "scope").expect("scope");
-            let error = if scoped { ctx.insert_scoped_vec(&mut storage, &mut values, 0, 1, "insert") }
-            else { ctx.insert_vec(&mut values, 0, 1, "insert") };
+            let error = if scoped {
+                ctx.insert_scoped_vec(&mut storage, &mut values, 0, 1, "insert")
+            } else {
+                ctx.insert_vec(&mut values, 0, 1, "insert")
+            };
             assert!(matches!(error, Err(CodecError::ResourceLimit(_))));
             assert!(values.is_empty());
             assert_eq!(values.capacity(), 0);
         }
     }
-
 }

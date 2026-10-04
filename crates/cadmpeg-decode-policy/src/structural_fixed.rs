@@ -16,10 +16,7 @@ use rustc_span::Spanned;
 /// standard metadata operations, and resolved direct calls with the same
 /// properties. It does not prove where an argument or returned value came
 /// from; the serializer proof owns that data flow.
-pub(crate) fn fixed_callback_body<'tcx>(
-    tcx: TyCtxt<'tcx>,
-    instance: Instance<'tcx>,
-) -> bool {
+pub(crate) fn fixed_callback_body<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> bool {
     fixed_instance(tcx, instance, &mut Vec::new())
 }
 
@@ -29,7 +26,10 @@ pub(crate) fn predicate_call_is_bounded<'tcx>(
     definition: DefId,
     arguments: ty::GenericArgsRef<'tcx>,
 ) -> bool {
-    let signature = tcx.fn_sig(definition).instantiate(tcx, arguments).skip_binder();
+    let signature = tcx
+        .fn_sig(definition)
+        .instantiate(tcx, arguments)
+        .skip_binder();
     if signature.inputs().len() != 1 || !matches!(signature.output().kind(), ty::Bool) {
         return false;
     }
@@ -51,9 +51,7 @@ pub(crate) fn predicate_call_is_bounded<'tcx>(
         tcx,
         ty::EarlyBinder::bind(tcx, body.local_decls[RETURN_PLACE].ty),
     );
-    body.arg_count == 1
-        && matches!(result.kind(), ty::Bool)
-        && fixed_callback_body(tcx, instance)
+    body.arg_count == 1 && matches!(result.kind(), ty::Bool) && fixed_callback_body(tcx, instance)
 }
 
 /// Return the converted wire type only for the exact body emitted by
@@ -76,7 +74,9 @@ pub(crate) fn derived_into_source<'tcx>(
         return None;
     }
     let blocks = linear_blocks(body)?;
-    if !into_cleanup_is_bounded(tcx, body, &blocks) { return None; }
+    if !into_cleanup_is_bounded(tcx, body, &blocks) {
+        return None;
+    }
     let mut calls = Vec::new();
     for block in &blocks {
         for statement in &body.basic_blocks[*block].statements {
@@ -198,8 +198,7 @@ fn linear_blocks(body: &mir::Body<'_>) -> Option<Vec<mir::BasicBlock>> {
         blocks.push(block);
         match &body.basic_blocks[block].terminator().kind {
             TerminatorKind::Call {
-                target: Some(next),
-                ..
+                target: Some(next), ..
             } => block = *next,
             TerminatorKind::Goto { target } => block = *target,
             TerminatorKind::Return => return Some(blocks),
@@ -214,19 +213,30 @@ fn into_cleanup_is_bounded<'tcx>(
     normal: &[mir::BasicBlock],
 ) -> bool {
     for (index, block) in body.basic_blocks.iter_enumerated() {
-        if normal.contains(&index) { continue; }
-        if !block.is_cleanup || block.statements.iter().any(|statement| {
-            !matches!(&statement.kind,
-                StatementKind::StorageLive(_) | StatementKind::StorageDead(_) | StatementKind::Nop)
-                && !drop_flag_assignment(body, statement)
-        }) { return false; }
+        if normal.contains(&index) {
+            continue;
+        }
+        if !block.is_cleanup
+            || block.statements.iter().any(|statement| {
+                !matches!(
+                    &statement.kind,
+                    StatementKind::StorageLive(_)
+                        | StatementKind::StorageDead(_)
+                        | StatementKind::Nop
+                ) && !drop_flag_assignment(body, statement)
+            })
+        {
+            return false;
+        }
         match &block.terminator().kind {
             TerminatorKind::Goto { .. }
             | TerminatorKind::UnwindResume
             | TerminatorKind::UnwindTerminate(_)
             | TerminatorKind::Unreachable => (),
             TerminatorKind::SwitchInt { discr, .. } => {
-                let (Operand::Copy(place) | Operand::Move(place)) = discr else { return false; };
+                let (Operand::Copy(place) | Operand::Move(place)) = discr else {
+                    return false;
+                };
                 if !place.projection.is_empty() || !fixed_drop_flag(body, place.local) {
                     return false;
                 }
@@ -234,7 +244,12 @@ fn into_cleanup_is_bounded<'tcx>(
             TerminatorKind::Drop { place, .. } => {
                 let value = place.ty(body, tcx).ty;
                 let serializer = value == body.local_decls[Local::from_usize(2)].ty
-                    && local_aliases_local(body, place.local, Local::from_usize(2), &mut Vec::new());
+                    && local_aliases_local(
+                        body,
+                        place.local,
+                        Local::from_usize(2),
+                        &mut Vec::new(),
+                    );
                 if !place.projection.is_empty() || !(serializer || drop_is_fixed(tcx, value)) {
                     return false;
                 }
@@ -246,7 +261,9 @@ fn into_cleanup_is_bounded<'tcx>(
 }
 
 fn drop_flag_assignment(body: &mir::Body<'_>, statement: &mir::Statement<'_>) -> bool {
-    let StatementKind::Assign(assignment) = &statement.kind else { return false; };
+    let StatementKind::Assign(assignment) = &statement.kind else {
+        return false;
+    };
     let (target, value) = &**assignment;
     target.local.as_usize() > body.arg_count
         && target.projection.is_empty()
@@ -256,15 +273,23 @@ fn drop_flag_assignment(body: &mir::Body<'_>, statement: &mir::Statement<'_>) ->
 }
 
 fn fixed_drop_flag(body: &mir::Body<'_>, local: Local) -> bool {
-    if !matches!(body.local_decls[local].ty.kind(), ty::Bool) { return false; }
+    if !matches!(body.local_decls[local].ty.kind(), ty::Bool) {
+        return false;
+    }
     let mut assigned = false;
     for block in body.basic_blocks.iter() {
         if matches!(&block.terminator().kind, TerminatorKind::Call { destination, .. }
-            if destination.local == local) { return false; }
+            if destination.local == local)
+        {
+            return false;
+        }
         for statement in &block.statements {
             if matches!(&statement.kind, StatementKind::Assign(assignment)
-                if assignment.0.local == local) {
-                if !drop_flag_assignment(body, statement) { return false; }
+                if assignment.0.local == local)
+            {
+                if !drop_flag_assignment(body, statement) {
+                    return false;
+                }
                 assigned = true;
             }
         }
@@ -272,7 +297,11 @@ fn fixed_drop_flag(body: &mir::Body<'_>, local: Local) -> bool {
     assigned
 }
 
-fn operand_aliases_local(body: &mir::Body<'_>, operand: &Operand<'_>, expected: mir::Local) -> bool {
+fn operand_aliases_local(
+    body: &mir::Body<'_>,
+    operand: &Operand<'_>,
+    expected: mir::Local,
+) -> bool {
     match operand {
         Operand::Copy(place) | Operand::Move(place) => {
             place.projection.is_empty()
@@ -311,15 +340,15 @@ fn local_aliases_local(
             }
             let candidate = match value {
                 Rvalue::Use(Operand::Copy(place) | Operand::Move(place), _)
-                    if place.projection.is_empty() => place.local,
+                    if place.projection.is_empty() =>
+                {
+                    place.local
+                }
                 Rvalue::Ref(_, BorrowKind::Shared, place) if place.projection.is_empty() => {
                     place.local
                 }
                 Rvalue::Cast(
-                    mir::CastKind::PointerCoercion(
-                        ty::adjustment::PointerCoercion::Unsize,
-                        _,
-                    ),
+                    mir::CastKind::PointerCoercion(ty::adjustment::PointerCoercion::Unsize, _),
                     Operand::Copy(place) | Operand::Move(place),
                     _,
                 ) if place.projection.is_empty() => place.local,
@@ -352,7 +381,9 @@ fn result_is_returned(
     for block in blocks.iter().skip(start + 1) {
         for statement in &body.basic_blocks[*block].statements {
             match &statement.kind {
-                StatementKind::StorageLive(_) | StatementKind::StorageDead(_) | StatementKind::Nop => (),
+                StatementKind::StorageLive(_)
+                | StatementKind::StorageDead(_)
+                | StatementKind::Nop => (),
                 StatementKind::Assign(assignment) => {
                     let (target, value) = &**assignment;
                     if target.local == RETURN_PLACE
@@ -417,9 +448,17 @@ fn fixed_clone_instance<'tcx>(
     if tcx.is_mir_available(instance.def_id()) {
         return fixed_callback_body(tcx, instance);
     }
-    matches!(source.kind(),
-        ty::Bool | ty::Char | ty::Int(_) | ty::Uint(_) | ty::Float(_) | ty::Ref(..)
-            | ty::RawPtr(..) | ty::FnPtr(..))
+    matches!(
+        source.kind(),
+        ty::Bool
+            | ty::Char
+            | ty::Int(_)
+            | ty::Uint(_)
+            | ty::Float(_)
+            | ty::Ref(..)
+            | ty::RawPtr(..)
+            | ty::FnPtr(..)
+    )
 }
 
 fn fixed_instance<'tcx>(
@@ -460,8 +499,7 @@ fn fixed_statement(body: &mir::Body<'_>, statement: &mir::Statement<'_>) -> bool
         StatementKind::Assign(assignment) => {
             let (target, value) = &**assignment;
             target.projection.is_empty()
-                && (target.local == RETURN_PLACE
-                    || target.local.as_usize() > body.arg_count)
+                && (target.local == RETURN_PLACE || target.local.as_usize() > body.arg_count)
                 && fixed_rvalue(value)
         }
         _ => false,
@@ -476,9 +514,7 @@ fn fixed_rvalue(value: &Rvalue<'_>) -> bool {
         Rvalue::Ref(_, BorrowKind::Shared, place)
         | Rvalue::CopyForDeref(place)
         | Rvalue::Discriminant(place) => fixed_place(place),
-        Rvalue::BinaryOp(_, operands) => {
-            fixed_operand(&operands.0) && fixed_operand(&operands.1)
-        }
+        Rvalue::BinaryOp(_, operands) => fixed_operand(&operands.0) && fixed_operand(&operands.1),
         Rvalue::Cast(_, operand, _) => fixed_operand(operand),
         Rvalue::Aggregate(_, operands) => operands.iter().all(fixed_operand),
         _ => false,
@@ -512,9 +548,7 @@ fn fixed_terminator<'tcx>(
     active: &mut Vec<Instance<'tcx>>,
 ) -> bool {
     match terminator {
-        TerminatorKind::Goto { .. }
-        | TerminatorKind::Return
-        | TerminatorKind::Unreachable => true,
+        TerminatorKind::Goto { .. } | TerminatorKind::Return | TerminatorKind::Unreachable => true,
         TerminatorKind::SwitchInt { discr, .. } => fixed_operand(discr),
         TerminatorKind::Call {
             func,
@@ -530,10 +564,8 @@ fn fixed_terminator<'tcx>(
             {
                 return false;
             }
-            let function = instance.instantiate_mir(
-                tcx,
-                ty::EarlyBinder::bind(tcx, func.ty(body, tcx)),
-            );
+            let function =
+                instance.instantiate_mir(tcx, ty::EarlyBinder::bind(tcx, func.ty(body, tcx)));
             let ty::FnDef(definition, arguments) = function.kind() else {
                 return false;
             };
@@ -640,10 +672,7 @@ fn resolve_instance<'tcx>(
 ) -> Option<Instance<'tcx>> {
     let environment = ty::TypingEnv::fully_monomorphized();
     let normalized = tcx
-        .try_normalize_erasing_regions(
-            environment,
-            ty::Unnormalized::new_wip(arguments),
-        )
+        .try_normalize_erasing_regions(environment, ty::Unnormalized::new_wip(arguments))
         .ok();
     normalized
         .and_then(|arguments| {
@@ -660,18 +689,14 @@ fn resolve_instance<'tcx>(
 }
 
 fn option_map_call(tcx: TyCtxt<'_>, definition: DefId) -> bool {
-    types::physical_inherent_method(
-        tcx,
-        definition,
-        "core",
-        &["option", "Option"],
-        "map",
-    )
+    types::physical_inherent_method(tcx, definition, "core", &["option", "Option"], "map")
 }
 
 fn array_map_call(tcx: TyCtxt<'_>, definition: DefId) -> bool {
     if tcx.crate_name(definition.krate).as_str() != "core"
-        || tcx.opt_item_name(definition).is_none_or(|name| name.as_str() != "map")
+        || tcx
+            .opt_item_name(definition)
+            .is_none_or(|name| name.as_str() != "map")
         || !matches!(
             tcx.def_kind(tcx.parent(definition)),
             rustc_hir::def::DefKind::Impl { of_trait: false }
@@ -698,18 +723,26 @@ fn bool_not_call<'tcx>(
     let Some(trait_id) = tcx.trait_of_assoc(trait_method) else {
         return false;
     };
-    if tcx.opt_item_name(definition).is_none_or(|name| name.as_str() != "not")
+    if tcx
+        .opt_item_name(definition)
+        .is_none_or(|name| name.as_str() != "not")
         || !types::physical_item_path(tcx, trait_id, "core", &["ops", "bit", "Not"])
     {
         return false;
     }
-    let signature = tcx.fn_sig(definition).instantiate(tcx, arguments).skip_binder();
+    let signature = tcx
+        .fn_sig(definition)
+        .instantiate(tcx, arguments)
+        .skip_binder();
     matches!(signature.output().kind(), ty::Bool)
-        && signature.inputs().first().is_some_and(|input| match input.kind() {
-            ty::Bool => true,
-            ty::Ref(_, inner, ty::Mutability::Not) => matches!(inner.kind(), ty::Bool),
-            _ => false,
-        })
+        && signature
+            .inputs()
+            .first()
+            .is_some_and(|input| match input.kind() {
+                ty::Bool => true,
+                ty::Ref(_, inner, ty::Mutability::Not) => matches!(inner.kind(), ty::Bool),
+                _ => false,
+            })
 }
 
 fn fixed_standard_leaf(tcx: TyCtxt<'_>, definition: DefId, receiver: Option<Ty<'_>>) -> bool {
@@ -727,18 +760,14 @@ fn fixed_standard_leaf(tcx: TyCtxt<'_>, definition: DefId, receiver: Option<Ty<'
     ]
     .iter()
     .any(|(crate_name, owner)| {
-        ["len", "is_empty", "is_none", "is_some", "as_str", "as_slice"]
-            .iter()
-            .any(|method| {
-                name.as_str() == *method
-                    && types::physical_inherent_method(
-                        tcx,
-                        definition,
-                        crate_name,
-                        owner,
-                        method,
-                    )
-            })
+        [
+            "len", "is_empty", "is_none", "is_some", "as_str", "as_slice",
+        ]
+        .iter()
+        .any(|method| {
+            name.as_str() == *method
+                && types::physical_inherent_method(tcx, definition, crate_name, owner, method)
+        })
     });
     let string_metadata = types::physical_inherent_method(
         tcx,
@@ -768,11 +797,7 @@ pub(crate) fn drop_is_fixed<'tcx>(tcx: TyCtxt<'tcx>, value: Ty<'tcx>) -> bool {
 
 /// Prove that dropping a fixed wire temporary cannot call a user destructor
 /// or walk an input-sized owned value.
-fn fixed_drop_type<'tcx>(
-    tcx: TyCtxt<'tcx>,
-    value: Ty<'tcx>,
-    active: &mut Vec<Ty<'tcx>>,
-) -> bool {
+fn fixed_drop_type<'tcx>(tcx: TyCtxt<'tcx>, value: Ty<'tcx>, active: &mut Vec<Ty<'tcx>>) -> bool {
     let value = types::reveal_opaque(tcx, value);
     if active.contains(&value) || active.len() >= tcx.recursion_limit().0 {
         return false;
@@ -795,21 +820,12 @@ fn fixed_drop_type<'tcx>(
             .iter()
             .all(|field| fixed_drop_type(tcx, field, active)),
         ty::Adt(owner, arguments) => {
-            let option = types::physical_item_path(
-                tcx,
-                owner.did(),
-                "core",
-                &["option", "Option"],
-            );
+            let option = types::physical_item_path(tcx, owner.did(), "core", &["option", "Option"]);
             !owner.is_union()
                 && !owner.has_dtor(tcx)
                 && (!types::standard(tcx, owner.did()) || option)
                 && owner.all_fields().all(|field| {
-                    fixed_drop_type(
-                        tcx,
-                        field.ty(tcx, arguments).skip_norm_wip(),
-                        active,
-                    )
+                    fixed_drop_type(tcx, field.ty(tcx, arguments).skip_norm_wip(), active)
                 })
         }
         _ => false,

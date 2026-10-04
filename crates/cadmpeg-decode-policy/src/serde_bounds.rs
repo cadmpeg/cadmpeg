@@ -121,9 +121,10 @@ fn derived_target<'tcx>(
         let fields = &owner.non_enum_variant().fields;
         let transparent = serde_transparent(tcx, definition);
         let newtype = fields.len() == 1
-            && fields.iter().next().is_some_and(|field| {
-                tcx.item_name(field.did).as_str().parse::<usize>().is_ok()
-            });
+            && fields
+                .iter()
+                .next()
+                .is_some_and(|field| tcx.item_name(field.did).as_str().parse::<usize>().is_ok());
         let consumes_input = !transparent && !newtype;
         fields.iter().all(|field| {
             let field_type = field.ty(tcx, arguments).skip_norm_wip();
@@ -135,13 +136,10 @@ fn derived_target<'tcx>(
         })
     } else if owner.is_enum() {
         variants.iter().all(|variant| {
-            variant.fields.iter().all(|field| {
-                consuming_child(
-                    tcx,
-                    field.ty(tcx, arguments).skip_norm_wip(),
-                    proof,
-                )
-            })
+            variant
+                .fields
+                .iter()
+                .all(|field| consuming_child(tcx, field.ty(tcx, arguments).skip_norm_wip(), proof))
         })
     } else {
         false
@@ -156,9 +154,10 @@ fn serde_transparent(tcx: TyCtxt<'_>, definition: DefId) -> bool {
                     let rustc_ast::ast::MetaItemInner::MetaItem(item) = item else {
                         return false;
                     };
-                    item.path.segments.last().is_some_and(|segment| {
-                        segment.ident.name.as_str() == "transparent"
-                    })
+                    item.path
+                        .segments
+                        .last()
+                        .is_some_and(|segment| segment.ident.name.as_str() == "transparent")
                 })
             })
         })
@@ -175,9 +174,8 @@ fn standard_target<'tcx>(
     match definition {
         _ if types::physical_item_path(tcx, definition, "alloc", &["string", "String"]) => true,
         _ if types::physical_item_path(tcx, definition, "core", &["option", "Option"]) => {
-            exactly_one(&arguments).is_some_and(|inner| {
-                target(tcx, inner, charged_for_value, proof)
-            })
+            exactly_one(&arguments)
+                .is_some_and(|inner| target(tcx, inner, charged_for_value, proof))
         }
         _ if types::physical_item_path(tcx, definition, "core", &["result", "Result"]) => {
             arguments.len() == 2
@@ -186,54 +184,71 @@ fn standard_target<'tcx>(
                     .all(|inner| consuming_child(tcx, *inner, proof))
         }
         _ if types::physical_item_path(tcx, definition, "alloc", &["vec", "Vec"]) => {
-            one_with_global_allocator(tcx, &arguments).is_some_and(|element| {
-                repeated_child(tcx, element, charged_for_value, proof)
-            })
+            one_with_global_allocator(tcx, &arguments)
+                .is_some_and(|element| repeated_child(tcx, element, charged_for_value, proof))
         }
         // VecDeque uses a ring buffer and BinaryHeap invokes T::Ord while it
         // restores heap order. Neither behavior is admitted by the Vec proof.
-        _ if types::physical_item_path(tcx, definition, "alloc", &["collections", "vec_deque", "VecDeque"])
-            || types::physical_item_path(tcx, definition, "alloc", &["collections", "binary_heap", "BinaryHeap"]) => false,
-        _ if types::physical_item_path(tcx, definition, "alloc", &["collections", "linked_list", "LinkedList"]) => {
-            one_with_global_allocator(tcx, &arguments).is_some_and(|element| {
-                linked_list_child(tcx, element, charged_for_value, proof)
-            })
+        _ if types::physical_item_path(
+            tcx,
+            definition,
+            "alloc",
+            &["collections", "vec_deque", "VecDeque"],
+        ) || types::physical_item_path(
+            tcx,
+            definition,
+            "alloc",
+            &["collections", "binary_heap", "BinaryHeap"],
+        ) =>
+        {
+            false
+        }
+        _ if types::physical_item_path(
+            tcx,
+            definition,
+            "alloc",
+            &["collections", "linked_list", "LinkedList"],
+        ) =>
+        {
+            one_with_global_allocator(tcx, &arguments)
+                .is_some_and(|element| linked_list_child(tcx, element, charged_for_value, proof))
         }
         _ if types::physical_item_path(tcx, definition, "alloc", &["boxed", "Box"]) => {
-            one_with_global_allocator(tcx, &arguments).is_some_and(|inner| {
-                match inner.kind() {
-                    ty::Slice(_) | ty::Str => false,
-                    _ => {
-                        allocation_child(tcx, inner, charged_for_value, 0, proof)
-                    }
-                }
+            one_with_global_allocator(tcx, &arguments).is_some_and(|inner| match inner.kind() {
+                ty::Slice(_) | ty::Str => false,
+                _ => allocation_child(tcx, inner, charged_for_value, 0, proof),
             })
         }
         _ if types::physical_item_path(tcx, definition, "alloc", &["rc", "Rc"])
-            || types::physical_item_path(tcx, definition, "alloc", &["sync", "Arc"]) => {
-            one_with_global_allocator(tcx, &arguments).is_some_and(|inner| {
-                match inner.kind() {
-                    ty::Slice(_) | ty::Str => false,
-                    _ => {
-                        let Some(header) = tcx
-                            .data_layout
-                            .pointer_size()
-                            .bytes()
-                            .checked_mul(2)
-                            .and_then(|bytes| {
-                                layout_size_align(tcx, inner)
-                                    .and_then(|(_, alignment)| alignment.checked_sub(1))
-                                    .and_then(|padding| bytes.checked_add(padding))
-                            })
-                        else {
-                            return false;
-                        };
-                        allocation_child(tcx, inner, charged_for_value, header, proof)
-                    }
+            || types::physical_item_path(tcx, definition, "alloc", &["sync", "Arc"]) =>
+        {
+            one_with_global_allocator(tcx, &arguments).is_some_and(|inner| match inner.kind() {
+                ty::Slice(_) | ty::Str => false,
+                _ => {
+                    let Some(header) = tcx
+                        .data_layout
+                        .pointer_size()
+                        .bytes()
+                        .checked_mul(2)
+                        .and_then(|bytes| {
+                            layout_size_align(tcx, inner)
+                                .and_then(|(_, alignment)| alignment.checked_sub(1))
+                                .and_then(|padding| bytes.checked_add(padding))
+                        })
+                    else {
+                        return false;
+                    };
+                    allocation_child(tcx, inner, charged_for_value, header, proof)
                 }
             })
         }
-        _ if types::physical_item_path(tcx, definition, "std", &["collections", "hash", "map", "HashMap"]) => {
+        _ if types::physical_item_path(
+            tcx,
+            definition,
+            "std",
+            &["collections", "hash", "map", "HashMap"],
+        ) =>
+        {
             let Some((key, value)) = hash_map_types(tcx, &arguments) else {
                 return false;
             };
@@ -242,7 +257,13 @@ fn standard_target<'tcx>(
                 && consuming_child(tcx, key, proof)
                 && consuming_child(tcx, value, proof)
         }
-        _ if types::physical_item_path(tcx, definition, "alloc", &["collections", "btree", "map", "BTreeMap"]) => {
+        _ if types::physical_item_path(
+            tcx,
+            definition,
+            "alloc",
+            &["collections", "btree", "map", "BTreeMap"],
+        ) =>
+        {
             let Some((key, value)) = btree_map_types(tcx, &arguments) else {
                 return false;
             };
@@ -251,7 +272,13 @@ fn standard_target<'tcx>(
                 && consuming_child(tcx, key, proof)
                 && consuming_child(tcx, value, proof)
         }
-        _ if types::physical_item_path(tcx, definition, "std", &["collections", "hash", "set", "HashSet"]) => {
+        _ if types::physical_item_path(
+            tcx,
+            definition,
+            "std",
+            &["collections", "hash", "set", "HashSet"],
+        ) =>
+        {
             let Some(key) = hash_set_type(tcx, &arguments) else {
                 return false;
             };
@@ -259,7 +286,13 @@ fn standard_target<'tcx>(
                 && map_key(tcx, key)
                 && consuming_child(tcx, key, proof)
         }
-        _ if types::physical_item_path(tcx, definition, "alloc", &["collections", "btree", "set", "BTreeSet"]) => {
+        _ if types::physical_item_path(
+            tcx,
+            definition,
+            "alloc",
+            &["collections", "btree", "set", "BTreeSet"],
+        ) =>
+        {
             let Some(key) = btree_set_type(tcx, &arguments) else {
                 return false;
             };
@@ -271,11 +304,7 @@ fn standard_target<'tcx>(
     }
 }
 
-fn consuming_child<'tcx>(
-    tcx: TyCtxt<'tcx>,
-    child: Ty<'tcx>,
-    proof: &mut Proof<'tcx>,
-) -> bool {
+fn consuming_child<'tcx>(tcx: TyCtxt<'tcx>, child: Ty<'tcx>, proof: &mut Proof<'tcx>) -> bool {
     let Some(next) = proof.input_steps.checked_add(1) else {
         return false;
     };
@@ -348,13 +377,15 @@ fn linked_list_child<'tcx>(
     let Some(node_bytes) = alignment
         .checked_sub(1)
         .and_then(|padding| size.checked_add(padding))
-        .and_then(|bytes| pointer.checked_mul(2).and_then(|links| bytes.checked_add(links)))
+        .and_then(|bytes| {
+            pointer
+                .checked_mul(2)
+                .and_then(|links| bytes.checked_add(links))
+        })
     else {
         return false;
     };
-    if !within_value_envelope(tcx, charged_for_value)
-        || !within_value_envelope(tcx, node_bytes)
-    {
+    if !within_value_envelope(tcx, charged_for_value) || !within_value_envelope(tcx, node_bytes) {
         return false;
     }
     let Some(next) = proof.input_steps.checked_add(1) else {
@@ -391,9 +422,9 @@ fn hash_map_storage<'tcx>(tcx: TyCtxt<'tcx>, key: Ty<'tcx>, value: Ty<'tcx>) -> 
     let Some((pair_bytes, pair_align)) = layout_size_align(tcx, pair) else {
         return false;
     };
-    let Some(table_bytes) = hash_table_entry_bytes(pair_bytes)
-        .and_then(|bytes| bytes.checked_add(hash_table_root_overhead(tcx, pair_bytes, pair_align)?))
-    else {
+    let Some(table_bytes) = hash_table_entry_bytes(pair_bytes).and_then(|bytes| {
+        bytes.checked_add(hash_table_root_overhead(tcx, pair_bytes, pair_align)?)
+    }) else {
         return false;
     };
     // JSON object entries have their own 4096-byte allowance before the
@@ -415,11 +446,7 @@ fn btree_map_storage<'tcx>(tcx: TyCtxt<'tcx>, key: Ty<'tcx>, value: Ty<'tcx>) ->
     node_bytes <= MAP_ENTRY_BYTES / 2
 }
 
-fn hash_set_storage<'tcx>(
-    tcx: TyCtxt<'tcx>,
-    key: Ty<'tcx>,
-    charged_for_value: u64,
-) -> bool {
+fn hash_set_storage<'tcx>(tcx: TyCtxt<'tcx>, key: Ty<'tcx>, charged_for_value: u64) -> bool {
     let Some((key_bytes, key_align)) = layout_size_align(tcx, key) else {
         return false;
     };
@@ -440,11 +467,7 @@ fn hash_set_storage<'tcx>(
         && typed_value_bytes(tcx).is_some_and(|limit| table_bytes <= limit)
 }
 
-fn btree_set_storage<'tcx>(
-    tcx: TyCtxt<'tcx>,
-    key: Ty<'tcx>,
-    charged_for_value: u64,
-) -> bool {
+fn btree_set_storage<'tcx>(tcx: TyCtxt<'tcx>, key: Ty<'tcx>, charged_for_value: u64) -> bool {
     let Some(node_bytes) = btree_node_bytes(tcx, key, true) else {
         return false;
     };
@@ -485,7 +508,9 @@ fn btree_node_bytes<'tcx>(tcx: TyCtxt<'tcx>, slot_type: Ty<'tcx>, internal: bool
 }
 
 fn hash_table_entry_bytes(slot_bytes: u64) -> Option<u64> {
-    slot_bytes.checked_add(1)?.checked_mul(HASH_TABLE_BUCKET_FACTOR)
+    slot_bytes
+        .checked_add(1)?
+        .checked_mul(HASH_TABLE_BUCKET_FACTOR)
 }
 
 fn hash_table_root_overhead(tcx: TyCtxt<'_>, slot_bytes: u64, slot_align: u64) -> Option<u64> {
@@ -497,7 +522,8 @@ fn hash_table_root_overhead(tcx: TyCtxt<'_>, slot_bytes: u64, slot_align: u64) -
     } else {
         4
     };
-    let Some(extra_small_buckets) = small_table_buckets.checked_sub(HASH_TABLE_BUCKET_FACTOR) else {
+    let Some(extra_small_buckets) = small_table_buckets.checked_sub(HASH_TABLE_BUCKET_FACTOR)
+    else {
         return None;
     };
     let extra_small_bytes = extra_small_buckets.checked_mul(slot_bytes.checked_add(1)?)?;
@@ -546,10 +572,7 @@ fn map_key(tcx: TyCtxt<'_>, key: Ty<'_>) -> bool {
         || matches!(key.kind(), ty::Adt(owner, _) if types::physical_item_path(tcx, owner.did(), "alloc", &["string", "String"]))
 }
 
-fn hash_map_types<'tcx>(
-    tcx: TyCtxt<'tcx>,
-    arguments: &[Ty<'tcx>],
-) -> Option<(Ty<'tcx>, Ty<'tcx>)> {
+fn hash_map_types<'tcx>(tcx: TyCtxt<'tcx>, arguments: &[Ty<'tcx>]) -> Option<(Ty<'tcx>, Ty<'tcx>)> {
     (arguments.len() >= 3
         && standard_path(tcx, arguments[2], "std::hash::random::RandomState")
         && global_allocator_tail(tcx, &arguments[3..]))
@@ -572,24 +595,24 @@ fn btree_map_types<'tcx>(
 }
 
 fn btree_set_type<'tcx>(tcx: TyCtxt<'tcx>, arguments: &[Ty<'tcx>]) -> Option<Ty<'tcx>> {
-    (!arguments.is_empty() && global_allocator_tail(tcx, &arguments[1..]))
-        .then(|| arguments[0])
+    (!arguments.is_empty() && global_allocator_tail(tcx, &arguments[1..])).then(|| arguments[0])
 }
 
 fn one_with_global_allocator<'tcx>(tcx: TyCtxt<'tcx>, arguments: &[Ty<'tcx>]) -> Option<Ty<'tcx>> {
-    (arguments.len() >= 1 && global_allocator_tail(tcx, &arguments[1..]))
-        .then(|| arguments[0])
+    (arguments.len() >= 1 && global_allocator_tail(tcx, &arguments[1..])).then(|| arguments[0])
 }
 
 fn global_allocator_tail(tcx: TyCtxt<'_>, arguments: &[Ty<'_>]) -> bool {
     arguments.len() <= 1
-        && arguments.iter().all(|argument| {
-            standard_path(tcx, *argument, "alloc::alloc::Global")
-        })
+        && arguments
+            .iter()
+            .all(|argument| standard_path(tcx, *argument, "alloc::alloc::Global"))
 }
 
 fn standard_path(tcx: TyCtxt<'_>, value: Ty<'_>, path: &str) -> bool {
-    let Some((crate_name, item_path)) = path.split_once("::") else { return false; };
+    let Some((crate_name, item_path)) = path.split_once("::") else {
+        return false;
+    };
     let parts: Vec<_> = item_path.split("::").collect();
     matches!(value.kind(), ty::Adt(owner, _) if types::physical_item_path(tcx, owner.did(), crate_name, &parts))
 }

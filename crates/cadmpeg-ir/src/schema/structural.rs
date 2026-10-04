@@ -108,10 +108,7 @@ impl<'s, 'ctx, 'arena> Projector<'s, 'ctx, 'arena> {
         Ok(self.ctx.enter_nested(self.operation)?)
     }
     fn source_steps(self, count: usize) -> Result<(), Error> {
-        self.admit(
-            self.ctx
-                .charge_work(u64_from_index(count), self.operation),
-        )
+        self.admit(self.ctx.charge_work(u64_from_index(count), self.operation))
     }
     fn text(self, text: &str) -> Result<Value, Error> {
         let _depth = self.node()?;

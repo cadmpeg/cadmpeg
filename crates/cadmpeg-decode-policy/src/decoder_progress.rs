@@ -2,10 +2,7 @@
 //! Single-use work receipts for incremental encoding_rs decoder loops.
 use crate::{flow::Flow, types, Analysis, Findings};
 use rustc_hir::intravisit::{walk_expr, Visitor};
-use rustc_hir::{
-    def::Res,
-    Block, Expr, ExprKind, HirId, LoopSource, Node, Pat, PatKind,
-};
+use rustc_hir::{def::Res, Block, Expr, ExprKind, HirId, LoopSource, Node, Pat, PatKind};
 use rustc_middle::ty::{self, Ty};
 use rustc_span::def_id::DefId;
 use std::collections::HashSet;
@@ -47,9 +44,11 @@ impl<'tcx> Visitor<'tcx> for DecoderCalls<'_, '_, 'tcx> {
             }
             _ => (),
         }
-        if self.analysis.call(expression).is_some_and(|(definition, _)| {
-            self.analysis.incremental_decode_method(definition)
-        }) {
+        if self
+            .analysis
+            .call(expression)
+            .is_some_and(|(definition, _)| self.analysis.incremental_decode_method(definition))
+        {
             self.calls.push(expression);
         }
         walk_expr(self, expression);
@@ -157,9 +156,11 @@ impl<'tcx> Visitor<'tcx> for PriorCharges<'_, '_, 'tcx> {
             ExprKind::Closure(_) | ExprKind::Loop(..) => return,
             _ => (),
         }
-        if self.analysis.call(expression).is_some_and(|(definition, _)| {
-            self.analysis.core_charge_work_method(definition)
-        }) {
+        if self
+            .analysis
+            .call(expression)
+            .is_some_and(|(definition, _)| self.analysis.core_charge_work_method(definition))
+        {
             self.calls.push(expression);
         }
         walk_expr(self, expression);
@@ -177,11 +178,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
     }
 
     fn incremental_decode_method(&self, definition: DefId) -> bool {
-        self.encoding_rs_definition(
-            definition,
-            "Decoder",
-            "decode_to_utf8_without_replacement",
-        )
+        self.encoding_rs_definition(definition, "Decoder", "decode_to_utf8_without_replacement")
     }
 
     fn core_charge_work_method(&self, definition: DefId) -> bool {
@@ -190,7 +187,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
 
     fn core_u64_from_index(&self, definition: DefId) -> bool {
         types::physical_item_path(
-            self.tcx, definition, "cadmpeg_core", &["decode", "view", "u64_from_index"],
+            self.tcx,
+            definition,
+            "cadmpeg_core",
+            &["decode", "view", "u64_from_index"],
         )
     }
 
@@ -218,7 +218,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 }
                 Node::Expr(expression) if matches!(expression.kind, ExprKind::Let(_)) => {
                     if let ExprKind::Let(local) = expression.kind {
-                        let (tuple_field, tuple_arity) = tuple_binding_position(local.pat, binding)?;
+                        let (tuple_field, tuple_arity) =
+                            tuple_binding_position(local.pat, binding)?;
                         return Some(BindingValue {
                             initializer: local.init,
                             tuple_field,
@@ -291,11 +292,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             .map(|field| field.expr)
     }
 
-    fn exact_bom_slice_closure(
-        &self,
-        closure_expression: &'tcx Expr<'tcx>,
-        input: HirId,
-    ) -> bool {
+    fn exact_bom_slice_closure(&self, closure_expression: &'tcx Expr<'tcx>, input: HirId) -> bool {
         let ExprKind::Closure(closure) = closure_expression.kind else {
             return false;
         };
@@ -335,8 +332,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let ExprKind::Tup(values) = returned.kind else {
             return false;
         };
-        let (Some(encoding), Some(source)) = (values.first(), values.get(1))
-        else {
+        let (Some(encoding), Some(source)) = (values.first(), values.get(1)) else {
             return false;
         };
         if nested.local_binding(encoding) != Some(selected) || !nested.byte_slice(source) {
@@ -356,9 +352,12 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let expression = strip_temporary(expression);
         let (map_or, arguments) = self.call(expression)?;
         if !types::physical_inherent_method(
-            self.tcx, map_or, "core", &["option", "Option"], "map_or",
-        )
-            || arguments.len() != 3
+            self.tcx,
+            map_or,
+            "core",
+            &["option", "Option"],
+            "map_or",
+        ) || arguments.len() != 3
             || !matches!(self.expr_ty(arguments[0]).peel_refs().kind(), ty::Adt(owner, _)
                 if types::physical_item_path(self.tcx, owner.did(), "core", &["option", "Option"]))
         {
@@ -458,10 +457,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             return None;
         }
         let start = self.range_from_start(range)?;
-        Some((
-            self.local_binding(start)?,
-            strip_temporary(start).hir_id,
-        ))
+        Some((self.local_binding(start)?, strip_temporary(start).hir_id))
     }
 
     fn decoder_result_pattern(&self, pattern: &'tcx Pat<'tcx>, name: &str) -> bool {
@@ -476,7 +472,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let Res::Def(_, definition) = self.typeck.qpath_res(&path, pattern.hir_id) else {
             return false;
         };
-        let variant = if matches!(self.tcx.def_kind(definition), rustc_hir::def::DefKind::Ctor(..)) {
+        let variant = if matches!(
+            self.tcx.def_kind(definition),
+            rustc_hir::def::DefKind::Ctor(..)
+        ) {
             self.tcx.parent(definition)
         } else {
             definition
@@ -560,10 +559,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         input_empty && output_full && malformed
     }
 
-    fn tuple_call_bindings(
-        &self,
-        call: &'tcx Expr<'tcx>,
-    ) -> Option<(HirId, HirId, HirId)> {
+    fn tuple_call_bindings(&self, call: &'tcx Expr<'tcx>) -> Option<(HirId, HirId, HirId)> {
         for (_, node) in self.tcx.hir_parent_iter(call.hir_id) {
             match node {
                 Node::LetStmt(local) => {
@@ -605,20 +601,14 @@ impl<'tcx> Analysis<'_, 'tcx> {
             && fields[2] == self.tcx.types.usize
     }
 
-    fn decoder_constructor_receiver(
-        &self,
-        decoder_binding: HirId,
-    ) -> Option<&'tcx Expr<'tcx>> {
+    fn decoder_constructor_receiver(&self, decoder_binding: HirId) -> Option<&'tcx Expr<'tcx>> {
         let value = self.binding_value(decoder_binding)?;
         if value.tuple_field.is_some() || value.tuple_arity.is_some() {
             return None;
         }
         let (definition, operands) = self.call(strip_temporary(value.initializer))?;
-        if !self.encoding_rs_definition(
-            definition,
-            "Encoding",
-            "new_decoder_without_bom_handling",
-        ) || operands.len() != 1
+        if !self.encoding_rs_definition(definition, "Encoding", "new_decoder_without_bom_handling")
+            || operands.len() != 1
             || !self.encoding_rs_type(self.expr_ty(operands[0]), "Encoding")
         {
             return None;
@@ -626,10 +616,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         operands.first().copied()
     }
 
-    fn decoder_call_shape(
-        &self,
-        call: &'tcx Expr<'tcx>,
-    ) -> Option<DecoderStep> {
+    fn decoder_call_shape(&self, call: &'tcx Expr<'tcx>) -> Option<DecoderStep> {
         let (definition, operands) = self.call(call)?;
         if !self.incremental_decode_method(definition)
             || operands.len() != 4
@@ -736,7 +723,14 @@ impl<'tcx> Analysis<'_, 'tcx> {
         call: &'tcx Expr<'tcx>,
         step: DecoderStep,
     ) -> bool {
-        let DecoderStep { read, consumed, result, read_use, decoder, decoder_use } = step;
+        let DecoderStep {
+            read,
+            consumed,
+            result,
+            read_use,
+            decoder,
+            decoder_use,
+        } = step;
         let Some(call_statement) = self.top_level_call_let(block, call) else {
             return false;
         };
@@ -782,9 +776,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             uses: Vec::new(),
         };
         decoder_uses.visit_block(block);
-        if decoder_uses.uses.len() != 1
-            || decoder_uses.uses.first().copied() != Some(decoder_use)
-        {
+        if decoder_uses.uses.len() != 1 || decoder_uses.uses.first().copied() != Some(decoder_use) {
             return false;
         }
         let Some(write_statement) = self.top_level_read_update(block, write) else {
@@ -875,11 +867,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         None
     }
 
-    fn decoder_is_fresh_at_loop(
-        &self,
-        loop_expression: &'tcx Expr<'tcx>,
-        decoder: HirId,
-    ) -> bool {
+    fn decoder_is_fresh_at_loop(&self, loop_expression: &'tcx Expr<'tcx>, decoder: HirId) -> bool {
         let Some(value) = self.binding_value(decoder) else {
             return false;
         };
@@ -964,14 +952,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let Some(root_binding) = self.local_binding(source.root) else {
             return Some(None);
         };
-        if [
-            source.binding,
-            root_binding,
-            read,
-            decoder,
-        ]
-        .iter()
-        .any(|binding| self.flow.mutated.contains(&format!("local:{binding:?}")))
+        if [source.binding, root_binding, read, decoder]
+            .iter()
+            .any(|binding| self.flow.mutated.contains(&format!("local:{binding:?}")))
         {
             return None;
         }

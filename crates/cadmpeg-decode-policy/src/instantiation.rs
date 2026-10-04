@@ -50,16 +50,23 @@ fn immutable_parameter_origin(
         Operand::Copy(place) | Operand::Move(place) => *place,
         Operand::Constant(_) | Operand::RuntimeChecks(_) => return None,
     };
-    if !place.projection.iter().all(|projection| matches!(projection, ProjectionElem::Deref))
+    if !place
+        .projection
+        .iter()
+        .all(|projection| matches!(projection, ProjectionElem::Deref))
         || !active.insert(place.local)
     {
         return None;
     }
-    let assignments: Vec<_> = body.basic_blocks.iter().flat_map(|block| &block.statements)
+    let assignments: Vec<_> = body
+        .basic_blocks
+        .iter()
+        .flat_map(|block| &block.statements)
         .filter_map(|statement| match &statement.kind {
             StatementKind::Assign(value) if value.0.local == place.local => Some(value),
             _ => None,
-        }).collect();
+        })
+        .collect();
     if body.basic_blocks.iter().any(|block| {
         matches!(&block.terminator().kind,
             rustc_middle::mir::TerminatorKind::Call { destination, .. }
@@ -71,7 +78,9 @@ fn immutable_parameter_origin(
     if parameter > 0 && parameter <= body.arg_count {
         return assignments.is_empty().then_some(parameter);
     }
-    let [assignment] = assignments.as_slice() else { return None; };
+    let [assignment] = assignments.as_slice() else {
+        return None;
+    };
     if !assignment.0.projection.is_empty() {
         return None;
     }
@@ -98,7 +107,9 @@ fn charged_reference_equality<'tcx>(
     use rustc_middle::mir::{Operand, TerminatorKind};
     if !types::decode_context_method(tcx, instance.def_id(), "equal")
         || body.arg_count != 4
-        || tcx.opt_item_name(definition).is_none_or(|name| name.as_str() != "eq")
+        || tcx
+            .opt_item_name(definition)
+            .is_none_or(|name| name.as_str() != "eq")
         || tcx.trait_of_assoc(definition).is_none_or(|owner| {
             !types::physical_item_path(tcx, owner, "core", &["cmp", "PartialEq"])
         })
@@ -108,7 +119,10 @@ fn charged_reference_equality<'tcx>(
         return None;
     }
     let TerminatorKind::Call { args: compared, .. } =
-        &body.basic_blocks[comparison].terminator().kind else { return None; };
+        &body.basic_blocks[comparison].terminator().kind
+    else {
+        return None;
+    };
     if compared.len() != 2
         || immutable_parameter_origin(body, &compared[0].node, &mut HashSet::new()) != Some(2)
         || immutable_parameter_origin(body, &compared[1].node, &mut HashSet::new()) != Some(3)
@@ -121,13 +135,23 @@ fn charged_reference_equality<'tcx>(
     }
     let mut charged = HashSet::new();
     for (block, data) in body.basic_blocks.iter_enumerated() {
-        let TerminatorKind::Call { func, args, target: Some(target), .. } =
-            &data.terminator().kind else { continue; };
-        let rustc_middle::ty::FnDef(method, _) = func.ty(body, tcx).kind() else { continue; };
+        let TerminatorKind::Call {
+            func,
+            args,
+            target: Some(target),
+            ..
+        } = &data.terminator().kind
+        else {
+            continue;
+        };
+        let rustc_middle::ty::FnDef(method, _) = func.ty(body, tcx).kind() else {
+            continue;
+        };
         if !types::decode_context_method(tcx, *method, "charge_key") {
             continue;
         }
-        if args.len() != 4 || !dominators.dominates(block, comparison)
+        if args.len() != 4
+            || !dominators.dominates(block, comparison)
             || !dominators.dominates(*target, comparison)
             || immutable_parameter_origin(body, &args[0].node, &mut HashSet::new()) != Some(1)
             || immutable_parameter_origin(body, &args[3].node, &mut HashSet::new()) != Some(4)
@@ -135,14 +159,19 @@ fn charged_reference_equality<'tcx>(
             return None;
         }
         let Some(parameter) = immutable_parameter_origin(body, &args[1].node, &mut HashSet::new())
-            else { return None; };
+        else {
+            return None;
+        };
         if !matches!(parameter, 2 | 3) || !charged.insert(parameter) {
             return None;
         }
-        let Operand::Constant(factor) = &args[2].node else { return None; };
-        if instance.instantiate_mir(tcx,
-            rustc_middle::ty::EarlyBinder::bind(tcx, factor.const_))
-            .try_eval_bits(tcx, environment) != Some(1)
+        let Operand::Constant(factor) = &args[2].node else {
+            return None;
+        };
+        if instance
+            .instantiate_mir(tcx, rustc_middle::ty::EarlyBinder::bind(tcx, factor.const_))
+            .try_eval_bits(tcx, environment)
+            != Some(1)
         {
             return None;
         }
@@ -496,11 +525,19 @@ pub(crate) fn check_imported<'tcx>(
             findings,
         };
         if depth > recursion_limit {
-            reporter.report(root.span, "unproven_decode_charge", "generic instantiation chain exceeds the compiler recursion limit");
+            reporter.report(
+                root.span,
+                "unproven_decode_charge",
+                "generic instantiation chain exceeds the compiler recursion limit",
+            );
             continue;
         }
         if !tcx.is_mir_available(instance.def_id()) {
-            reporter.report(root.span, "unproven_decode_charge", "generic instantiations cannot be enumerated: checked dependency body unavailable");
+            reporter.report(
+                root.span,
+                "unproven_decode_charge",
+                "generic instantiations cannot be enumerated: checked dependency body unavailable",
+            );
             continue;
         }
         let body = tcx.instance_mir(instance.def);
@@ -579,9 +616,17 @@ pub(crate) fn check_imported<'tcx>(
                     rustc_middle::ty::EarlyBinder::bind(tcx, operand.node.ty(body, tcx)),
                 )
             });
-            if let Some(bounded) = receiver.and_then(|receiver| charged_reference_equality(
-                tcx, reporter.typing_env(), instance, body, block_index, *definition, receiver,
-            )) {
+            if let Some(bounded) = receiver.and_then(|receiver| {
+                charged_reference_equality(
+                    tcx,
+                    reporter.typing_env(),
+                    instance,
+                    body,
+                    block_index,
+                    *definition,
+                    receiver,
+                )
+            }) {
                 if !bounded {
                     reporter.report(
                         root.span,
@@ -619,16 +664,10 @@ pub(crate) fn check_imported<'tcx>(
                     .ok()?;
                 Some((receiver, query))
             });
-            let raw_hash_lookup =
-                crate::hash_set_callbacks::is_raw_hash_lookup(tcx, *definition);
+            let raw_hash_lookup = crate::hash_set_callbacks::is_raw_hash_lookup(tcx, *definition);
             if raw_hash_lookup {
                 let bounded_raw = normalized_lookup.and_then(|(receiver, query)| {
-                    crate::hash_set_callbacks::bounded_raw_lookup(
-                        tcx,
-                        *definition,
-                        receiver,
-                        query,
-                    )
+                    crate::hash_set_callbacks::bounded_raw_lookup(tcx, *definition, receiver, query)
                 });
                 match bounded_raw {
                     Some(true) => (),
@@ -670,12 +709,11 @@ pub(crate) fn check_imported<'tcx>(
                         );
                         continue;
                     }
-                    None
-                        if key_work_proof
-                            || equal_hash_set
-                                && tcx
-                                    .opt_item_name(*definition)
-                                    .is_some_and(|name| name.as_str() == "contains") =>
+                    None if key_work_proof
+                        || equal_hash_set
+                            && tcx
+                                .opt_item_name(*definition)
+                                .is_some_and(|name| name.as_str() == "contains") =>
                     {
                         reporter.report(
                             root.span,
@@ -689,7 +727,9 @@ pub(crate) fn check_imported<'tcx>(
             }
             let operation_owned = receiver.is_some_and(|receiver| {
                 (types::decode_context_method(tcx, instance.def_id(), "extend_vec")
-                    && tcx.opt_item_name(*definition).is_some_and(|name| name.as_str() == "extend")
+                    && tcx
+                        .opt_item_name(*definition)
+                        .is_some_and(|name| name.as_str() == "extend")
                     && tcx.trait_of_assoc(*definition).is_some_and(|trait_id| {
                         types::standard(tcx, trait_id)
                             && tcx.item_name(trait_id).as_str() == "Extend"
@@ -706,14 +746,18 @@ pub(crate) fn check_imported<'tcx>(
                 )
             });
             let normalized_callback = receiver.zip(callback).and_then(|(receiver, callback)| {
-                let receiver = tcx.try_normalize_erasing_regions(
-                    reporter.typing_env(),
-                    rustc_middle::ty::Unnormalized::new_wip(receiver),
-                ).ok()?;
-                let callback = tcx.try_normalize_erasing_regions(
-                    reporter.typing_env(),
-                    rustc_middle::ty::Unnormalized::new_wip(callback),
-                ).ok()?;
+                let receiver = tcx
+                    .try_normalize_erasing_regions(
+                        reporter.typing_env(),
+                        rustc_middle::ty::Unnormalized::new_wip(receiver),
+                    )
+                    .ok()?;
+                let callback = tcx
+                    .try_normalize_erasing_regions(
+                        reporter.typing_env(),
+                        rustc_middle::ty::Unnormalized::new_wip(callback),
+                    )
+                    .ok()?;
                 Some((receiver, callback))
             });
             if normalized_callback.is_some_and(|(receiver, callback)| {
@@ -724,9 +768,7 @@ pub(crate) fn check_imported<'tcx>(
             let serde_call = tcx
                 .trait_of_assoc(*definition)
                 .is_some_and(|trait_id| types::serde_serialize(tcx, trait_id));
-            if serde_call
-                && structural_project(tcx, instance.def_id())
-            {
+            if serde_call && structural_project(tcx, instance.def_id()) {
                 // The project call's source check owns this callback proof.
                 // An unproved source remains one unresolved obligation there.
                 continue;
@@ -766,10 +808,7 @@ pub(crate) fn check_imported<'tcx>(
                 && receiver.is_some_and(|source| {
                     let output = instance.instantiate_mir(
                         tcx,
-                        rustc_middle::ty::EarlyBinder::bind(
-                            tcx,
-                            destination.ty(body, tcx).ty,
-                        ),
+                        rustc_middle::ty::EarlyBinder::bind(tcx, destination.ty(body, tcx).ty),
                     );
                     crate::conversion::forwarded_from(
                         tcx,
@@ -786,8 +825,7 @@ pub(crate) fn check_imported<'tcx>(
             {
                 continue;
             }
-            if !types::standard(tcx, resolved.def_id())
-                && reporter.checked_body(resolved.def_id())
+            if !types::standard(tcx, resolved.def_id()) && reporter.checked_body(resolved.def_id())
             {
                 let fixed: Vec<bool> = args
                     .iter()

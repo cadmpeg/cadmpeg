@@ -3,8 +3,8 @@
 
 use crate::{external, types};
 use rustc_middle::mir::{
-    self, Body, BorrowKind, CastKind, Local, Operand, Place, Rvalue, StatementKind,
-    TerminatorKind, UnwindAction, RETURN_PLACE,
+    self, Body, BorrowKind, CastKind, Local, Operand, Place, Rvalue, StatementKind, TerminatorKind,
+    UnwindAction, RETURN_PLACE,
 };
 use rustc_middle::ty::{self, Ty, TyCtxt};
 use rustc_span::def_id::DefId;
@@ -29,9 +29,10 @@ enum ScalarKind {
 /// the concrete Projector protocol. This stays local to structural projection;
 /// it is not a summary for arbitrary `Serialize` callbacks.
 pub(crate) fn is_bounded_impl(tcx: TyCtxt<'_>, method: DefId) -> bool {
-    let Some(body) = tcx.is_mir_available(method).then(|| {
-        tcx.instance_mir(ty::InstanceKind::Item(method))
-    }) else {
+    let Some(body) = tcx
+        .is_mir_available(method)
+        .then(|| tcx.instance_mir(ty::InstanceKind::Item(method)))
+    else {
         return false;
     };
     if body.arg_count != 2 || crate::conversion::cyclic(body) {
@@ -68,7 +69,10 @@ pub(crate) fn is_bounded_impl(tcx: TyCtxt<'_>, method: DefId) -> bool {
             return false;
         };
         if let Some(kind) = serializer_scalar_call(tcx, *definition) {
-            if protocol.replace((*block, kind, destination.local, args)).is_some() {
+            if protocol
+                .replace((*block, kind, destination.local, args))
+                .is_some()
+            {
                 return false;
             }
         } else {
@@ -130,9 +134,7 @@ fn serializer_scalar_call(tcx: TyCtxt<'_>, definition: DefId) -> Option<ScalarKi
         "serialize_char" => Some(ScalarKind::Char),
         "serialize_i8" | "serialize_i16" | "serialize_i32" | "serialize_i64" | "serialize_i128"
         | "serialize_u8" | "serialize_u16" | "serialize_u32" | "serialize_u64"
-        | "serialize_u128" => {
-            Some(ScalarKind::Integer)
-        }
+        | "serialize_u128" => Some(ScalarKind::Integer),
         "serialize_f32" | "serialize_f64" => Some(ScalarKind::Float),
         _ => None,
     }
@@ -168,9 +170,7 @@ fn linear_blocks(body: &Body<'_>) -> Option<Vec<mir::BasicBlock>> {
 
 fn projection_statement(statement: &mir::Statement<'_>, allow_return: bool) -> bool {
     match &statement.kind {
-        StatementKind::StorageLive(_)
-        | StatementKind::StorageDead(_)
-        | StatementKind::Nop => true,
+        StatementKind::StorageLive(_) | StatementKind::StorageDead(_) | StatementKind::Nop => true,
         StatementKind::Assign(assignment) => {
             let (target, value) = &**assignment;
             target.projection.is_empty()
@@ -180,10 +180,7 @@ fn projection_statement(statement: &mir::Statement<'_>, allow_return: bool) -> b
                     Rvalue::Use(..)
                         | Rvalue::Ref(_, BorrowKind::Shared, _)
                         | Rvalue::Cast(
-                            CastKind::PointerCoercion(
-                                ty::adjustment::PointerCoercion::Unsize,
-                                _,
-                            ),
+                            CastKind::PointerCoercion(ty::adjustment::PointerCoercion::Unsize, _,),
                             _,
                             _
                         )
@@ -254,28 +251,17 @@ fn trace_operand<'tcx>(
     getter_stack: &mut Vec<DefId>,
 ) -> Option<Origin> {
     match operand {
-        Operand::Copy(place) => trace_place(
-            tcx,
-            body,
-            place,
-            source,
-            active,
-            used_getters,
-            getter_stack,
-        ),
+        Operand::Copy(place) => {
+            trace_place(tcx, body, place, source, active, used_getters, getter_stack)
+        }
         Operand::Move(place)
             if tcx.type_is_copy_modulo_regions(
                 ty::TypingEnv::fully_monomorphized(),
                 operand.ty(body, tcx),
-            ) => trace_place(
-            tcx,
-            body,
-            place,
-            source,
-            active,
-            used_getters,
-            getter_stack,
-        ),
+            ) =>
+        {
+            trace_place(tcx, body, place, source, active, used_getters, getter_stack)
+        }
         Operand::Constant(_) => {
             scalar_kind(operand.ty(body, tcx))?;
             Some(Origin::Static)
@@ -359,10 +345,7 @@ fn trace_place<'tcx>(
                 getter_stack,
             ),
             Rvalue::Cast(
-                CastKind::PointerCoercion(
-                    ty::adjustment::PointerCoercion::Unsize,
-                    _,
-                ),
+                CastKind::PointerCoercion(ty::adjustment::PointerCoercion::Unsize, _),
                 operand,
                 _,
             ) => trace_operand(
@@ -448,23 +431,12 @@ pub(crate) fn fixed_string_borrow(
     let method_name = tcx.item_name(definition);
     let method = method_name.as_str();
     let exact_method = if method == "as_str" {
-        types::physical_inherent_method(
-            tcx,
-            definition,
-            "alloc",
-            &["string", "String"],
-            "as_str",
-        )
+        types::physical_inherent_method(tcx, definition, "alloc", &["string", "String"], "as_str")
     } else if method == "deref" {
         tcx.trait_of_assoc(definition).is_some_and(|trait_id| {
             tcx.item_name(trait_id).as_str() == "Deref"
                 && (types::physical_item_path(tcx, trait_id, "core", &["ops", "Deref"])
-                    || types::physical_item_path(
-                        tcx,
-                        trait_id,
-                        "core",
-                        &["ops", "deref", "Deref"],
-                    ))
+                    || types::physical_item_path(tcx, trait_id, "core", &["ops", "deref", "Deref"]))
         })
     } else {
         false
@@ -484,7 +456,9 @@ pub(crate) fn fixed_string_borrow(
 }
 
 fn destination_output_ty<'tcx>(body: &Body<'tcx>, local: Local) -> Option<Ty<'tcx>> {
-    body.local_decls.get(local).map(|declaration| declaration.ty)
+    body.local_decls
+        .get(local)
+        .map(|declaration| declaration.ty)
 }
 
 fn projection_getter_body<'tcx>(
@@ -532,13 +506,16 @@ fn bounded_source_projection<'tcx>(
     body: &Body<'tcx>,
     place: &Place<'tcx>,
 ) -> bool {
-    place.as_ref().iter_projections().all(|(base, element)| match element {
-        mir::ProjectionElem::Deref => {
-            matches!(base.to_place(tcx).ty(body, tcx).ty.kind(), ty::Ref(..))
-        }
-        mir::ProjectionElem::Field(..) => true,
-        _ => false,
-    })
+    place
+        .as_ref()
+        .iter_projections()
+        .all(|(base, element)| match element {
+            mir::ProjectionElem::Deref => {
+                matches!(base.to_place(tcx).ty(body, tcx).ty.kind(), ty::Ref(..))
+            }
+            mir::ProjectionElem::Field(..) => true,
+            _ => false,
+        })
 }
 
 /// Admit finite scalar-to-literal lookups such as `CodecFormat::as_str`.
@@ -600,14 +577,7 @@ fn finite_static_getter_body<'tcx, 'body>(
     }
     for block in body.basic_blocks.iter() {
         if let TerminatorKind::SwitchInt { discr, .. } = &block.terminator().kind {
-            if !selector_operand(
-                tcx,
-                body,
-                &discr,
-                source,
-                &selectors,
-                &mut HashSet::new(),
-            ) {
+            if !selector_operand(tcx, body, &discr, source, &selectors, &mut HashSet::new()) {
                 return None;
             }
         }
@@ -627,7 +597,11 @@ fn selector_type(value: Ty<'_>) -> bool {
     match value.kind() {
         ty::Bool | ty::Char | ty::Int(_) | ty::Uint(_) => true,
         ty::Adt(owner, _) => {
-            owner.is_enum() && owner.variants().iter().all(|variant| variant.fields.is_empty())
+            owner.is_enum()
+                && owner
+                    .variants()
+                    .iter()
+                    .all(|variant| variant.fields.is_empty())
         }
         _ => false,
     }
@@ -659,9 +633,7 @@ fn selector_value<'tcx, 'body>(
                 && unit_enum_type(place.ty(body, tcx).ty)
                 && bounded_source_projection(tcx, body, place)
         }
-        Rvalue::Use(operand, _) => {
-            selector_operand(tcx, body, operand, source, selectors, active)
-        }
+        Rvalue::Use(operand, _) => selector_operand(tcx, body, operand, source, selectors, active),
         _ => false,
     }
 }
@@ -693,9 +665,9 @@ fn selector_operand<'tcx, 'body>(
                 )
                 && active.insert(place.local) =>
         {
-            let accepted = selectors.get(&place.local).is_some_and(|value| {
-                selector_value(tcx, body, value, source, selectors, active)
-            });
+            let accepted = selectors
+                .get(&place.local)
+                .is_some_and(|value| selector_value(tcx, body, value, source, selectors, active));
             active.remove(&place.local);
             accepted
         }

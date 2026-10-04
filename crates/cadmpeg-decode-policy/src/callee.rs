@@ -140,16 +140,17 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if self.call(expression).is_some_and(|(called, operands)| {
             called == definition
                 && operands.first().is_some_and(|source| {
-                    self.resolved_instance(expression, definition).is_some_and(|instance| {
-                        crate::conversion::copy_conversion_is_fixed(
-                            self.tcx,
-                            self.typing_env(),
-                            definition,
-                            instance,
-                            self.expr_ty(source),
-                            self.expr_ty(expression),
-                        )
-                    })
+                    self.resolved_instance(expression, definition)
+                        .is_some_and(|instance| {
+                            crate::conversion::copy_conversion_is_fixed(
+                                self.tcx,
+                                self.typing_env(),
+                                definition,
+                                instance,
+                                self.expr_ty(source),
+                                self.expr_ty(expression),
+                            )
+                        })
                 })
         }) {
             return true;
@@ -257,14 +258,18 @@ impl<'tcx> Analysis<'_, 'tcx> {
             return;
         };
         if let ty::FnDef(definition, _) = self.expr_ty(callee).kind() {
-            if self.tcx.trait_of_assoc(*definition).is_some_and(|trait_id| {
-                [
-                    self.tcx.lang_items().fn_trait(),
-                    self.tcx.lang_items().fn_mut_trait(),
-                    self.tcx.lang_items().fn_once_trait(),
-                ]
-                .contains(&Some(trait_id))
-            }) {
+            if self
+                .tcx
+                .trait_of_assoc(*definition)
+                .is_some_and(|trait_id| {
+                    [
+                        self.tcx.lang_items().fn_trait(),
+                        self.tcx.lang_items().fn_mut_trait(),
+                        self.tcx.lang_items().fn_once_trait(),
+                    ]
+                    .contains(&Some(trait_id))
+                })
+            {
                 self.report(
                     expression.span,
                     "unproven_decode_charge",

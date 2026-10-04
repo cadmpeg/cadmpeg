@@ -75,7 +75,10 @@ pub(crate) fn bounded_imported_derive<'tcx>(
         return false;
     };
     if owner.is_union()
-        || !matches!(tcx.def_kind(implementation), DefKind::Impl { of_trait: true })
+        || !matches!(
+            tcx.def_kind(implementation),
+            DefKind::Impl { of_trait: true }
+        )
     {
         return false;
     }
@@ -90,9 +93,7 @@ pub(crate) fn bounded_imported_derive<'tcx>(
     let Some(trait_ref) = tcx.impl_opt_trait_ref(implementation) else {
         return false;
     };
-    let trait_ref = trait_ref
-        .instantiate(tcx, owner_arguments)
-        .skip_norm_wip();
+    let trait_ref = trait_ref.instantiate(tcx, owner_arguments).skip_norm_wip();
     let trait_id = trait_ref.def_id;
     if trait_ref.self_ty() != value
         || !types::physical_item_path(tcx, trait_id, expected_trait.0, expected_trait.1)
@@ -148,8 +149,11 @@ pub(crate) fn bounded_imported_derive<'tcx>(
     {
         return false;
     }
-    let method_arguments = ty::GenericArgs::identity_for_item(tcx, method)
-        .rebase_onto(tcx, implementation, owner_arguments);
+    let method_arguments = ty::GenericArgs::identity_for_item(tcx, method).rebase_onto(
+        tcx,
+        implementation,
+        owner_arguments,
+    );
     let instance = Instance::new_raw(method, method_arguments);
     let body = tcx.instance_mir(instance.def);
     if body.arg_count != 2 || conversion::cyclic(body) {
@@ -281,12 +285,10 @@ impl<'tcx, 'body> CallbackBody<'tcx, 'body> {
         let ty::Ref(_, callback_self, _) = signature.inputs().first()?.kind() else {
             return None;
         };
-        let first_type = self
-            .instance
-            .instantiate_mir(
-                self.tcx,
-                ty::EarlyBinder::bind(self.tcx, arguments[0].node.ty(self.body, self.tcx)),
-            );
+        let first_type = self.instance.instantiate_mir(
+            self.tcx,
+            ty::EarlyBinder::bind(self.tcx, arguments[0].node.ty(self.body, self.tcx)),
+        );
         let ty::Ref(_, first_type, _) = first_type.kind() else {
             return None;
         };
@@ -341,8 +343,7 @@ impl<'tcx, 'body> CallbackBody<'tcx, 'body> {
                 }
                 let left_path = self.field_path(left, 1)?;
                 let right_path = self.field_path(right, 2)?;
-                (left_path == right_path
-                    && self.field_type_matches(left_path, *first_type))
+                (left_path == right_path && self.field_type_matches(left_path, *first_type))
                     .then_some(CallbackSite::Field(left_path))
             }
         }
@@ -397,9 +398,7 @@ impl<'tcx, 'body> CallbackBody<'tcx, 'body> {
         else {
             return false;
         };
-        let field_type = field
-            .ty(self.tcx, self.owner_arguments)
-            .skip_norm_wip();
+        let field_type = field.ty(self.tcx, self.owner_arguments).skip_norm_wip();
         !field_type.has_aliases()
             && !field_type.has_non_region_param()
             && !field_type.has_escaping_bound_vars()
@@ -407,10 +406,7 @@ impl<'tcx, 'body> CallbackBody<'tcx, 'body> {
                 == types::reveal_opaque(self.tcx, callback_type)
     }
 
-    fn no_repeated_callback_on_path(
-        &self,
-        events: &[(mir::BasicBlock, CallbackSite)],
-    ) -> bool {
+    fn no_repeated_callback_on_path(&self, events: &[(mir::BasicBlock, CallbackSite)]) -> bool {
         let mut reachable = HashMap::<mir::BasicBlock, HashSet<mir::BasicBlock>>::new();
         for (start, _) in events {
             reachable
@@ -448,14 +444,16 @@ impl<'tcx, 'body> CallbackBody<'tcx, 'body> {
 
     fn place_origin(&mut self, place: &Place<'tcx>) -> Option<Origin> {
         let mut origin = self.local_origin(place.local)?;
-        origin.projection.extend(place.projection.iter().map(|projection| match projection {
-            mir::ProjectionElem::Deref => Projection::Deref,
-            mir::ProjectionElem::Downcast(_, variant) => {
-                Projection::Downcast(variant.as_usize())
-            }
-            mir::ProjectionElem::Field(field, _) => Projection::Field(field.as_usize()),
-            _ => Projection::Other,
-        }));
+        origin
+            .projection
+            .extend(place.projection.iter().map(|projection| match projection {
+                mir::ProjectionElem::Deref => Projection::Deref,
+                mir::ProjectionElem::Downcast(_, variant) => {
+                    Projection::Downcast(variant.as_usize())
+                }
+                mir::ProjectionElem::Field(field, _) => Projection::Field(field.as_usize()),
+                _ => Projection::Other,
+            }));
         Some(origin)
     }
 
@@ -506,16 +504,17 @@ impl<'tcx, 'body> CallbackBody<'tcx, 'body> {
             LocalDefinition::Assignment(value) => self.rvalue_origin(value),
             LocalDefinition::Call(block) => match &block.terminator().kind {
                 TerminatorKind::Call { func, args, .. } => {
-                    self.callback_site(func, args).map(|site| match (self.kind, site) {
-                        (CallbackKind::PartialEq, CallbackSite::Field(path)) => Origin {
-                            root: Root::Compared(path),
-                            projection: Vec::new(),
-                        },
-                        _ => Origin {
-                            root: Root::Other,
-                            projection: Vec::new(),
-                        },
-                    })
+                    self.callback_site(func, args)
+                        .map(|site| match (self.kind, site) {
+                            (CallbackKind::PartialEq, CallbackSite::Field(path)) => Origin {
+                                root: Root::Compared(path),
+                                projection: Vec::new(),
+                            },
+                            _ => Origin {
+                                root: Root::Other,
+                                projection: Vec::new(),
+                            },
+                        })
                 }
                 _ => None,
             },
@@ -547,9 +546,7 @@ impl<'tcx, 'body> CallbackBody<'tcx, 'body> {
                     projection: Vec::new(),
                 })
             }
-            Rvalue::BinaryOp(BinOp::Eq, operands)
-                if self.kind == CallbackKind::PartialEq =>
-            {
+            Rvalue::BinaryOp(BinOp::Eq, operands) if self.kind == CallbackKind::PartialEq => {
                 let (left, right) = &**operands;
                 let left_origin = self.operand_origin(left)?;
                 let right_origin = self.operand_origin(right)?;
@@ -597,10 +594,7 @@ enum LocalDefinition<'body, 'tcx> {
     Call(&'body mir::BasicBlockData<'tcx>),
 }
 
-fn block_reachable<'tcx>(
-    body: &Body<'tcx>,
-    start: mir::BasicBlock,
-) -> HashSet<mir::BasicBlock> {
+fn block_reachable<'tcx>(body: &Body<'tcx>, start: mir::BasicBlock) -> HashSet<mir::BasicBlock> {
     let mut pending = vec![start];
     let mut visited = HashSet::new();
     while let Some(block) = pending.pop() {

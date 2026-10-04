@@ -87,7 +87,11 @@ pub(crate) fn record_field_types<'tcx>(
                     Some(kind) => (kind, None),
                     None => (
                         CallKind::FixedHelper,
-                        Some(resolve_fixed_helper(tcx, *definition, (*generic_arguments).no_bound_vars()?)?),
+                        Some(resolve_fixed_helper(
+                            tcx,
+                            *definition,
+                            (*generic_arguments).no_bound_vars()?,
+                        )?),
                     ),
                 };
                 let destination = destination.local;
@@ -214,14 +218,8 @@ pub(crate) fn record_field_types<'tcx>(
         else {
             continue;
         };
-        let Origin::BranchTag(branch) = operand_origin(
-            tcx,
-            body,
-            discr,
-            &reachable,
-            &calls,
-            &mut HashSet::new(),
-        )?
+        let Origin::BranchTag(branch) =
+            operand_origin(tcx, body, discr, &reachable, &calls, &mut HashSet::new())?
         else {
             if fixed_bool_operand(tcx, body, discr, &reachable, &calls) {
                 continue;
@@ -403,7 +401,12 @@ fn classify_call(tcx: TyCtxt<'_>, definition: DefId) -> Option<CallKind> {
     ) {
         Some(CallKind::End)
     } else if name == "branch"
-        && types::physical_item_path(tcx, tcx.trait_of_assoc(definition)?, "core", &["ops", "try_trait", "Try"])
+        && types::physical_item_path(
+            tcx,
+            tcx.trait_of_assoc(definition)?,
+            "core",
+            &["ops", "try_trait", "Try"],
+        )
     {
         Some(CallKind::TryBranch)
     } else if name == "from_residual"
@@ -443,23 +446,9 @@ fn protocol_trait(tcx: TyCtxt<'_>, definition: DefId) -> bool {
     ["serde", "serde_core"].iter().any(|crate_name| {
         types::physical_item_path(tcx, trait_id, crate_name, &["ser", "Serialize"])
             || types::physical_item_path(tcx, trait_id, crate_name, &["ser", "Serializer"])
-            || types::physical_item_path(
-                tcx,
-                trait_id,
-                crate_name,
-                &["ser", "SerializeStruct"],
-            )
-    }) || types::physical_item_path(
-        tcx,
-        trait_id,
-        "core",
-        &["ops", "try_trait", "Try"],
-    ) || types::physical_item_path(
-        tcx,
-        trait_id,
-        "core",
-        &["ops", "try_trait", "FromResidual"],
-    )
+            || types::physical_item_path(tcx, trait_id, crate_name, &["ser", "SerializeStruct"])
+    }) || types::physical_item_path(tcx, trait_id, "core", &["ops", "try_trait", "Try"])
+        || types::physical_item_path(tcx, trait_id, "core", &["ops", "try_trait", "FromResidual"])
 }
 
 fn resolve_fixed_helper<'tcx>(
@@ -502,7 +491,9 @@ fn fixed_helper_result<'tcx>(
     if active.contains(&instance)
         || active.len() >= tcx.recursion_limit().0
         || !tcx.is_mir_available(instance.def_id())
-        || arguments.iter().any(|origin| !matches!(origin, Origin::Data { .. }))
+        || arguments
+            .iter()
+            .any(|origin| !matches!(origin, Origin::Data { .. }))
     {
         return None;
     }
@@ -547,9 +538,9 @@ fn fixed_helper_result<'tcx>(
             }
         }
         match &body.basic_blocks[*block].terminator().kind {
-            TerminatorKind::Goto { .. }
-            | TerminatorKind::Return
-            | TerminatorKind::Unreachable => (),
+            TerminatorKind::Goto { .. } | TerminatorKind::Return | TerminatorKind::Unreachable => {
+                ()
+            }
             TerminatorKind::SwitchInt { discr, .. }
                 if matches!(
                     helper_operand_origin(
@@ -561,7 +552,10 @@ fn fixed_helper_result<'tcx>(
                         &mut HashSet::new(),
                     ),
                     Some(Origin::Data { .. })
-                ) => (),
+                ) =>
+            {
+                ()
+            }
             _ => {
                 active.pop();
                 return None;
@@ -592,9 +586,9 @@ fn helper_operand_origin<'tcx>(
     active: &mut HashSet<Local>,
 ) -> Option<Origin> {
     match operand {
-        Operand::Copy(place) | Operand::Move(place) => helper_place_origin(
-            tcx, body, place, arguments, reachable, active,
-        ),
+        Operand::Copy(place) | Operand::Move(place) => {
+            helper_place_origin(tcx, body, place, arguments, reachable, active)
+        }
         Operand::Constant(constant)
             if constant
                 .const_
@@ -692,9 +686,9 @@ fn helper_rvalue_origin<'tcx>(
     active: &mut HashSet<Local>,
 ) -> Option<Origin> {
     match value {
-        Rvalue::Use(operand, _) => helper_operand_origin(
-            tcx, body, operand, arguments, reachable, active,
-        ),
+        Rvalue::Use(operand, _) => {
+            helper_operand_origin(tcx, body, operand, arguments, reachable, active)
+        }
         Rvalue::Ref(_, BorrowKind::Shared, place) | Rvalue::CopyForDeref(place) => {
             helper_place_origin(tcx, body, place, arguments, reachable, active)
         }
@@ -706,9 +700,7 @@ fn helper_rvalue_origin<'tcx>(
         Rvalue::Aggregate(kind, operands) if !matches!(**kind, mir::AggregateKind::Closure(..)) => {
             let mut origin = None;
             for operand in operands {
-                let next = helper_operand_origin(
-                    tcx, body, operand, arguments, reachable, active,
-                )?;
+                let next = helper_operand_origin(tcx, body, operand, arguments, reachable, active)?;
                 origin = Some(merge(origin, next)?);
             }
             origin.or(Some(Origin::Data {
@@ -719,19 +711,20 @@ fn helper_rvalue_origin<'tcx>(
         Rvalue::Repeat(operand, count) if count.try_to_target_usize(tcx).is_some() => {
             helper_operand_origin(tcx, body, operand, arguments, reachable, active)
         }
-        Rvalue::Discriminant(place) => helper_place_origin(
-            tcx, body, place, arguments, reachable, active,
-        )
-        .map(|origin| match origin {
-            Origin::Data { source, .. } => Origin::Data {
-                source,
-                fixed: true,
-            },
-            other => other,
-        }),
-        Rvalue::UnaryOp(_, operand) => helper_operand_origin(
-            tcx, body, operand, arguments, reachable, active,
-        ),
+        Rvalue::Discriminant(place) => {
+            helper_place_origin(tcx, body, place, arguments, reachable, active).map(|origin| {
+                match origin {
+                    Origin::Data { source, .. } => Origin::Data {
+                        source,
+                        fixed: true,
+                    },
+                    other => other,
+                }
+            })
+        }
+        Rvalue::UnaryOp(_, operand) => {
+            helper_operand_origin(tcx, body, operand, arguments, reachable, active)
+        }
         Rvalue::BinaryOp(_, operands) => {
             let (left, right) = &**operands;
             combine_data(
@@ -743,7 +736,10 @@ fn helper_rvalue_origin<'tcx>(
     }
 }
 
-fn exactly_one<'call, 'tcx>(calls: &'call [Call<'tcx>], kind: CallKind) -> Option<&'call Call<'tcx>> {
+fn exactly_one<'call, 'tcx>(
+    calls: &'call [Call<'tcx>],
+    kind: CallKind,
+) -> Option<&'call Call<'tcx>> {
     let mut matching = calls.iter().filter(|call| call.kind == kind);
     let call = matching.next()?;
     matching.next().is_none().then_some(call)
@@ -797,7 +793,10 @@ fn cleanup_paths_are_bounded<'tcx>(
     let Some(state_branch) = branch_for_operation.get(&structure.destination).copied() else {
         return false;
     };
-    let state_ty = end.arguments.first().map(|argument| argument.ty(body, tcx).peel_refs());
+    let state_ty = end
+        .arguments
+        .first()
+        .map(|argument| argument.ty(body, tcx).peel_refs());
     let Some(state_ty) = state_ty else {
         return false;
     };
@@ -813,14 +812,8 @@ fn cleanup_paths_are_bounded<'tcx>(
             allowed_drop_locals.insert(local, body.local_decls[serializer].ty);
         }
         if body.local_decls[local].ty == state_ty
-            && local_origin(
-                tcx,
-                body,
-                local,
-                normal,
-                calls,
-                &mut HashSet::new(),
-            ) == Some(Origin::BranchOutput(state_branch))
+            && local_origin(tcx, body, local, normal, calls, &mut HashSet::new())
+                == Some(Origin::BranchOutput(state_branch))
         {
             allowed_drop_locals.insert(local, state_ty);
         }
@@ -841,11 +834,8 @@ fn cleanup_paths_are_bounded<'tcx>(
 
     let mut pending = entries.to_vec();
     for block in normal {
-        let TerminatorKind::Drop {
-            place,
-            unwind,
-            ..
-        } = &body.basic_blocks[*block].terminator().kind
+        let TerminatorKind::Drop { place, unwind, .. } =
+            &body.basic_blocks[*block].terminator().kind
         else {
             continue;
         };
@@ -853,7 +843,8 @@ fn cleanup_paths_are_bounded<'tcx>(
             return false;
         }
         let on_error_path = branches.iter().any(|branch| {
-            let Some((_, break_target, continue_target)) = switch_for_branch.get(&branch.destination)
+            let Some((_, break_target, continue_target)) =
+                switch_for_branch.get(&branch.destination)
             else {
                 return false;
             };
@@ -878,13 +869,14 @@ fn cleanup_paths_are_bounded<'tcx>(
         }
         let data = &body.basic_blocks[block];
         if data.statements.iter().any(|statement| {
-            !drop_flag_statement(body, statement) && !matches!(
-                &statement.kind,
-                StatementKind::StorageLive(_)
-                    | StatementKind::StorageDead(_)
-                    | StatementKind::Nop
-                    | StatementKind::FakeRead(_)
-            )
+            !drop_flag_statement(body, statement)
+                && !matches!(
+                    &statement.kind,
+                    StatementKind::StorageLive(_)
+                        | StatementKind::StorageDead(_)
+                        | StatementKind::Nop
+                        | StatementKind::FakeRead(_)
+                )
         }) {
             return false;
         }
@@ -997,7 +989,11 @@ fn dominators(
         .collect();
     loop {
         let mut changed = false;
-        for block in reachable.iter().copied().filter(|block| *block != mir::START_BLOCK) {
+        for block in reachable
+            .iter()
+            .copied()
+            .filter(|block| *block != mir::START_BLOCK)
+        {
             let predecessors: Vec<_> = reachable
                 .iter()
                 .copied()
@@ -1098,8 +1094,12 @@ fn control_flow_targets<'tcx>(
     let ty::Adt(owner, _) = body.local_decls[branch].ty.kind() else {
         return None;
     };
-    if !types::physical_item_path(tcx, owner.did(), "core", &["ops", "control_flow", "ControlFlow"])
-        || owner.variants().len() != 2
+    if !types::physical_item_path(
+        tcx,
+        owner.did(),
+        "core",
+        &["ops", "control_flow", "ControlFlow"],
+    ) || owner.variants().len() != 2
     {
         return None;
     }
@@ -1165,10 +1165,7 @@ fn place_origin<'tcx>(
     if place.local == Local::from_usize(2) && place.projection.is_empty() {
         return Some(Origin::Serializer);
     }
-    if let Some(call) = calls
-        .iter()
-        .find(|call| call.destination == place.local)
-    {
+    if let Some(call) = calls.iter().find(|call| call.destination == place.local) {
         return match call.kind {
             CallKind::SerializeStruct | CallKind::SerializeField if place.projection.is_empty() => {
                 Some(Origin::OperationResult(place.local))
@@ -1179,16 +1176,7 @@ fn place_origin<'tcx>(
                 let arguments: Option<Vec<_>> = call
                     .arguments
                     .iter()
-                    .map(|argument| {
-                        operand_origin(
-                            tcx,
-                            body,
-                            argument,
-                            reachable,
-                            calls,
-                            active,
-                        )
-                    })
+                    .map(|argument| operand_origin(tcx, body, argument, reachable, calls, active))
                     .collect();
                 fixed_helper_result(tcx, instance, &arguments?, &mut Vec::new())
             }
@@ -1208,8 +1196,12 @@ fn branch_projection(tcx: TyCtxt<'_>, body: &mir::Body<'_>, place: &Place<'_>) -
     let ty::Adt(owner, _) = body.local_decls[place.local].ty.kind() else {
         return None;
     };
-    if !types::physical_item_path(tcx, owner.did(), "core", &["ops", "control_flow", "ControlFlow"])
-    {
+    if !types::physical_item_path(
+        tcx,
+        owner.did(),
+        "core",
+        &["ops", "control_flow", "ControlFlow"],
+    ) {
         return None;
     }
     let mut variant = None;
@@ -1309,19 +1301,17 @@ fn rvalue_origin<'tcx>(
             let origin = operand_origin(tcx, body, operand, reachable, calls, active)?;
             matches!(origin, Origin::Data { .. }).then_some(origin)
         }
-        Rvalue::Discriminant(place) => match place_origin(
-            tcx, body, place, reachable, calls, active,
-        )? {
-            Origin::BranchResult(branch) => Some(Origin::BranchTag(branch)),
-            Origin::Data { source, .. } => Some(Origin::Data {
-                source,
-                fixed: true,
-            }),
-            _ => None,
-        },
-        Rvalue::CopyForDeref(place) => {
-            place_origin(tcx, body, place, reachable, calls, active)
+        Rvalue::Discriminant(place) => {
+            match place_origin(tcx, body, place, reachable, calls, active)? {
+                Origin::BranchResult(branch) => Some(Origin::BranchTag(branch)),
+                Origin::Data { source, .. } => Some(Origin::Data {
+                    source,
+                    fixed: true,
+                }),
+                _ => None,
+            }
         }
+        Rvalue::CopyForDeref(place) => place_origin(tcx, body, place, reachable, calls, active),
         Rvalue::UnaryOp(_, operand) => {
             let origin = operand_origin(tcx, body, operand, reachable, calls, active)?;
             matches!(origin, Origin::Data { .. }).then_some(origin)
@@ -1422,27 +1412,23 @@ fn statements_are_bounded<'tcx>(
     calls: &[Call<'tcx>],
 ) -> bool {
     reachable.iter().all(|block| {
-        body.basic_blocks[*block].statements.iter().all(|statement| match &statement.kind {
-            StatementKind::StorageLive(_) | StatementKind::StorageDead(_) | StatementKind::Nop => {
-                true
-            }
-            StatementKind::Assign(assignment) => {
-                let (target, value) = &**assignment;
-                target.projection.is_empty()
-                    && target.local.as_usize() > body.arg_count
-                    && rvalue_origin(
-                        tcx,
-                        body,
-                        value,
-                        reachable,
-                        calls,
-                        &mut HashSet::new(),
-                    )
-                    .is_some()
-            }
-            StatementKind::FakeRead(_) => true,
-            _ => false,
-        })
+        body.basic_blocks[*block]
+            .statements
+            .iter()
+            .all(|statement| match &statement.kind {
+                StatementKind::StorageLive(_)
+                | StatementKind::StorageDead(_)
+                | StatementKind::Nop => true,
+                StatementKind::Assign(assignment) => {
+                    let (target, value) = &**assignment;
+                    target.projection.is_empty()
+                        && target.local.as_usize() > body.arg_count
+                        && rvalue_origin(tcx, body, value, reachable, calls, &mut HashSet::new())
+                            .is_some()
+                }
+                StatementKind::FakeRead(_) => true,
+                _ => false,
+            })
     })
 }
 
@@ -1455,11 +1441,16 @@ fn fixed_bool_operand<'tcx>(
 ) -> bool {
     matches!(operand.ty(body, tcx).kind(), ty::Bool)
         && operand_origin(tcx, body, operand, reachable, calls, &mut HashSet::new())
-            == Some(Origin::Data { source: false, fixed: true })
+            == Some(Origin::Data {
+                source: false,
+                fixed: true,
+            })
 }
 
 fn drop_flag_statement(body: &mir::Body<'_>, statement: &mir::Statement<'_>) -> bool {
-    let StatementKind::Assign(assignment) = &statement.kind else { return false; };
+    let StatementKind::Assign(assignment) = &statement.kind else {
+        return false;
+    };
     let (target, value) = &**assignment;
     target.local.as_usize() > body.arg_count
         && target.projection.is_empty()
@@ -1502,15 +1493,18 @@ fn return_values_are_unchanged<'tcx>(
             if !reachable.contains(&block) {
                 return false;
             }
-            if !path.insert(block) { continue; }
+            if !path.insert(block) {
+                continue;
+            }
             let data = &body.basic_blocks[block];
             if data.statements.iter().any(|statement| {
-                !drop_flag_statement(body, statement) && !matches!(
-                    &statement.kind,
-                    StatementKind::StorageLive(_)
-                        | StatementKind::StorageDead(_)
-                        | StatementKind::Nop
-                )
+                !drop_flag_statement(body, statement)
+                    && !matches!(
+                        &statement.kind,
+                        StatementKind::StorageLive(_)
+                            | StatementKind::StorageDead(_)
+                            | StatementKind::Nop
+                    )
             }) {
                 return false;
             }
@@ -1518,8 +1512,9 @@ fn return_values_are_unchanged<'tcx>(
                 TerminatorKind::Return => {
                     returned.insert(block);
                 }
-                TerminatorKind::Goto { target }
-                | TerminatorKind::Drop { target, .. } => pending.push(*target),
+                TerminatorKind::Goto { target } | TerminatorKind::Drop { target, .. } => {
+                    pending.push(*target)
+                }
                 TerminatorKind::SwitchInt { discr, targets }
                     if fixed_bool_operand(tcx, body, discr, reachable, calls) =>
                 {

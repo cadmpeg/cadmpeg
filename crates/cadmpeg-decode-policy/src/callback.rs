@@ -2,15 +2,17 @@
 //! Core and container callbacks defer child obligations to concrete callers.
 use crate::{external, types, Analysis};
 use rustc_hir::intravisit::{walk_expr, Visitor};
-use rustc_hir::{
-    def::Res, Expr, ExprKind, HirId, MatchSource, Node, Pat, PatKind, StmtKind,
-};
+use rustc_hir::{def::Res, Expr, ExprKind, HirId, MatchSource, Node, Pat, PatKind, StmtKind};
 use rustc_middle::ty::{self, Instance, Ty, TyCtxt, TypeckResults};
 use rustc_span::def_id::DefId;
 
 fn borrowed_identity_builder(tcx: TyCtxt<'_>, definition: DefId) -> bool {
     types::physical_inherent_method(
-        tcx, definition, "cadmpeg_ir", &["index", "identities", "BorrowedIdentities"], "build",
+        tcx,
+        definition,
+        "cadmpeg_ir",
+        &["index", "identities", "BorrowedIdentities"],
+        "build",
     )
 }
 
@@ -24,13 +26,10 @@ fn allocated_vec_constructor(tcx: TyCtxt<'_>, definition: DefId) -> bool {
             if types::physical_item_path(tcx, owner.did(), "alloc", &["vec", "Vec"]))
 }
 
-fn core_decode_method(
-    tcx: TyCtxt<'_>,
-    definition: DefId,
-    owner_path: &str,
-    method: &str,
-) -> bool {
-    let Some(owner_path) = owner_path.strip_prefix("cadmpeg_core::") else { return false; };
+fn core_decode_method(tcx: TyCtxt<'_>, definition: DefId, owner_path: &str, method: &str) -> bool {
+    let Some(owner_path) = owner_path.strip_prefix("cadmpeg_core::") else {
+        return false;
+    };
     types::inherent_method_owner(tcx, definition, "cadmpeg_core", owner_path, method)
 }
 
@@ -184,7 +183,10 @@ impl<'tcx> EmitterEvidence<'tcx> {
                     .iter()
                     .any(|operand| strip_callback_wrappers(operand).hir_id == expression.hir_id);
             }
-            if !matches!(parent.kind, ExprKind::DropTemps(_) | ExprKind::AddrOf(_, _, _)) {
+            if !matches!(
+                parent.kind,
+                ExprKind::DropTemps(_) | ExprKind::AddrOf(_, _, _)
+            ) {
                 return false;
             }
         }
@@ -247,9 +249,7 @@ fn block_tail<'tcx>(expression: &'tcx Expr<'tcx>) -> Option<&'tcx Expr<'tcx>> {
     }
 }
 
-fn statement_expression<'tcx>(
-    statement: &rustc_hir::Stmt<'tcx>,
-) -> Option<&'tcx Expr<'tcx>> {
+fn statement_expression<'tcx>(statement: &rustc_hir::Stmt<'tcx>) -> Option<&'tcx Expr<'tcx>> {
     match statement.kind {
         StmtKind::Semi(expression) | StmtKind::Expr(expression) => Some(expression),
         _ => None,
@@ -282,9 +282,11 @@ fn charges_identity_length<'tcx>(
         return false;
     };
     if !types::physical_item_path(
-        tcx, conversion, "cadmpeg_core", &["decode", "view", "u64_from_index"],
-    )
-    {
+        tcx,
+        conversion,
+        "cadmpeg_core",
+        &["decode", "view", "u64_from_index"],
+    ) {
         return false;
     }
     let Some(length) = arguments.first().copied() else {
@@ -330,13 +332,21 @@ fn charged_borrowed_identity_builder(tcx: TyCtxt<'_>, definition: DefId) -> bool
         return false;
     };
     let body = tcx.hir_body_owned_by(owner);
-    let Some(context) = body.params.first().and_then(|parameter| local_binding(parameter.pat)) else {
+    let Some(context) = body
+        .params
+        .first()
+        .and_then(|parameter| local_binding(parameter.pat))
+    else {
         return false;
     };
     if body.params.len() != 2 {
         return false;
     }
-    let Some(visit) = body.params.get(1).and_then(|parameter| local_binding(parameter.pat)) else {
+    let Some(visit) = body
+        .params
+        .get(1)
+        .and_then(|parameter| local_binding(parameter.pat))
+    else {
         return false;
     };
     let ExprKind::Block(builder_block, _) = body.value.kind else {
@@ -363,7 +373,11 @@ fn charged_borrowed_identity_builder(tcx: TyCtxt<'_>, definition: DefId) -> bool
     if emitter_body.params.len() != 2 {
         return false;
     }
-    let Some(id) = emitter_body.params.first().and_then(|parameter| local_binding(parameter.pat)) else {
+    let Some(id) = emitter_body
+        .params
+        .first()
+        .and_then(|parameter| local_binding(parameter.pat))
+    else {
         return false;
     };
     let ExprKind::Block(block, _) = emitter_body.value.kind else {
@@ -381,8 +395,7 @@ fn charged_borrowed_identity_builder(tcx: TyCtxt<'_>, definition: DefId) -> bool
     if !try_expression(first_statement) || !try_expression(second_statement) {
         return false;
     }
-    let Some((first_work, first_operands)) =
-        only_charge_call(tcx, emitter_typeck, first_statement)
+    let Some((first_work, first_operands)) = only_charge_call(tcx, emitter_typeck, first_statement)
     else {
         return false;
     };
@@ -391,7 +404,9 @@ fn charged_borrowed_identity_builder(tcx: TyCtxt<'_>, definition: DefId) -> bool
     else {
         return false;
     };
-    if !first_operands.get(1).is_some_and(|amount| literal_one(amount))
+    if !first_operands
+        .get(1)
+        .is_some_and(|amount| literal_one(amount))
         || !second_operands
             .get(1)
             .is_some_and(|amount| charges_identity_length(tcx, emitter_typeck, amount, id))
@@ -422,8 +437,7 @@ fn charged_borrowed_identity_builder(tcx: TyCtxt<'_>, definition: DefId) -> bool
         || emitter_evidence.storage_calls.len() != 1
         || emitter_evidence.storage_callbacks.len() != 1
         || !block_tail(emitter_body.value).is_some_and(|tail| {
-            strip_callback_wrappers(tail).hir_id
-                == strip_callback_wrappers(storage_call).hir_id
+            strip_callback_wrappers(tail).hir_id == strip_callback_wrappers(storage_call).hir_id
         })
     {
         return false;
@@ -439,8 +453,7 @@ fn charged_borrowed_identity_builder(tcx: TyCtxt<'_>, definition: DefId) -> bool
     let Some(storage_tail) = block_tail(storage_body.value) else {
         return false;
     };
-    let Some((storage_push, push_operands)) = expression_call(storage_typeck, storage_tail)
-    else {
+    let Some((storage_push, push_operands)) = expression_call(storage_typeck, storage_tail) else {
         return false;
     };
     if !core_decode_method(
@@ -496,9 +509,7 @@ fn charged_borrowed_identity_builder(tcx: TyCtxt<'_>, definition: DefId) -> bool
             continue;
         };
         if binding == storage_binding {
-            if !try_expression(initializer)
-                || initializer.span.lo() >= locator.calls[0].span.lo()
-            {
+            if !try_expression(initializer) || initializer.span.lo() >= locator.calls[0].span.lo() {
                 return false;
             }
             let mut finder = MethodFinder {
@@ -585,7 +596,8 @@ fn charged_borrowed_identity_invocation<'tcx>(
         return false;
     }
     let supplied = strip_callback_wrappers(operands[1]);
-    if !matches!(typeck.expr_ty(supplied).kind(), ty::Closure(definition, _) if *definition == callback) {
+    if !matches!(typeck.expr_ty(supplied).kind(), ty::Closure(definition, _) if *definition == callback)
+    {
         return false;
     }
     let mut findings = crate::Findings::default();
@@ -654,10 +666,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             .collect()
     }
 
-    pub(crate) fn borrowed_identity_callback_call(
-        &self,
-        expression: &'tcx Expr<'tcx>,
-    ) -> bool {
+    pub(crate) fn borrowed_identity_callback_call(&self, expression: &'tcx Expr<'tcx>) -> bool {
         let ExprKind::Call(callee, _) = expression.kind else {
             return false;
         };
@@ -671,15 +680,17 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let ty::Dynamic(predicates, _) = callee_type.kind() else {
             return false;
         };
-        if predicates
-            .principal()
-            .is_none_or(|principal| self.tcx.lang_items().fn_mut_trait() != Some(principal.def_id()))
-            || !self.propagated(expression)
+        if predicates.principal().is_none_or(|principal| {
+            self.tcx.lang_items().fn_mut_trait() != Some(principal.def_id())
+        }) || !self.propagated(expression)
         {
             return false;
         }
 
-        let closure = self.tcx.hir_enclosing_body_owner(expression.hir_id).to_def_id();
+        let closure = self
+            .tcx
+            .hir_enclosing_body_owner(expression.hir_id)
+            .to_def_id();
         let Some(closure_local) = closure.as_local() else {
             return false;
         };
@@ -709,12 +720,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 }
                 ExprKind::Call(_, _) if saw_callback_closure => {
                     let owner = self.tcx.hir_enclosing_body_owner(parent.hir_id);
-                    return charged_borrowed_identity_invocation(
-                        self.tcx,
-                        owner,
-                        parent,
-                        closure,
-                    );
+                    return charged_borrowed_identity_invocation(self.tcx, owner, parent, closure);
                 }
                 _ => (),
             }

@@ -41,15 +41,19 @@ pub(crate) fn forwarded_from<'tcx>(
     let body = tcx.instance_mir(instance.def);
     let mut target = None;
     for block in body.basic_blocks.iter() {
-        if block.statements.iter().any(|statement| match &statement.kind {
-            rustc_middle::mir::StatementKind::StorageLive(_)
-            | rustc_middle::mir::StatementKind::StorageDead(_)
-            | rustc_middle::mir::StatementKind::Nop => false,
-            rustc_middle::mir::StatementKind::Assign(assignment) => {
-                !matches!(&assignment.1, Rvalue::Use(..))
-            }
-            _ => true,
-        }) {
+        if block
+            .statements
+            .iter()
+            .any(|statement| match &statement.kind {
+                rustc_middle::mir::StatementKind::StorageLive(_)
+                | rustc_middle::mir::StatementKind::StorageDead(_)
+                | rustc_middle::mir::StatementKind::Nop => false,
+                rustc_middle::mir::StatementKind::Assign(assignment) => {
+                    !matches!(&assignment.1, Rvalue::Use(..))
+                }
+                _ => true,
+            })
+        {
             return None;
         }
         match &block.terminator().kind {
@@ -59,10 +63,8 @@ pub(crate) fn forwarded_from<'tcx>(
                 destination,
                 ..
             } => {
-                let function = instance.instantiate_mir(
-                    tcx,
-                    ty::EarlyBinder::bind(tcx, func.ty(body, tcx)),
-                );
+                let function =
+                    instance.instantiate_mir(tcx, ty::EarlyBinder::bind(tcx, func.ty(body, tcx)));
                 let ty::FnDef(definition, arguments) = function.kind() else {
                     return None;
                 };

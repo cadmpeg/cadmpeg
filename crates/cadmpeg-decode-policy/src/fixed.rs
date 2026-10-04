@@ -33,15 +33,17 @@ pub(crate) fn copy_conversion_body_is_fixed<'tcx>(
         return false;
     }
     body.basic_blocks.iter().all(|block| {
-        block.statements.iter().all(|statement| {
-            !matches!(&statement.kind, StatementKind::Intrinsic(_))
-        }) && !matches!(
-            &block.terminator().kind,
-            TerminatorKind::Call { .. }
-                | TerminatorKind::Drop { .. }
-                | TerminatorKind::InlineAsm { .. }
-                | TerminatorKind::TailCall { .. }
-        )
+        block
+            .statements
+            .iter()
+            .all(|statement| !matches!(&statement.kind, StatementKind::Intrinsic(_)))
+            && !matches!(
+                &block.terminator().kind,
+                TerminatorKind::Call { .. }
+                    | TerminatorKind::Drop { .. }
+                    | TerminatorKind::InlineAsm { .. }
+                    | TerminatorKind::TailCall { .. }
+            )
     })
 }
 

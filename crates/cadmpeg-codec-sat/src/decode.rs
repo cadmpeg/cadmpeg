@@ -355,7 +355,11 @@ fn build_result(
 
     let geometry_transferred =
         !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());
-    ctx.extend_vec(&mut losses, dialect_loss(ctx, kernel)?, "SAT dialect loss notes")?;
+    ctx.extend_vec(
+        &mut losses,
+        dialect_loss(ctx, kernel)?,
+        "SAT dialect loss notes",
+    )?;
     if !geometry_transferred {
         let branch = match text_dialect {
             Some(dialect) => ctx.format_scoped(

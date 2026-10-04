@@ -150,7 +150,9 @@ pub(crate) fn serialize_instance<'tcx>(
     {
         return None;
     }
-    let concrete_trait = implementation_trait.instantiate(tcx, source_args).skip_norm_wip();
+    let concrete_trait = implementation_trait
+        .instantiate(tcx, source_args)
+        .skip_norm_wip();
     if !serialize_trait(tcx, concrete_trait.def_id) || concrete_trait.self_ty() != source {
         return None;
     }
@@ -161,11 +163,8 @@ pub(crate) fn serialize_instance<'tcx>(
         return None;
     }
     let identity = ty::GenericArgs::identity_for_item(tcx, method);
-    let method_args = tcx.mk_args_from_iter(
-        source_args
-            .iter()
-            .chain(identity.iter().skip(parent_count)),
-    );
+    let method_args =
+        tcx.mk_args_from_iter(source_args.iter().chain(identity.iter().skip(parent_count)));
     if method_args.len() != method_generics.count() || !tcx.is_mir_available(method) {
         return None;
     }
@@ -271,13 +270,7 @@ pub(crate) fn derived_children<'tcx>(
                 ..
             } => {
                 if !checked_add_assertion_is_bounded(
-                    tcx,
-                    &body,
-                    *block,
-                    cond,
-                    *expected,
-                    msg,
-                    &reachable,
+                    tcx, &body, *block, cond, *expected, msg, &reachable,
                 ) {
                     return None;
                 }
@@ -285,13 +278,10 @@ pub(crate) fn derived_children<'tcx>(
                     cleanup_entries.push(*cleanup);
                 }
             }
-            TerminatorKind::Goto { .. }
-            | TerminatorKind::Return
-            | TerminatorKind::Unreachable => (),
-            TerminatorKind::Drop {
-                unwind,
-                ..
-            } => {
+            TerminatorKind::Goto { .. } | TerminatorKind::Return | TerminatorKind::Unreachable => {
+                ()
+            }
+            TerminatorKind::Drop { unwind, .. } => {
                 if let UnwindAction::Cleanup(cleanup) = unwind {
                     cleanup_entries.push(*cleanup);
                 }
@@ -303,9 +293,7 @@ pub(crate) fn derived_children<'tcx>(
     // A drop can appear before its producing call in the unordered reachable
     // block set. Validate drops only after collecting the complete call graph.
     for block in &reachable {
-        if let TerminatorKind::Drop { place, .. } =
-            &body.basic_blocks[*block].terminator().kind
-        {
+        if let TerminatorKind::Drop { place, .. } = &body.basic_blocks[*block].terminator().kind {
             if !drop_is_protocol_temporary(tcx, instance, &body, serializer, place, &calls) {
                 return None;
             }
@@ -330,7 +318,15 @@ pub(crate) fn derived_children<'tcx>(
     }) || !switches_are_bounded(tcx, instance, &body, &reachable, &calls)
         || !statements_are_bounded(tcx, instance, &body, &reachable, &calls)
         || !control_flow_is_bounded(tcx, instance, &body, serializer, &reachable, &calls)
-        || !cleanup_is_typed(tcx, instance, &body, serializer, &reachable, &cleanup_entries, &calls)
+        || !cleanup_is_typed(
+            tcx,
+            instance,
+            &body,
+            serializer,
+            &reachable,
+            &cleanup_entries,
+            &calls,
+        )
         || !all_returns_are_results(tcx, instance, &body, &reachable, &calls)
     {
         return None;
@@ -347,63 +343,197 @@ fn classify_call(tcx: TyCtxt<'_>, definition: DefId) -> Option<Kind> {
     if tagged_newtype_helper(tcx, definition) {
         return Some(Kind::TaggedNewtype);
     }
-    if method_of(tcx, definition, &["serde", "serde_core"], &["ser", "Serialize"], "serialize") {
+    if method_of(
+        tcx,
+        definition,
+        &["serde", "serde_core"],
+        &["ser", "Serialize"],
+        "serialize",
+    ) {
         return Some(Kind::Serialize);
     }
-    if method_of(tcx, definition, &["serde", "serde_core"], &["ser", "Serializer"], "serialize_struct") {
+    if method_of(
+        tcx,
+        definition,
+        &["serde", "serde_core"],
+        &["ser", "Serializer"],
+        "serialize_struct",
+    ) {
         return Some(Kind::Struct);
     }
-    if method_of(tcx, definition, &["serde", "serde_core"], &["ser", "Serializer"], "serialize_struct_variant") {
+    if method_of(
+        tcx,
+        definition,
+        &["serde", "serde_core"],
+        &["ser", "Serializer"],
+        "serialize_struct_variant",
+    ) {
         return Some(Kind::StructVariant);
     }
-    if method_of(tcx, definition, &["serde", "serde_core"], &["ser", "Serializer"], "serialize_map") {
+    if method_of(
+        tcx,
+        definition,
+        &["serde", "serde_core"],
+        &["ser", "Serializer"],
+        "serialize_map",
+    ) {
         return Some(Kind::Map);
     }
-    if method_of(tcx, definition, &["serde", "serde_core"], &["ser", "Serializer"], "serialize_seq") {
+    if method_of(
+        tcx,
+        definition,
+        &["serde", "serde_core"],
+        &["ser", "Serializer"],
+        "serialize_seq",
+    ) {
         return Some(Kind::Seq);
     }
-    if method_of(tcx, definition, &["serde", "serde_core"], &["ser", "Serializer"], "serialize_tuple") {
+    if method_of(
+        tcx,
+        definition,
+        &["serde", "serde_core"],
+        &["ser", "Serializer"],
+        "serialize_tuple",
+    ) {
         return Some(Kind::Tuple);
     }
-    if method_of(tcx, definition, &["serde", "serde_core"], &["ser", "Serializer"], "serialize_tuple_struct") {
+    if method_of(
+        tcx,
+        definition,
+        &["serde", "serde_core"],
+        &["ser", "Serializer"],
+        "serialize_tuple_struct",
+    ) {
         return Some(Kind::TupleStruct);
     }
-    if method_of(tcx, definition, &["serde", "serde_core"], &["ser", "Serializer"], "serialize_tuple_variant") {
+    if method_of(
+        tcx,
+        definition,
+        &["serde", "serde_core"],
+        &["ser", "Serializer"],
+        "serialize_tuple_variant",
+    ) {
         return Some(Kind::TupleVariant);
     }
-    if method_of(tcx, definition, &["serde", "serde_core"], &["ser", "Serializer"], "serialize_some") {
+    if method_of(
+        tcx,
+        definition,
+        &["serde", "serde_core"],
+        &["ser", "Serializer"],
+        "serialize_some",
+    ) {
         return Some(Kind::Some);
     }
-    if method_of(tcx, definition, &["serde", "serde_core"], &["ser", "Serializer"], "serialize_newtype_struct") {
+    if method_of(
+        tcx,
+        definition,
+        &["serde", "serde_core"],
+        &["ser", "Serializer"],
+        "serialize_newtype_struct",
+    ) {
         return Some(Kind::NewtypeStruct);
     }
-    if method_of(tcx, definition, &["serde", "serde_core"], &["ser", "Serializer"], "serialize_newtype_variant") {
+    if method_of(
+        tcx,
+        definition,
+        &["serde", "serde_core"],
+        &["ser", "Serializer"],
+        "serialize_newtype_variant",
+    ) {
         return Some(Kind::NewtypeVariant);
     }
-    if method_of(tcx, definition, &["serde", "serde_core"], &["ser", "Serializer"], "serialize_unit") {
+    if method_of(
+        tcx,
+        definition,
+        &["serde", "serde_core"],
+        &["ser", "Serializer"],
+        "serialize_unit",
+    ) {
         return Some(Kind::Unit);
     }
-    if method_of(tcx, definition, &["serde", "serde_core"], &["ser", "Serializer"], "serialize_unit_struct") {
+    if method_of(
+        tcx,
+        definition,
+        &["serde", "serde_core"],
+        &["ser", "Serializer"],
+        "serialize_unit_struct",
+    ) {
         return Some(Kind::UnitStruct);
     }
-    if method_of(tcx, definition, &["serde", "serde_core"], &["ser", "Serializer"], "serialize_unit_variant") {
+    if method_of(
+        tcx,
+        definition,
+        &["serde", "serde_core"],
+        &["ser", "Serializer"],
+        "serialize_unit_variant",
+    ) {
         return Some(Kind::UnitVariant);
     }
     for (trait_path, kind, methods) in [
-        (&["ser", "SerializeStruct"][..], Kind::StructField, &["serialize_field"][..]),
-        (&["ser", "SerializeStructVariant"][..], Kind::StructVariantField, &["serialize_field"][..]),
-        (&["ser", "SerializeStruct"][..], Kind::SkipField, &["skip_field"][..]),
-        (&["ser", "SerializeStructVariant"][..], Kind::SkipField, &["skip_field"][..]),
-        (&["ser", "SerializeMap"][..], Kind::MapEntry, &["serialize_entry"][..]),
-        (&["ser", "SerializeMap"][..], Kind::MapKey, &["serialize_key"][..]),
-        (&["ser", "SerializeMap"][..], Kind::MapValue, &["serialize_value"][..]),
-        (&["ser", "SerializeSeq"][..], Kind::Element, &["serialize_element"][..]),
-        (&["ser", "SerializeTuple"][..], Kind::Element, &["serialize_element"][..]),
-        (&["ser", "SerializeTupleStruct"][..], Kind::TupleStructField, &["serialize_field"][..]),
-        (&["ser", "SerializeTupleVariant"][..], Kind::TupleVariantField, &["serialize_field"][..]),
+        (
+            &["ser", "SerializeStruct"][..],
+            Kind::StructField,
+            &["serialize_field"][..],
+        ),
+        (
+            &["ser", "SerializeStructVariant"][..],
+            Kind::StructVariantField,
+            &["serialize_field"][..],
+        ),
+        (
+            &["ser", "SerializeStruct"][..],
+            Kind::SkipField,
+            &["skip_field"][..],
+        ),
+        (
+            &["ser", "SerializeStructVariant"][..],
+            Kind::SkipField,
+            &["skip_field"][..],
+        ),
+        (
+            &["ser", "SerializeMap"][..],
+            Kind::MapEntry,
+            &["serialize_entry"][..],
+        ),
+        (
+            &["ser", "SerializeMap"][..],
+            Kind::MapKey,
+            &["serialize_key"][..],
+        ),
+        (
+            &["ser", "SerializeMap"][..],
+            Kind::MapValue,
+            &["serialize_value"][..],
+        ),
+        (
+            &["ser", "SerializeSeq"][..],
+            Kind::Element,
+            &["serialize_element"][..],
+        ),
+        (
+            &["ser", "SerializeTuple"][..],
+            Kind::Element,
+            &["serialize_element"][..],
+        ),
+        (
+            &["ser", "SerializeTupleStruct"][..],
+            Kind::TupleStructField,
+            &["serialize_field"][..],
+        ),
+        (
+            &["ser", "SerializeTupleVariant"][..],
+            Kind::TupleVariantField,
+            &["serialize_field"][..],
+        ),
     ] {
         if methods.iter().any(|method| {
-            method_of(tcx, definition, &["serde", "serde_core"], trait_path, method)
+            method_of(
+                tcx,
+                definition,
+                &["serde", "serde_core"],
+                trait_path,
+                method,
+            )
         }) {
             return Some(kind);
         }
@@ -476,9 +606,9 @@ fn method_of(
 }
 
 fn serialize_trait(tcx: TyCtxt<'_>, definition: DefId) -> bool {
-    ["serde", "serde_core"]
-        .iter()
-        .any(|crate_name| types::physical_item_path(tcx, definition, crate_name, &["ser", "Serialize"]))
+    ["serde", "serde_core"].iter().any(|crate_name| {
+        types::physical_item_path(tcx, definition, crate_name, &["ser", "Serialize"])
+    })
 }
 
 fn call_shape_is_valid<'tcx>(
@@ -509,7 +639,9 @@ fn call_shape_is_valid<'tcx>(
             )
         })
         .collect();
-    let Some(origins) = origins else { return false; };
+    let Some(origins) = origins else {
+        return false;
+    };
     let call_result = instantiate_ty(tcx, instance, body.local_decls[destination].ty);
     if kind == Kind::TryBranch {
         if arguments.len() != 1 {
@@ -526,7 +658,11 @@ fn call_shape_is_valid<'tcx>(
         return arguments.len() == 1
             && matches!(origins[0], Origin::BranchResidual(_))
             && is_same_result(tcx, call_result, method_output(tcx, instance, body))
-            && is_result_residual(tcx, instantiate_ty(tcx, instance, arguments[0].ty(body, tcx)), serializer);
+            && is_result_residual(
+                tcx,
+                instantiate_ty(tcx, instance, arguments[0].ty(body, tcx)),
+                serializer,
+            );
     }
     if kind == Kind::Predicate {
         return matches!(call_result.kind(), ty::Bool)
@@ -569,15 +705,18 @@ fn call_shape_is_valid<'tcx>(
     {
         return false;
     }
-    if mode == SerializerMode::Tagged
-        && matches!(kind, Kind::StructVariant | Kind::TupleVariant)
-    {
+    if mode == SerializerMode::Tagged && matches!(kind, Kind::StructVariant | Kind::TupleVariant) {
         return false;
     }
 
     match kind {
-        Kind::Struct | Kind::StructVariant | Kind::Map | Kind::Seq | Kind::Tuple
-        | Kind::TupleStruct | Kind::TupleVariant => {
+        Kind::Struct
+        | Kind::StructVariant
+        | Kind::Map
+        | Kind::Seq
+        | Kind::Tuple
+        | Kind::TupleStruct
+        | Kind::TupleVariant => {
             if origins.first() != Some(&Origin::Serializer) {
                 return false;
             }
@@ -586,20 +725,18 @@ fn call_shape_is_valid<'tcx>(
             {
                 return false;
             }
-            constructor_metadata_is_fixed(
-                tcx,
-                instance,
-                body,
-                kind,
-                arguments,
-                &origins,
-                reachable,
-            )
+            constructor_metadata_is_fixed(tcx, instance, body, kind, arguments, &origins, reachable)
         }
         Kind::StructField | Kind::StructVariantField => {
             arguments.len() == 3
                 && matches!(origins[0], Origin::BranchContinue(_))
-                && matches!(origins[1], Origin::Data { source: false, fixed: true })
+                && matches!(
+                    origins[1],
+                    Origin::Data {
+                        source: false,
+                        fixed: true
+                    }
+                )
                 && is_bounded_data(origins[2])
         }
         Kind::TupleStructField | Kind::TupleVariantField => {
@@ -610,7 +747,13 @@ fn call_shape_is_valid<'tcx>(
         Kind::SkipField => {
             arguments.len() == 2
                 && matches!(origins[0], Origin::BranchContinue(_))
-                && matches!(origins[1], Origin::Data { source: false, fixed: true })
+                && matches!(
+                    origins[1],
+                    Origin::Data {
+                        source: false,
+                        fixed: true
+                    }
+                )
         }
         Kind::Element => {
             arguments.len() == 2
@@ -620,7 +763,13 @@ fn call_shape_is_valid<'tcx>(
         Kind::MapEntry => {
             arguments.len() == 3
                 && matches!(origins[0], Origin::BranchContinue(_))
-                && matches!(origins[1], Origin::Data { source: false, fixed: true })
+                && matches!(
+                    origins[1],
+                    Origin::Data {
+                        source: false,
+                        fixed: true
+                    }
+                )
                 && is_bounded_data(origins[2])
         }
         Kind::MapKey | Kind::MapValue => {
@@ -636,39 +785,64 @@ fn call_shape_is_valid<'tcx>(
             origins[1] == Origin::Serializer
                 || mode != SerializerMode::Tagged
                     && matches!(origins[1], Origin::FlatMap(_))
-                    && flat_map_type(tcx, instantiate_ty(tcx, instance, arguments[1].ty(body, tcx)))
+                    && flat_map_type(
+                        tcx,
+                        instantiate_ty(tcx, instance, arguments[1].ty(body, tcx)),
+                    )
         }
         Kind::Some => {
-            arguments.len() == 2
-                && origins[0] == Origin::Serializer
-                && is_bounded_data(origins[1])
+            arguments.len() == 2 && origins[0] == Origin::Serializer && is_bounded_data(origins[1])
         }
         Kind::NewtypeStruct => {
             arguments.len() == 3
                 && origins[0] == Origin::Serializer
-                && matches!(origins[1], Origin::Data { source: false, fixed: true })
+                && matches!(
+                    origins[1],
+                    Origin::Data {
+                        source: false,
+                        fixed: true
+                    }
+                )
                 && is_bounded_data(origins[2])
         }
         Kind::NewtypeVariant => {
             arguments.len() == 5
                 && origins[0] == Origin::Serializer
-                && origins[1..4]
-                    .iter()
-                    .all(|origin| matches!(origin, Origin::Data { source: false, fixed: true }))
+                && origins[1..4].iter().all(|origin| {
+                    matches!(
+                        origin,
+                        Origin::Data {
+                            source: false,
+                            fixed: true
+                        }
+                    )
+                })
                 && is_bounded_data(origins[4])
         }
         Kind::Unit => arguments.len() == 1 && origins[0] == Origin::Serializer,
         Kind::UnitStruct => {
             arguments.len() == 2
                 && origins[0] == Origin::Serializer
-                && matches!(origins[1], Origin::Data { source: false, fixed: true })
+                && matches!(
+                    origins[1],
+                    Origin::Data {
+                        source: false,
+                        fixed: true
+                    }
+                )
         }
         Kind::UnitVariant => {
             arguments.len() == 4
                 && origins[0] == Origin::Serializer
-                && origins[1..4]
-                    .iter()
-                    .all(|origin| matches!(origin, Origin::Data { source: false, fixed: true }))
+                && origins[1..4].iter().all(|origin| {
+                    matches!(
+                        origin,
+                        Origin::Data {
+                            source: false,
+                            fixed: true
+                        }
+                    )
+                })
         }
         Kind::TryBranch | Kind::FromResidual | Kind::Predicate | Kind::TaggedNewtype => false,
     }
@@ -685,7 +859,10 @@ fn tagged_helper_shape<'tcx>(
     origins: &[Origin],
     result: Ty<'tcx>,
 ) -> bool {
-    if arguments.len() != 6 || origins.len() != 6 || !is_result_for_serializer(tcx, result, serializer) {
+    if arguments.len() != 6
+        || origins.len() != 6
+        || !is_result_for_serializer(tcx, result, serializer)
+    {
         return false;
     }
     let type_arguments: Vec<_> = generic_args.types().collect();
@@ -694,9 +871,15 @@ fn tagged_helper_shape<'tcx>(
         || type_arguments[1]
             != instantiate_ty(tcx, instance, arguments[5].ty(body, tcx)).peel_refs()
         || origins[0] != Origin::Serializer
-        || !origins[1..5]
-            .iter()
-            .all(|origin| matches!(origin, Origin::Data { source: false, fixed: true }))
+        || !origins[1..5].iter().all(|origin| {
+            matches!(
+                origin,
+                Origin::Data {
+                    source: false,
+                    fixed: true
+                }
+            )
+        })
         || !is_bounded_data(origins[5])
     {
         return false;
@@ -723,8 +906,7 @@ fn tagged_helper_shape<'tcx>(
             .enumerate()
             .all(|(offset, input)| {
                 static_str(*input)
-                    && instantiate_ty(tcx, instance, arguments[offset + 1].ty(body, tcx))
-                        == *input
+                    && instantiate_ty(tcx, instance, arguments[offset + 1].ty(body, tcx)) == *input
             })
 }
 
@@ -854,8 +1036,11 @@ fn same_count_operand<'tcx>(
         | (Operand::Move(left), Operand::Copy(right))
         | (Operand::Move(left), Operand::Move(right)) => left == right,
         (Operand::Constant(left), Operand::Constant(right)) => {
-            left.const_.try_eval_target_usize(tcx, ty::TypingEnv::fully_monomorphized())
-                == right.const_.try_eval_target_usize(tcx, ty::TypingEnv::fully_monomorphized())
+            left.const_
+                .try_eval_target_usize(tcx, ty::TypingEnv::fully_monomorphized())
+                == right
+                    .const_
+                    .try_eval_target_usize(tcx, ty::TypingEnv::fully_monomorphized())
         }
         _ => false,
     }
@@ -912,7 +1097,13 @@ fn constructor_metadata_is_fixed<'tcx>(
         if index == count_index {
             continue;
         }
-        if !matches!(origins[index], Origin::Data { source: false, fixed: true }) {
+        if !matches!(
+            origins[index],
+            Origin::Data {
+                source: false,
+                fixed: true
+            }
+        ) {
             return false;
         }
     }
@@ -930,15 +1121,15 @@ fn constructor_metadata_is_fixed<'tcx>(
                 }
             );
     }
-        matches!(count_ty.kind(), ty::Uint(ty::UintTy::Usize))
-            && finite_count_operand(
-                tcx,
-                body,
-                &arguments[count_index],
-                reachable,
-                &mut HashSet::new(),
-            )
-            .is_some()
+    matches!(count_ty.kind(), ty::Uint(ty::UintTy::Usize))
+        && finite_count_operand(
+            tcx,
+            body,
+            &arguments[count_index],
+            reachable,
+            &mut HashSet::new(),
+        )
+        .is_some()
 }
 
 fn children_from_calls<'tcx>(
@@ -959,8 +1150,13 @@ fn children_from_calls<'tcx>(
 
     for call in calls {
         match call.kind {
-            Kind::Struct | Kind::StructVariant | Kind::Map | Kind::Seq | Kind::Tuple
-            | Kind::TupleStruct | Kind::TupleVariant => {
+            Kind::Struct
+            | Kind::StructVariant
+            | Kind::Map
+            | Kind::Seq
+            | Kind::Tuple
+            | Kind::TupleStruct
+            | Kind::TupleVariant => {
                 if call.kind == Kind::Map && map_length_is_unknown(tcx, body, call, reachable)? {
                     let branch = *branches.get(&call.destination)?;
                     let flattened_for_this_state = calls.iter().any(|candidate| {
@@ -1087,7 +1283,9 @@ fn children_from_calls<'tcx>(
                 }
                 let value = call.arguments.get(1)?;
                 let ty = instantiate_ty(tcx, instance, value.ty(body, tcx));
-                if ty.has_non_region_param() { return None; }
+                if ty.has_non_region_param() {
+                    return None;
+                }
                 children.push(SerializedChild {
                     ty,
                     charged_parent: true,
@@ -1097,7 +1295,9 @@ fn children_from_calls<'tcx>(
             Kind::NewtypeStruct => {
                 let value = call.arguments.get(2)?;
                 let ty = instantiate_ty(tcx, instance, value.ty(body, tcx));
-                if ty.has_non_region_param() { return None; }
+                if ty.has_non_region_param() {
+                    return None;
+                }
                 children.push(SerializedChild {
                     ty,
                     charged_parent: mode == SerializerMode::Plain,
@@ -1107,7 +1307,9 @@ fn children_from_calls<'tcx>(
             Kind::NewtypeVariant => {
                 let value = call.arguments.get(4)?;
                 let ty = instantiate_ty(tcx, instance, value.ty(body, tcx));
-                if ty.has_non_region_param() { return None; }
+                if ty.has_non_region_param() {
+                    return None;
+                }
                 children.push(SerializedChild {
                     ty,
                     charged_parent: true,
@@ -1145,7 +1347,9 @@ fn map_length_is_unknown<'tcx>(
     if !types::physical_item_path(tcx, option.did(), "core", &["option", "Option"]) {
         return None;
     }
-    let (Operand::Copy(place) | Operand::Move(place)) = count else { return None; };
+    let (Operand::Copy(place) | Operand::Move(place)) = count else {
+        return None;
+    };
     if !place.projection.is_empty() {
         return None;
     }
@@ -1160,7 +1364,9 @@ fn map_length_is_unknown<'tcx>(
             if target.local != place.local || !target.projection.is_empty() {
                 continue;
             }
-            let Rvalue::Aggregate(kind, operands) = value else { return None; };
+            let Rvalue::Aggregate(kind, operands) = value else {
+                return None;
+            };
             let mir::AggregateKind::Adt(definition, variant, _, _, _) = &**kind else {
                 return None;
             };
@@ -1172,13 +1378,13 @@ fn map_length_is_unknown<'tcx>(
                 "None" if operands.is_empty() => may_be_unknown = true,
                 "Some"
                     if operands.len() == 1
-                        && operands.iter().next().is_some_and(|operand| finite_count_operand(
-                            tcx,
-                            body,
-                            operand,
-                            reachable,
-                            &mut HashSet::new(),
-                        ).is_some()) => (),
+                        && operands.iter().next().is_some_and(|operand| {
+                            finite_count_operand(tcx, body, operand, reachable, &mut HashSet::new())
+                                .is_some()
+                        }) =>
+                {
+                    ()
+                }
                 _ => return None,
             }
         }
@@ -1194,14 +1400,18 @@ fn branch_operations<'tcx>(
     calls: &[Call<'tcx>],
 ) -> Option<HashMap<Local, Local>> {
     let mut operation_branches = HashMap::new();
-    let branches: Vec<_> = calls.iter().filter(|call| call.kind == Kind::TryBranch).collect();
+    let branches: Vec<_> = calls
+        .iter()
+        .filter(|call| call.kind == Kind::TryBranch)
+        .collect();
     let residuals: Vec<_> = calls
         .iter()
         .filter(|call| call.kind == Kind::FromResidual)
         .collect();
     let mut branch_switches = HashMap::<Local, (BasicBlock, BasicBlock, BasicBlock)>::new();
     for block in reachable {
-        let TerminatorKind::SwitchInt { discr, targets } = &body.basic_blocks[*block].terminator().kind
+        let TerminatorKind::SwitchInt { discr, targets } =
+            &body.basic_blocks[*block].terminator().kind
         else {
             continue;
         };
@@ -1216,8 +1426,12 @@ fn branch_operations<'tcx>(
         ) else {
             continue;
         };
-        let (break_target, continue_target) = control_flow_targets(tcx, instance, body, branch, targets)?;
-        if branch_switches.insert(branch, (*block, break_target, continue_target)).is_some() {
+        let (break_target, continue_target) =
+            control_flow_targets(tcx, instance, body, branch, targets)?;
+        if branch_switches
+            .insert(branch, (*block, break_target, continue_target))
+            .is_some()
+        {
             return None;
         }
     }
@@ -1234,7 +1448,8 @@ fn branch_operations<'tcx>(
             reachable,
             calls,
             &mut HashSet::new(),
-        )? else {
+        )?
+        else {
             return None;
         };
         if residual_for_branch.insert(branch, residual.block).is_some() {
@@ -1257,17 +1472,21 @@ fn branch_operations<'tcx>(
             reachable,
             calls,
             &mut HashSet::new(),
-        )? else {
+        )?
+        else {
             return None;
         };
         let producer = calls.iter().find(|call| call.destination == operation)?;
         if !producer.kind.fallible()
-            || operation_branches.insert(operation, branch_call.destination).is_some()
+            || operation_branches
+                .insert(operation, branch_call.destination)
+                .is_some()
         {
             return None;
         }
         parent_for_branch.insert(branch_call.destination, producer);
-        let (switch, break_target, continue_target) = *branch_switches.get(&branch_call.destination)?;
+        let (switch, break_target, continue_target) =
+            *branch_switches.get(&branch_call.destination)?;
         let residual = *residual_for_branch.get(&branch_call.destination)?;
         if !can_reach(body, branch_call.block, switch, reachable)
             || !dominates(body, reachable, branch_call.block, switch)
@@ -1283,17 +1502,19 @@ fn branch_operations<'tcx>(
         .filter(|call| call.kind.takes_state())
         .collect();
     for state_call in &state_calls {
-        let Some(Origin::BranchContinue(branch)) = state_call.arguments.first().and_then(|argument| {
-            operand_origin(
-                tcx,
-                instance,
-                body,
-                argument,
-                reachable,
-                calls,
-                &mut HashSet::new(),
-            )
-        }) else {
+        let Some(Origin::BranchContinue(branch)) =
+            state_call.arguments.first().and_then(|argument| {
+                operand_origin(
+                    tcx,
+                    instance,
+                    body,
+                    argument,
+                    reachable,
+                    calls,
+                    &mut HashSet::new(),
+                )
+            })
+        else {
             return None;
         };
         let state_constructor = parent_for_branch.get(&branch)?;
@@ -1303,7 +1524,10 @@ fn branch_operations<'tcx>(
         if !state_kind_matches(state_constructor.kind, state_call.kind)
             || !state_trait_matches(tcx, state_constructor.kind, state_call.definition)
             || branch_output_type(tcx, instance, body, branch)
-                != Some(instantiate_ty(tcx, instance, state_call.arguments[0].ty(body, tcx)).peel_refs())
+                != Some(
+                    instantiate_ty(tcx, instance, state_call.arguments[0].ty(body, tcx))
+                        .peel_refs(),
+                )
         {
             return None;
         }
@@ -1389,10 +1613,15 @@ fn control_flow_is_bounded<'tcx>(
         ) else {
             return false;
         };
-        let Some(producer) = calls.iter().find(|candidate| candidate.destination == operation) else {
+        let Some(producer) = calls
+            .iter()
+            .find(|candidate| candidate.destination == operation)
+        else {
             return false;
         };
-        if producer.has_cleanup && !cleanup_origin_is_typed(tcx, instance, body, serializer, producer) {
+        if producer.has_cleanup
+            && !cleanup_origin_is_typed(tcx, instance, body, serializer, producer)
+        {
             return false;
         }
         if branches.insert(operation, call.destination).is_some() {
@@ -1532,8 +1761,7 @@ fn literal_bool_drop_flag_assignment<'tcx>(
 }
 
 fn fixed_bool_drop_flag<'tcx>(tcx: TyCtxt<'tcx>, body: &mir::Body<'tcx>, local: Local) -> bool {
-    if local.as_usize() <= body.arg_count
-        || !matches!(body.local_decls[local].ty.kind(), ty::Bool)
+    if local.as_usize() <= body.arg_count || !matches!(body.local_decls[local].ty.kind(), ty::Bool)
     {
         return false;
     }
@@ -1569,11 +1797,11 @@ fn fixed_bool_drop_flag<'tcx>(tcx: TyCtxt<'tcx>, body: &mir::Body<'tcx>, local: 
             }
         }
         if matches!(&block.terminator().kind,
-            TerminatorKind::Call { args, .. }
-                if args.iter().any(|argument| matches!(
-                    &argument.node,
-                    Operand::Copy(place) | Operand::Move(place) if place.local == local
-                )))
+        TerminatorKind::Call { args, .. }
+            if args.iter().any(|argument| matches!(
+                &argument.node,
+                Operand::Copy(place) | Operand::Move(place) if place.local == local
+            )))
         {
             return false;
         }
@@ -1615,7 +1843,8 @@ fn cleanup_is_typed<'tcx>(
     calls: &[Call<'tcx>],
 ) -> bool {
     for block in normal {
-        let TerminatorKind::Drop { place, unwind, .. } = &body.basic_blocks[*block].terminator().kind
+        let TerminatorKind::Drop { place, unwind, .. } =
+            &body.basic_blocks[*block].terminator().kind
         else {
             continue;
         };
@@ -1670,7 +1899,12 @@ fn cleanup_is_typed<'tcx>(
             {
                 successors.extend(targets.all_targets().iter().copied());
             }
-            TerminatorKind::Drop { place, target, unwind, .. } => {
+            TerminatorKind::Drop {
+                place,
+                target,
+                unwind,
+                ..
+            } => {
                 if !drop_is_protocol_temporary(tcx, instance, body, serializer, place, calls) {
                     return false;
                 }
@@ -1715,7 +1949,10 @@ fn drop_is_protocol_temporary<'tcx>(
     {
         return true;
     }
-    if matches!(ty.kind(), ty::Ref(..) | ty::Bool | ty::Char | ty::Int(_) | ty::Uint(_) | ty::Float(_)) {
+    if matches!(
+        ty.kind(),
+        ty::Ref(..) | ty::Bool | ty::Char | ty::Int(_) | ty::Uint(_) | ty::Float(_)
+    ) {
         return true;
     }
     let ty::Alias(_, projection) = ty.kind() else {
@@ -1762,11 +1999,15 @@ fn original_serializer_alias_local<'tcx>(
     }
     if local == Local::from_usize(2) {
         return !body.basic_blocks.iter().any(|block| {
-            block.statements.iter().any(|statement| match &statement.kind {
-                StatementKind::Assign(assignment) => assignment.0.local == local,
-                StatementKind::SetDiscriminant { place, .. } => place.local == local,
-                _ => false,
-            }) || matches!(&block.terminator().kind,
+            block
+                .statements
+                .iter()
+                .any(|statement| match &statement.kind {
+                    StatementKind::Assign(assignment) => assignment.0.local == local,
+                    StatementKind::SetDiscriminant { place, .. } => place.local == local,
+                    _ => false,
+                })
+                || matches!(&block.terminator().kind,
                 TerminatorKind::Call { destination, .. }
                     if destination.local == local)
         });
@@ -1789,7 +2030,7 @@ fn original_serializer_alias_local<'tcx>(
                         valid = false;
                         break;
                     };
-            let (Operand::Copy(source) | Operand::Move(source)) = operand else {
+                    let (Operand::Copy(source) | Operand::Move(source)) = operand else {
                         valid = false;
                         break;
                     };
@@ -1836,37 +2077,40 @@ fn statements_are_bounded<'tcx>(
     calls: &[Call<'tcx>],
 ) -> bool {
     reachable.iter().all(|block| {
-        body.basic_blocks[*block].statements.iter().all(|statement| match &statement.kind {
-            StatementKind::StorageLive(_)
-            | StatementKind::StorageDead(_)
-            | StatementKind::Nop
-            | StatementKind::FakeRead(_) => true,
-            StatementKind::Assign(assignment) => {
-                let (target, value) = &**assignment;
-                target.projection.is_empty()
-                    && target.local.as_usize() > body.arg_count
-                    && (finite_count_local(
-                        tcx,
-                        body,
-                        target.local,
-                        reachable,
-                        &mut HashSet::new(),
-                    )
-                    .is_some()
-                        || rvalue_origin(
+        body.basic_blocks[*block]
+            .statements
+            .iter()
+            .all(|statement| match &statement.kind {
+                StatementKind::StorageLive(_)
+                | StatementKind::StorageDead(_)
+                | StatementKind::Nop
+                | StatementKind::FakeRead(_) => true,
+                StatementKind::Assign(assignment) => {
+                    let (target, value) = &**assignment;
+                    target.projection.is_empty()
+                        && target.local.as_usize() > body.arg_count
+                        && (finite_count_local(
                             tcx,
-                            instance,
                             body,
                             target.local,
-                            value,
                             reachable,
-                            calls,
                             &mut HashSet::new(),
                         )
-                        .is_some())
-            }
-            _ => false,
-        })
+                        .is_some()
+                            || rvalue_origin(
+                                tcx,
+                                instance,
+                                body,
+                                target.local,
+                                value,
+                                reachable,
+                                calls,
+                                &mut HashSet::new(),
+                            )
+                            .is_some())
+                }
+                _ => false,
+            })
     })
 }
 
@@ -1881,10 +2125,7 @@ fn all_returns_are_results<'tcx>(
     if !is_result(tcx, output) {
         return false;
     }
-    for call in calls
-        .iter()
-        .filter(|call| call.destination == RETURN_PLACE)
-    {
+    for call in calls.iter().filter(|call| call.destination == RETURN_PLACE) {
         let call_output = instantiate_ty(tcx, instance, body.local_decls[call.destination].ty);
         if !is_same_result(tcx, call_output, output) {
             return false;
@@ -1904,7 +2145,11 @@ fn all_returns_are_results<'tcx>(
     )
 }
 
-fn method_output<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>, body: &mir::Body<'tcx>) -> Ty<'tcx> {
+fn method_output<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    instance: Instance<'tcx>,
+    body: &mir::Body<'tcx>,
+) -> Ty<'tcx> {
     instantiate_ty(tcx, instance, body.local_decls[RETURN_PLACE].ty)
 }
 
@@ -1917,11 +2162,7 @@ fn is_result<'tcx>(tcx: TyCtxt<'tcx>, value: Ty<'tcx>) -> bool {
     ))
 }
 
-fn is_same_result<'tcx>(
-    tcx: TyCtxt<'tcx>,
-    left: Ty<'tcx>,
-    right: Ty<'tcx>,
-) -> bool {
+fn is_same_result<'tcx>(tcx: TyCtxt<'tcx>, left: Ty<'tcx>, right: Ty<'tcx>) -> bool {
     if !is_result(tcx, left) || !is_result(tcx, right) {
         return false;
     }
@@ -1957,24 +2198,20 @@ fn is_result_for_serializer<'tcx>(
         }) && alias.args.types().next() == Some(serializer))
 }
 
-fn is_result_residual<'tcx>(
-    tcx: TyCtxt<'tcx>,
-    value: Ty<'tcx>,
-    serializer: Ty<'tcx>,
-) -> bool {
+fn is_result_residual<'tcx>(tcx: TyCtxt<'tcx>, value: Ty<'tcx>, serializer: Ty<'tcx>) -> bool {
     let ty::Adt(owner, arguments) = value.kind() else {
         return false;
     };
     types::physical_item_path(tcx, owner.did(), "core", &["result", "Result"])
         && arguments.types().next().is_some_and(|ok| {
             matches!(ok.kind(), ty::Adt(infallible, args)
-                if args.types().next().is_none()
-                    && types::physical_item_path(
-                        tcx,
-                        infallible.did(),
-                        "core",
-                        &["convert", "Infallible"],
-                    ))
+            if args.types().next().is_none()
+                && types::physical_item_path(
+                    tcx,
+                    infallible.did(),
+                    "core",
+                    &["convert", "Infallible"],
+                ))
         })
         && is_result_for_serializer(tcx, value, serializer)
 }
@@ -1987,10 +2224,15 @@ fn is_control_flow_for_serializer<'tcx>(
     let ty::Adt(owner, arguments) = value.kind() else {
         return false;
     };
-    types::physical_item_path(tcx, owner.did(), "core", &["ops", "control_flow", "ControlFlow"])
-        && arguments.types().next().is_some_and(|residual| {
-            is_result_residual(tcx, residual, serializer)
-        })
+    types::physical_item_path(
+        tcx,
+        owner.did(),
+        "core",
+        &["ops", "control_flow", "ControlFlow"],
+    ) && arguments
+        .types()
+        .next()
+        .is_some_and(|residual| is_result_residual(tcx, residual, serializer))
 }
 
 fn try_branch_shape<'tcx>(
@@ -2005,16 +2247,29 @@ fn try_branch_shape<'tcx>(
         return false;
     };
     if !types::physical_item_path(tcx, result_owner.did(), "core", &["result", "Result"])
-        || !types::physical_item_path(tcx, flow_owner.did(), "core", &["ops", "control_flow", "ControlFlow"])
+        || !types::physical_item_path(
+            tcx,
+            flow_owner.did(),
+            "core",
+            &["ops", "control_flow", "ControlFlow"],
+        )
     {
         return false;
     }
     let mut result_args = result_args.types();
-    let Some(ok) = result_args.next() else { return false; };
-    let Some(input_error) = result_args.next() else { return false; };
+    let Some(ok) = result_args.next() else {
+        return false;
+    };
+    let Some(input_error) = result_args.next() else {
+        return false;
+    };
     let mut flow_args = flow_args.types();
-    let Some(residual) = flow_args.next() else { return false; };
-    let Some(output_value) = flow_args.next() else { return false; };
+    let Some(residual) = flow_args.next() else {
+        return false;
+    };
+    let Some(output_value) = flow_args.next() else {
+        return false;
+    };
     let ty::Adt(residual_owner, residual_args) = residual.kind() else {
         return false;
     };
@@ -2037,17 +2292,30 @@ fn branch_output_type<'tcx>(
     branch: Local,
 ) -> Option<Ty<'tcx>> {
     let branch_ty = instantiate_ty(tcx, instance, body.local_decls[branch].ty);
-    let ty::Adt(owner, arguments) = branch_ty.kind() else { return None; };
-    types::physical_item_path(tcx, owner.did(), "core", &["ops", "control_flow", "ControlFlow"])
-        .then(|| arguments.types().nth(1))
-        .flatten()
+    let ty::Adt(owner, arguments) = branch_ty.kind() else {
+        return None;
+    };
+    types::physical_item_path(
+        tcx,
+        owner.did(),
+        "core",
+        &["ops", "control_flow", "ControlFlow"],
+    )
+    .then(|| arguments.types().nth(1))
+    .flatten()
 }
 
 fn state_kind_matches(parent: Kind, child: Kind) -> bool {
     match parent {
         Kind::Struct => matches!(child, Kind::StructField | Kind::SkipField | Kind::End),
-        Kind::StructVariant => matches!(child, Kind::StructVariantField | Kind::SkipField | Kind::End),
-        Kind::Map => matches!(child, Kind::MapEntry | Kind::MapKey | Kind::MapValue | Kind::End),
+        Kind::StructVariant => matches!(
+            child,
+            Kind::StructVariantField | Kind::SkipField | Kind::End
+        ),
+        Kind::Map => matches!(
+            child,
+            Kind::MapEntry | Kind::MapKey | Kind::MapValue | Kind::End
+        ),
         Kind::Seq => matches!(child, Kind::Element | Kind::End),
         Kind::Tuple => matches!(child, Kind::Element | Kind::End),
         Kind::TupleStruct => matches!(child, Kind::TupleStructField | Kind::End),
@@ -2113,12 +2381,17 @@ fn place_origin<'tcx>(
     active: &mut HashSet<Local>,
 ) -> Option<Origin> {
     if place.local == Local::from_usize(1) {
-        return source_projection(body, place).then_some(Origin::Data {
-            source: true,
-            fixed: false,
-        }).or_else(|| {
-            place.projection.is_empty().then_some(Origin::Data { source: true, fixed: false })
-        });
+        return source_projection(body, place)
+            .then_some(Origin::Data {
+                source: true,
+                fixed: false,
+            })
+            .or_else(|| {
+                place.projection.is_empty().then_some(Origin::Data {
+                    source: true,
+                    fixed: false,
+                })
+            });
     }
     if place.local == Local::from_usize(2)
         && place
@@ -2128,7 +2401,10 @@ fn place_origin<'tcx>(
     {
         return Some(Origin::Serializer);
     }
-    if calls.iter().any(|call| call.destination == place.local && call.kind == Kind::TryBranch) {
+    if calls
+        .iter()
+        .any(|call| call.destination == place.local && call.kind == Kind::TryBranch)
+    {
         return branch_projection(tcx, instance, body, place);
     }
     if place.projection.is_empty() && calls.iter().any(|call| call.destination == place.local) {
@@ -2137,17 +2413,12 @@ fn place_origin<'tcx>(
     if !place.projection.is_empty() {
         if place.projection.len() == 1 {
             if let Some(mir::ProjectionElem::Field(index, _)) = place.projection.first() {
-                if checked_add_bound(
-                    tcx,
-                    body,
-                    place.local,
-                    reachable,
-                    active,
-                )
-                .is_some()
-                {
+                if checked_add_bound(tcx, body, place.local, reachable, active).is_some() {
                     return match index.as_usize() {
-                        0 => Some(Origin::Data { source: false, fixed: true }),
+                        0 => Some(Origin::Data {
+                            source: false,
+                            fixed: true,
+                        }),
                         1 => Some(Origin::Predicate),
                         _ => None,
                     };
@@ -2161,16 +2432,11 @@ fn place_origin<'tcx>(
         }
         return None;
     }
-    if finite_count_local(
-        tcx,
-        body,
-        place.local,
-        reachable,
-        &mut HashSet::new(),
-    )
-    .is_some()
-    {
-        return Some(Origin::Data { source: false, fixed: true });
+    if finite_count_local(tcx, body, place.local, reachable, &mut HashSet::new()).is_some() {
+        return Some(Origin::Data {
+            source: false,
+            fixed: true,
+        });
     }
     local_origin(tcx, instance, body, place.local, reachable, calls, active)
 }
@@ -2185,7 +2451,10 @@ fn local_origin<'tcx>(
     active: &mut HashSet<Local>,
 ) -> Option<Origin> {
     if local == Local::from_usize(1) {
-        return Some(Origin::Data { source: true, fixed: false });
+        return Some(Origin::Data {
+            source: true,
+            fixed: false,
+        });
     }
     if local == Local::from_usize(2) {
         return Some(Origin::Serializer);
@@ -2202,7 +2471,9 @@ fn local_origin<'tcx>(
         }
         for block in reachable {
             for statement in &body.basic_blocks[*block].statements {
-                let StatementKind::Assign(assignment) = &statement.kind else { continue; };
+                let StatementKind::Assign(assignment) = &statement.kind else {
+                    continue;
+                };
                 let (target, value) = &**assignment;
                 if target.local != local || !target.projection.is_empty() {
                     continue;
@@ -2238,7 +2509,9 @@ fn rvalue_origin<'tcx>(
     active: &mut HashSet<Local>,
 ) -> Option<Origin> {
     match value {
-        Rvalue::Use(operand, _) => operand_origin(tcx, instance, body, operand, reachable, calls, active),
+        Rvalue::Use(operand, _) => {
+            operand_origin(tcx, instance, body, operand, reachable, calls, active)
+        }
         Rvalue::Ref(_, BorrowKind::Shared, place) | Rvalue::CopyForDeref(place) => {
             place_origin(tcx, instance, body, place, reachable, calls, active)
         }
@@ -2269,7 +2542,10 @@ fn rvalue_origin<'tcx>(
         }
         Rvalue::Discriminant(place) => {
             if source_enum_discriminant(tcx, instance, body, place) {
-                Some(Origin::Data { source: true, fixed: false })
+                Some(Origin::Data {
+                    source: true,
+                    fixed: false,
+                })
             } else {
                 match place_origin(tcx, instance, body, place, reachable, calls, active)? {
                     Origin::BranchValue(branch) => Some(Origin::BranchTag(branch)),
@@ -2294,42 +2570,46 @@ fn rvalue_origin<'tcx>(
                     _ => None,
                 };
             }
-            let ty::Adt(owner, _) = target_ty.kind() else { return None; };
+            let ty::Adt(owner, _) = target_ty.kind() else {
+                return None;
+            };
             if !types::physical_item_path(tcx, owner.did(), "core", &["option", "Option"]) {
                 return None;
             }
             let fixed = operands.iter().all(|operand| {
                 matches!(
                     operand_origin(tcx, instance, body, operand, reachable, calls, active),
-                    Some(Origin::Data { source: false, fixed: true })
+                    Some(Origin::Data {
+                        source: false,
+                        fixed: true
+                    })
                 )
             });
-            fixed.then_some(Origin::Data { source: false, fixed: true })
+            fixed.then_some(Origin::Data {
+                source: false,
+                fixed: true,
+            })
         }
         Rvalue::BinaryOp(BinOp::Add, operands) => {
             let (left, right) = &**operands;
-            let left =
-                operand_origin(tcx, instance, body, left, reachable, calls, active)?;
-            let right =
-                operand_origin(tcx, instance, body, right, reachable, calls, active)?;
+            let left = operand_origin(tcx, instance, body, left, reachable, calls, active)?;
+            let right = operand_origin(tcx, instance, body, right, reachable, calls, active)?;
             (finite_count_data(left) && finite_count_data(right)).then_some(Origin::Data {
                 source: false,
                 fixed: true,
             })
         }
-        Rvalue::BinaryOp(BinOp::AddWithOverflow, _) => checked_add_bound(
-            tcx,
-            body,
-            destination,
-            reachable,
-            active,
-        )
-        .map(|_| Origin::Data {
-            source: false,
-            fixed: true,
-        }),
+        Rvalue::BinaryOp(BinOp::AddWithOverflow, _) => {
+            checked_add_bound(tcx, body, destination, reachable, active).map(|_| Origin::Data {
+                source: false,
+                fixed: true,
+            })
+        }
         Rvalue::UnaryOp(_, operand)
-            if matches!(instantiate_ty(tcx, instance, body.local_decls[destination].ty).kind(), ty::Bool) =>
+            if matches!(
+                instantiate_ty(tcx, instance, body.local_decls[destination].ty).kind(),
+                ty::Bool
+            ) =>
         {
             match operand_origin(tcx, instance, body, operand, reachable, calls, active)? {
                 Origin::Predicate => Some(Origin::Predicate),
@@ -2351,7 +2631,9 @@ fn source_projection<'tcx>(body: &mir::Body<'tcx>, place: &Place<'tcx>) -> bool 
     for projection in place.projection.iter() {
         match projection {
             mir::ProjectionElem::Deref if !root_deref => {
-                let ty::Ref(_, inner, ty::Mutability::Not) = current.kind() else { return false; };
+                let ty::Ref(_, inner, ty::Mutability::Not) = current.kind() else {
+                    return false;
+                };
                 current = *inner;
                 root_deref = true;
             }
@@ -2373,21 +2655,35 @@ fn source_enum_discriminant<'tcx>(
     place: &Place<'tcx>,
 ) -> bool {
     if place.local != Local::from_usize(1)
-        || !place.projection.iter().all(|projection| matches!(projection, mir::ProjectionElem::Deref))
+        || !place
+            .projection
+            .iter()
+            .all(|projection| matches!(projection, mir::ProjectionElem::Deref))
     {
         return false;
     }
-    let source = instantiate_ty(tcx, instance, body.local_decls[Local::from_usize(1)].ty).peel_refs();
+    let source =
+        instantiate_ty(tcx, instance, body.local_decls[Local::from_usize(1)].ty).peel_refs();
     let projected = instantiate_ty(tcx, instance, place.ty(body, tcx).ty);
     projected == source && matches!(source.kind(), ty::Adt(owner, _) if owner.is_enum())
 }
 
 fn is_bounded_data(origin: Origin) -> bool {
-    matches!(origin, Origin::Data { source: true, .. } | Origin::Data { fixed: true, .. })
+    matches!(
+        origin,
+        Origin::Data { source: true, .. } | Origin::Data { fixed: true, .. }
+    )
 }
 
 fn finite_count_data(origin: Origin) -> bool {
-    matches!(origin, Origin::Predicate | Origin::Data { source: false, fixed: true })
+    matches!(
+        origin,
+        Origin::Predicate
+            | Origin::Data {
+                source: false,
+                fixed: true
+            }
+    )
 }
 
 fn merge_origin(current: Option<Origin>, next: Origin) -> Option<Origin> {
@@ -2395,7 +2691,10 @@ fn merge_origin(current: Option<Origin>, next: Origin) -> Option<Origin> {
         (None, next) => Some(next),
         (
             Some(Origin::Data { source, fixed }),
-            Origin::Data { source: next_source, fixed: next_fixed },
+            Origin::Data {
+                source: next_source,
+                fixed: next_fixed,
+            },
         ) => Some(Origin::Data {
             source: source || next_source,
             fixed: fixed || next_fixed,
@@ -2418,7 +2717,9 @@ fn fixed_constant_type(tcx: TyCtxt<'_>, value: Ty<'_>) -> bool {
         ty::Adt(owner, args)
             if types::physical_item_path(tcx, owner.did(), "core", &["option", "Option"]) =>
         {
-            args.types().next().is_some_and(|inner| fixed_constant_type(tcx, inner))
+            args.types()
+                .next()
+                .is_some_and(|inner| fixed_constant_type(tcx, inner))
         }
         _ => false,
     }
@@ -2454,13 +2755,7 @@ fn finite_count_operand<'tcx>(
             if !active.insert(place.local) {
                 return None;
             }
-            let result = checked_add_bound(
-                tcx,
-                body,
-                place.local,
-                reachable,
-                active,
-            );
+            let result = checked_add_bound(tcx, body, place.local, reachable, active);
             active.remove(&place.local);
             result
         }
@@ -2489,40 +2784,38 @@ fn finite_count_local<'tcx>(
     let mut found = false;
     for block in reachable {
         for statement in &body.basic_blocks[*block].statements {
-            let StatementKind::Assign(assignment) = &statement.kind else { continue; };
+            let StatementKind::Assign(assignment) = &statement.kind else {
+                continue;
+            };
             let (target, value) = &**assignment;
             if target.local != local || !target.projection.is_empty() {
                 continue;
             }
             found = true;
             if let Rvalue::BinaryOp(BinOp::Add, operands) = value {
-                    let (left, right) = &**operands;
-                    let self_left = operand_is_local(left, local);
-                    let self_right = operand_is_local(right, local);
-                    if self_left || self_right {
-                        if self_left == self_right {
-                            active.remove(&local);
-                            return None;
-                        }
-                        let increment = if self_left { right } else { left };
-                        let Some(increment) = finite_count_operand(
-                            tcx,
-                            body,
-                            increment,
-                            reachable,
-                            active,
-                        ) else {
-                            active.remove(&local);
-                            return None;
-                        };
-                        let Some(total) = increment_total.checked_add(increment) else {
-                            active.remove(&local);
-                            return None;
-                        };
-                        increment_total = total;
-                        continue;
+                let (left, right) = &**operands;
+                let self_left = operand_is_local(left, local);
+                let self_right = operand_is_local(right, local);
+                if self_left || self_right {
+                    if self_left == self_right {
+                        active.remove(&local);
+                        return None;
                     }
+                    let increment = if self_left { right } else { left };
+                    let Some(increment) =
+                        finite_count_operand(tcx, body, increment, reachable, active)
+                    else {
+                        active.remove(&local);
+                        return None;
+                    };
+                    let Some(total) = increment_total.checked_add(increment) else {
+                        active.remove(&local);
+                        return None;
+                    };
+                    increment_total = total;
+                    continue;
                 }
+            }
             let Some(value) = finite_count_rvalue(tcx, body, value, reachable, active) else {
                 active.remove(&local);
                 return None;
@@ -2588,16 +2881,28 @@ fn control_flow_targets<'tcx>(
     targets: &mir::SwitchTargets,
 ) -> Option<(BasicBlock, BasicBlock)> {
     let value = instantiate_ty(tcx, instance, body.local_decls[branch].ty);
-    let ty::Adt(owner, _) = value.kind() else { return None; };
-    if !types::physical_item_path(tcx, owner.did(), "core", &["ops", "control_flow", "ControlFlow"])
-        || owner.variants().len() != 2
+    let ty::Adt(owner, _) = value.kind() else {
+        return None;
+    };
+    if !types::physical_item_path(
+        tcx,
+        owner.did(),
+        "core",
+        &["ops", "control_flow", "ControlFlow"],
+    ) || owner.variants().len() != 2
     {
         return None;
     }
-    let continue_variant = owner.variants().iter_enumerated()
-        .find(|(_, variant)| variant.name.as_str() == "Continue")?.0;
-    let break_variant = owner.variants().iter_enumerated()
-        .find(|(_, variant)| variant.name.as_str() == "Break")?.0;
+    let continue_variant = owner
+        .variants()
+        .iter_enumerated()
+        .find(|(_, variant)| variant.name.as_str() == "Continue")?
+        .0;
+    let break_variant = owner
+        .variants()
+        .iter_enumerated()
+        .find(|(_, variant)| variant.name.as_str() == "Break")?
+        .0;
     let continue_value = owner.discriminant_for_variant(tcx, continue_variant).val;
     let break_value = owner.discriminant_for_variant(tcx, break_variant).val;
     let continue_target = targets.target_for_value(continue_value);
@@ -2615,8 +2920,15 @@ fn branch_projection<'tcx>(
         return Some(Origin::BranchValue(place.local));
     }
     let value = instantiate_ty(tcx, instance, body.local_decls[place.local].ty);
-    let ty::Adt(owner, _) = value.kind() else { return None; };
-    if !types::physical_item_path(tcx, owner.did(), "core", &["ops", "control_flow", "ControlFlow"]) {
+    let ty::Adt(owner, _) = value.kind() else {
+        return None;
+    };
+    if !types::physical_item_path(
+        tcx,
+        owner.did(),
+        "core",
+        &["ops", "control_flow", "ControlFlow"],
+    ) {
         return None;
     }
     let mut variant = None;
@@ -2626,11 +2938,17 @@ fn branch_projection<'tcx>(
             mir::ProjectionElem::Downcast(_, index) if variant.is_none() => {
                 variant = Some(owner.variant(index).name.as_str().to_owned());
             }
-            mir::ProjectionElem::Field(index, _) if variant.is_some() && !field && index.as_usize() == 0 => field = true,
+            mir::ProjectionElem::Field(index, _)
+                if variant.is_some() && !field && index.as_usize() == 0 =>
+            {
+                field = true
+            }
             _ => return None,
         }
     }
-    if !field { return None; }
+    if !field {
+        return None;
+    }
     match variant.as_deref()? {
         "Continue" => Some(Origin::BranchContinue(place.local)),
         "Break" => Some(Origin::BranchResidual(place.local)),
@@ -2658,7 +2976,10 @@ fn call_origin(call: &Call<'_>) -> Origin {
 fn normal_successors(terminator: &TerminatorKind<'_>) -> Vec<BasicBlock> {
     match terminator {
         TerminatorKind::Goto { target } => vec![*target],
-        TerminatorKind::Call { target: Some(target), .. } => vec![*target],
+        TerminatorKind::Call {
+            target: Some(target),
+            ..
+        } => vec![*target],
         TerminatorKind::Drop { target, .. } => vec![*target],
         TerminatorKind::Assert { target, .. } => vec![*target],
         TerminatorKind::SwitchInt { targets, .. } => targets.all_targets().to_vec(),
@@ -2671,7 +2992,9 @@ fn reachable_blocks(body: &mir::Body<'_>) -> HashSet<BasicBlock> {
     let mut pending = vec![mir::START_BLOCK];
     while let Some(block) = pending.pop() {
         if reachable.insert(block) {
-            pending.extend(normal_successors(&body.basic_blocks[block].terminator().kind));
+            pending.extend(normal_successors(
+                &body.basic_blocks[block].terminator().kind,
+            ));
         }
     }
     reachable
@@ -2690,7 +3013,9 @@ fn can_reach(
             return true;
         }
         if allowed.contains(&block) && seen.insert(block) {
-            pending.extend(normal_successors(&body.basic_blocks[block].terminator().kind));
+            pending.extend(normal_successors(
+                &body.basic_blocks[block].terminator().kind,
+            ));
         }
     }
     false
@@ -2702,7 +3027,9 @@ fn dominates(
     dominator: BasicBlock,
     target: BasicBlock,
 ) -> bool {
-    if dominator == target { return true; }
+    if dominator == target {
+        return true;
+    }
     let mut pending = vec![mir::START_BLOCK];
     let mut seen = HashSet::new();
     while let Some(block) = pending.pop() {
@@ -2712,7 +3039,9 @@ fn dominates(
         if block == target {
             return false;
         }
-        pending.extend(normal_successors(&body.basic_blocks[block].terminator().kind));
+        pending.extend(normal_successors(
+            &body.basic_blocks[block].terminator().kind,
+        ));
     }
     true
 }

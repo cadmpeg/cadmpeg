@@ -99,9 +99,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
 
     pub(crate) fn checked_iterator_callback(&self, callback: Ty<'tcx>) -> bool {
         match callback.peel_refs().kind() {
-            ty::Closure(id, _) => {
-                !types::standard(self.tcx, *id) && self.checked_body(*id)
-            }
+            ty::Closure(id, _) => !types::standard(self.tcx, *id) && self.checked_body(*id),
             ty::FnDef(id, _) => {
                 matches!(self.tcx.def_kind(*id), rustc_hir::def::DefKind::Ctor(_, _))
                     || !types::standard(self.tcx, *id) && self.checked_body(*id)
@@ -176,18 +174,11 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 def: ty::InstanceKind::Item(*definition),
                 args: arguments,
             }),
-            ty::FnDef(definition, arguments) => arguments
-                .no_bound_vars()
-                .and_then(|arguments| {
-                    ty::Instance::try_resolve(
-                        self.tcx,
-                        self.typing_env(),
-                        *definition,
-                        arguments,
-                    )
+            ty::FnDef(definition, arguments) => arguments.no_bound_vars().and_then(|arguments| {
+                ty::Instance::try_resolve(self.tcx, self.typing_env(), *definition, arguments)
                     .ok()
                     .flatten()
-                }),
+            }),
             _ => None,
         };
         let Some(instance) = instance else {
@@ -221,9 +212,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 };
                 if !core_char_whitespace_method(self.tcx, *definition)
                     || args.len() != 1
-                    || !args
-                        .first()
-                        .is_some_and(|argument| matches!(argument.node.ty(body, self.tcx).kind(), ty::Char))
+                    || !args.first().is_some_and(|argument| {
+                        matches!(argument.node.ty(body, self.tcx).kind(), ty::Char)
+                    })
                     || !matches!(destination.ty(body, self.tcx).ty.kind(), ty::Bool)
                 {
                     return false;
@@ -249,7 +240,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if self.core_iterator_parameter(value) {
             return true;
         }
-        matches!(self.iterator_step_cost(value), StepCost::Fixed | StepCost::One)
+        matches!(
+            self.iterator_step_cost(value),
+            StepCost::Fixed | StepCost::One
+        )
     }
 
     pub(crate) fn bounded_iterator_step(&self, value: Ty<'tcx>) -> bool {
@@ -315,11 +309,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                         {
                             StepCost::One
                         }
-                        "ToLowercase" | "ToUppercase"
-                            if path.contains("char::") =>
-                        {
-                            StepCost::Fixed
-                        }
+                        "ToLowercase" | "ToUppercase" if path.contains("char::") => StepCost::Fixed,
                         "Bytes"
                             if types::physical_item_path(
                                 self.tcx,
@@ -355,13 +345,15 @@ impl<'tcx> Analysis<'_, 'tcx> {
                             let callback = arguments
                                 .next()
                                 .is_some_and(|callback| self.checked_iterator_callback(callback));
-                            if callback { source } else { StepCost::Unknown }
+                            if callback {
+                                source
+                            } else {
+                                StepCost::Unknown
+                            }
                         }
-                        "Enumerate" | "Rev" | "Copied" | "Fuse" | "Peekable" | "Take" => {
-                            arguments.next().map_or(StepCost::Unknown, |source| {
-                                self.iterator_step_cost(source)
-                            })
-                        }
+                        "Enumerate" | "Rev" | "Copied" | "Fuse" | "Peekable" | "Take" => arguments
+                            .next()
+                            .map_or(StepCost::Unknown, |source| self.iterator_step_cost(source)),
                         "Flatten" => {
                             let Some(source) = arguments.next() else {
                                 return StepCost::Unknown;
@@ -385,7 +377,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
                                 self.iterator_step_cost(source)
                             });
                             match (left, right) {
-                                (StepCost::Unknown, _) | (_, StepCost::Unknown) => StepCost::Unknown,
+                                (StepCost::Unknown, _) | (_, StepCost::Unknown) => {
+                                    StepCost::Unknown
+                                }
                                 (StepCost::Multiple, _) | (_, StepCost::Multiple) => {
                                     StepCost::Unknown
                                 }
@@ -428,9 +422,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             (StepCost::Unknown, _) | (_, StepCost::Unknown) => StepCost::Unknown,
             (StepCost::Multiple, _) | (_, StepCost::Multiple) => StepCost::Multiple,
             (StepCost::One, StepCost::One) => StepCost::Multiple,
-            (StepCost::One, StepCost::Fixed) | (StepCost::Fixed, StepCost::One) => {
-                StepCost::One
-            }
+            (StepCost::One, StepCost::Fixed) | (StepCost::Fixed, StepCost::One) => StepCost::One,
             (StepCost::Fixed, StepCost::Fixed) => StepCost::Fixed,
         }
     }
@@ -496,11 +488,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let arguments: Vec<_> = arguments.types().collect();
         let nested = |source| self.contains_precharged_iterator_at(source, depth + 1);
         match name.as_str() {
-            "Map" | "Filter" | "FilterMap" | "MapWhile" | "Scan" | "TakeWhile"
-            | "SkipWhile" | "Inspect" | "Enumerate" | "Rev" | "Take" | "Skip"
-            | "Fuse" | "Peekable" | "Flatten" | "DecodeUtf16" => {
-                arguments.first().is_some_and(|source| nested(*source))
-            }
+            "Map" | "Filter" | "FilterMap" | "MapWhile" | "Scan" | "TakeWhile" | "SkipWhile"
+            | "Inspect" | "Enumerate" | "Rev" | "Take" | "Skip" | "Fuse" | "Peekable"
+            | "Flatten" | "DecodeUtf16" => arguments.first().is_some_and(|source| nested(*source)),
             "Chain" | "Zip" | "FlatMap" => arguments.iter().any(|source| nested(*source)),
             _ => false,
         }
@@ -530,13 +520,12 @@ impl<'tcx> Analysis<'_, 'tcx> {
         };
         let nested = |source| self.precharged_iterator_lineage_at(source, depth + 1);
         match name.as_str() {
-            "Map" | "Filter" | "FilterMap" | "MapWhile" | "Scan" | "TakeWhile"
-            | "SkipWhile" | "Inspect" => {
+            "Map" | "Filter" | "FilterMap" | "MapWhile" | "Scan" | "TakeWhile" | "SkipWhile"
+            | "Inspect" => {
                 let Some(callback) = arguments.next() else {
                     return false;
                 };
-                nested(source)
-                    && self.checked_iterator_callback(callback)
+                nested(source) && self.checked_iterator_callback(callback)
             }
             "Enumerate" | "Rev" | "Take" | "Skip" | "Fuse" | "Peekable" | "DecodeUtf16" => {
                 nested(source) && self.bounded_iterator_step(value)
@@ -547,19 +536,15 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 };
                 (nested(source)
                     && (nested(other) || types::iteration(self.tcx, other) == types::Shape::Fixed)
-                    || nested(other)
-                        && types::iteration(self.tcx, source) == types::Shape::Fixed)
+                    || nested(other) && types::iteration(self.tcx, source) == types::Shape::Fixed)
                     && self.bounded_iterator_step(value)
             }
             "Zip" => {
                 let Some(other) = arguments.next() else {
                     return false;
                 };
-                (nested(source)
-                    && (nested(other)
-                        || self.bounded_iterator_step(other)))
-                    || (nested(other)
-                        && self.bounded_iterator_step(source))
+                (nested(source) && (nested(other) || self.bounded_iterator_step(other)))
+                    || (nested(other) && self.bounded_iterator_step(source))
             }
             "FlatMap" => {
                 let Some(inner) = arguments.next() else {
@@ -599,10 +584,12 @@ impl<'tcx> Analysis<'_, 'tcx> {
             "cadmpeg_core",
             &["decode", "iter_source", "IncrementalSource"],
         ) {
-            return arguments
-                .types()
-                .next()
-                .is_some_and(|source| matches!(self.iterator_step_cost(source), StepCost::Fixed | StepCost::One));
+            return arguments.types().next().is_some_and(|source| {
+                matches!(
+                    self.iterator_step_cost(source),
+                    StepCost::Fixed | StepCost::One
+                )
+            });
         }
         if types::physical_item_path(self.tcx, owner.did(), "roxmltree", &["Children"]) {
             return true;
@@ -648,8 +635,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                         )
                     });
                 }
-                types::standard(self.tcx, owner.did())
-                    && matches!(name.as_str(), "Vec" | "Option")
+                types::standard(self.tcx, owner.did()) && matches!(name.as_str(), "Vec" | "Option")
             }
             _ => false,
         }
@@ -659,7 +645,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let value = types::reveal_opaque(self.tcx, value);
         match value.kind() {
             ty::Ref(..) => Some(true),
-            ty::Array(element, _) => Some(self.drop_callbacks_are_bounded(*element, &mut Vec::new())),
+            ty::Array(element, _) => {
+                Some(self.drop_callbacks_are_bounded(*element, &mut Vec::new()))
+            }
             ty::Adt(owner, arguments)
                 if types::physical_item_path(
                     self.tcx,
@@ -673,21 +661,20 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 }))
             }
             ty::Adt(owner, arguments)
-                if types::physical_item_path(
-                    self.tcx,
-                    owner.did(),
-                    "alloc",
-                    &["vec", "Vec"],
-                ) || types::physical_item_path(
-                    self.tcx,
-                    owner.did(),
-                    "core",
-                    &["option", "Option"],
-                ) =>
+                if types::physical_item_path(self.tcx, owner.did(), "alloc", &["vec", "Vec"])
+                    || types::physical_item_path(
+                        self.tcx,
+                        owner.did(),
+                        "core",
+                        &["option", "Option"],
+                    ) =>
             {
-                Some(arguments.types().next().is_some_and(|item| {
-                    self.drop_callbacks_are_bounded(item, &mut Vec::new())
-                }))
+                Some(
+                    arguments
+                        .types()
+                        .next()
+                        .is_some_and(|item| self.drop_callbacks_are_bounded(item, &mut Vec::new())),
+                )
             }
             ty::Adt(owner, arguments)
                 if types::physical_item_path(
@@ -872,7 +859,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
                         owner.did(),
                         "serde_json",
                         &["map", "Map"],
-                    ) => false,
+                    ) =>
+            {
+                false
+            }
             ty::Adt(owner, arguments)
                 if types::physical_item_path(
                     self.tcx,
@@ -887,9 +877,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     .is_some_and(|item| self.drop_callbacks_are_bounded(item, seen))
             }
             ty::Adt(owner, _arguments) if owner.has_dtor(self.tcx) => false,
-            ty::Adt(owner, arguments) => owner
-                .all_fields()
-                .all(|field| self.drop_callbacks_are_bounded(field.ty(self.tcx, arguments).skip_norm_wip(), seen)),
+            ty::Adt(owner, arguments) => owner.all_fields().all(|field| {
+                self.drop_callbacks_are_bounded(field.ty(self.tcx, arguments).skip_norm_wip(), seen)
+            }),
             _ => false,
         };
         seen.truncate(depth);
@@ -911,9 +901,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
             &["decode", "iter_source", "IncrementalSource"],
             "new",
         ) {
-            if operands.first().is_some_and(|source| {
-                !self.bounded_iterator_step(self.expr_ty(source))
-            }) {
+            if operands
+                .first()
+                .is_some_and(|source| !self.bounded_iterator_step(self.expr_ty(source)))
+            {
                 self.report(
                     expression.span,
                     "unproven_decode_charge",
@@ -936,9 +927,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             self.report(
                 expression.span,
                 "unproven_decode_charge",
-                &format!(
-                    "{source_owner} source does not have a fixed or one-step producer bound"
-                ),
+                &format!("{source_owner} source does not have a fixed or one-step producer bound"),
             );
         }
         for operand in operands {

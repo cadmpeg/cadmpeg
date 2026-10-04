@@ -25,27 +25,39 @@ pub trait TextFragment: sealed::Fragment {
 
 impl sealed::Fragment for str {}
 impl TextFragment for str {
-    fn fragment(&self) -> Fragment<'_> { Fragment::Text(self) }
+    fn fragment(&self) -> Fragment<'_> {
+        Fragment::Text(self)
+    }
 }
 impl sealed::Fragment for String {}
 impl TextFragment for String {
-    fn fragment(&self) -> Fragment<'_> { Fragment::Text(self.as_str()) }
+    fn fragment(&self) -> Fragment<'_> {
+        Fragment::Text(self.as_str())
+    }
 }
 impl sealed::Fragment for char {}
 impl TextFragment for char {
-    fn fragment(&self) -> Fragment<'_> { Fragment::Character(*self) }
+    fn fragment(&self) -> Fragment<'_> {
+        Fragment::Character(*self)
+    }
 }
 impl sealed::Fragment for Cow<'_, str> {}
 impl TextFragment for Cow<'_, str> {
-    fn fragment(&self) -> Fragment<'_> { Fragment::Text(self.as_ref()) }
+    fn fragment(&self) -> Fragment<'_> {
+        Fragment::Text(self.as_ref())
+    }
 }
 impl sealed::Fragment for Box<str> {}
 impl TextFragment for Box<str> {
-    fn fragment(&self) -> Fragment<'_> { Fragment::Text(self.as_ref()) }
+    fn fragment(&self) -> Fragment<'_> {
+        Fragment::Text(self.as_ref())
+    }
 }
 impl<T: TextFragment + ?Sized> sealed::Fragment for &T {}
 impl<T: TextFragment + ?Sized> TextFragment for &T {
-    fn fragment(&self) -> Fragment<'_> { T::fragment(*self) }
+    fn fragment(&self) -> Fragment<'_> {
+        T::fragment(*self)
+    }
 }
 
 impl DecodeContext<'_> {

@@ -25,9 +25,11 @@ pub(crate) fn source_children<'tcx>(
             return None;
         }
         let mut children = Vec::new();
-        for (variant, expected) in owner.variants().iter().zip([
-            "Null", "Bool", "Number", "String", "Array", "Object",
-        ]) {
+        for (variant, expected) in owner
+            .variants()
+            .iter()
+            .zip(["Null", "Bool", "Number", "String", "Array", "Object"])
+        {
             if variant.name.as_str() != expected
                 || variant.fields.len() != usize::from(expected != "Null")
             {
@@ -51,13 +53,20 @@ pub(crate) fn source_children<'tcx>(
                 children.push(child);
             }
         }
-        return Some(JsonChildren { charged_parent: false, children });
+        return Some(JsonChildren {
+            charged_parent: false,
+            children,
+        });
     }
     if types::physical_item_path(tcx, definition, "serde_json", &["number", "Number"]) {
         if !owner.is_struct() || owner.has_dtor(tcx) || owner.all_fields().count() != 1 {
             return None;
         }
-        let representation = owner.all_fields().next()?.ty(tcx, arguments).skip_norm_wip();
+        let representation = owner
+            .all_fields()
+            .next()?
+            .ty(tcx, arguments)
+            .skip_norm_wip();
         let ty::Adt(number, number_args) = representation.kind() else {
             return None;
         };
@@ -75,12 +84,21 @@ pub(crate) fn source_children<'tcx>(
         ]) {
             if variant.name.as_str() != name
                 || variant.fields.len() != 1
-                || variant.fields.iter().next()?.ty(tcx, number_args).skip_norm_wip() != expected
+                || variant
+                    .fields
+                    .iter()
+                    .next()?
+                    .ty(tcx, number_args)
+                    .skip_norm_wip()
+                    != expected
             {
                 return None;
             }
         }
-        return Some(JsonChildren { charged_parent: true, children: Vec::new() });
+        return Some(JsonChildren {
+            charged_parent: true,
+            children: Vec::new(),
+        });
     }
     if !types::physical_item_path(tcx, definition, "serde_json", &["map", "Map"])
         || !owner.is_struct()
@@ -89,12 +107,19 @@ pub(crate) fn source_children<'tcx>(
     {
         return None;
     }
-    let representation = owner.all_fields().next()?.ty(tcx, arguments).skip_norm_wip();
+    let representation = owner
+        .all_fields()
+        .next()?
+        .ty(tcx, arguments)
+        .skip_norm_wip();
     let ty::Adt(map, map_args) = representation.kind() else {
         return None;
     };
     if !types::physical_item_path(
-        tcx, map.did(), "alloc", &["collections", "btree", "map", "BTreeMap"],
+        tcx,
+        map.did(),
+        "alloc",
+        &["collections", "btree", "map", "BTreeMap"],
     ) {
         return None;
     }
@@ -105,7 +130,10 @@ pub(crate) fn source_children<'tcx>(
     {
         return None;
     }
-    Some(JsonChildren { charged_parent: true, children })
+    Some(JsonChildren {
+        charged_parent: true,
+        children,
+    })
 }
 
 fn physical_type(tcx: TyCtxt<'_>, value: Ty<'_>, crate_name: &str, path: &[&str]) -> bool {

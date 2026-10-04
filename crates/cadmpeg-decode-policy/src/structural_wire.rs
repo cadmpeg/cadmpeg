@@ -38,11 +38,7 @@ struct Method<'tcx> {
 }
 
 impl<'tcx> Method<'tcx> {
-    fn instantiate_ty(
-        self,
-        tcx: TyCtxt<'tcx>,
-        ty: Ty<'tcx>,
-    ) -> Ty<'tcx> {
+    fn instantiate_ty(self, tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> Ty<'tcx> {
         self.instance.map_or(ty, |instance| {
             instance.instantiate_mir(tcx, ty::EarlyBinder::bind(tcx, ty))
         })
@@ -75,8 +71,12 @@ pub(crate) fn delegated_source<'tcx>(
     let mut delegate = None;
     let mut wire = None;
     for block in &reachable {
-        let TerminatorKind::Call { func, args, target: Some(_), .. } =
-            &body.basic_blocks[*block].terminator().kind
+        let TerminatorKind::Call {
+            func,
+            args,
+            target: Some(_),
+            ..
+        } = &body.basic_blocks[*block].terminator().kind
         else {
             continue;
         };
@@ -93,7 +93,10 @@ pub(crate) fn delegated_source<'tcx>(
         if candidate == source.peel_refs() {
             return None;
         }
-        delegate = Some(Delegate { block: *block, method: *definition });
+        delegate = Some(Delegate {
+            block: *block,
+            method: *definition,
+        });
         wire = Some(candidate);
     }
     let delegate = delegate?;
@@ -111,16 +114,38 @@ pub(crate) fn delegated_source<'tcx>(
         active_locals: HashSet::new(),
         delegate: Some(delegate),
     };
-    if !body_is_bounded(&mut trace, Method { definition: method, instance: None }, body, &[Origin::Data {
-        source: true,
-        fixed: false,
-    }, Origin::Serializer]) {
+    if !body_is_bounded(
+        &mut trace,
+        Method {
+            definition: method,
+            instance: None,
+        },
+        body,
+        &[
+            Origin::Data {
+                source: true,
+                fixed: false,
+            },
+            Origin::Serializer,
+        ],
+    ) {
         return None;
     }
-    if trace.local_origin(Method { definition: method, instance: None }, body, RETURN_PLACE, &[Origin::Data {
-        source: true,
-        fixed: false,
-    }, Origin::Serializer])? != Origin::Result
+    if trace.local_origin(
+        Method {
+            definition: method,
+            instance: None,
+        },
+        body,
+        RETURN_PLACE,
+        &[
+            Origin::Data {
+                source: true,
+                fixed: false,
+            },
+            Origin::Serializer,
+        ],
+    )? != Origin::Result
     {
         return None;
     }
@@ -197,13 +222,14 @@ impl<'tcx> Trace<'tcx> {
                 self.place_origin(method, body, place, arguments)
             }
             Operand::Constant(constant) => {
-                let value_type =
-                    method.instantiate_ty(self.tcx, operand.ty(body, self.tcx));
+                let value_type = method.instantiate_ty(self.tcx, operand.ty(body, self.tcx));
                 match value_type.kind() {
                     ty::FnDef(definition, _) => Some(Origin::Callback(*definition)),
                     ty::FnPtr(..) | ty::Dynamic(..) | ty::Infer(_) | ty::Error(_) => None,
                     _ if matches!(constant.const_, mir::Const::Unevaluated(..)) => {
-                        let mir::Const::Unevaluated(value, _) = constant.const_ else { return None; };
+                        let mir::Const::Unevaluated(value, _) = constant.const_ else {
+                            return None;
+                        };
                         let promoted = value.promoted?;
                         let body = self.tcx.promoted_mir(value.def).get(promoted)?;
                         let mut trace = Trace {
@@ -220,8 +246,12 @@ impl<'tcx> Trace<'tcx> {
                             return None;
                         }
                         match trace.local_origin(method, body, RETURN_PLACE, &[])? {
-                            Origin::Data { source: false, fixed: true } => Some(Origin::Data {
-                                source: false, fixed: true,
+                            Origin::Data {
+                                source: false,
+                                fixed: true,
+                            } => Some(Origin::Data {
+                                source: false,
+                                fixed: true,
                             }),
                             _ => None,
                         }
@@ -244,9 +274,12 @@ impl<'tcx> Trace<'tcx> {
         place: &Place<'tcx>,
         arguments: &[Origin],
     ) -> Option<Origin> {
-        let bounded_projection = place.as_ref().iter_projections().all(|(base, projection)| {
-            match projection {
-                mir::ProjectionElem::Deref => matches!(
+        let bounded_projection =
+            place
+                .as_ref()
+                .iter_projections()
+                .all(|(base, projection)| match projection {
+                    mir::ProjectionElem::Deref => matches!(
                     method.instantiate_ty(
                         self.tcx,
                         base.to_place(self.tcx).ty(body, self.tcx).ty,
@@ -254,10 +287,9 @@ impl<'tcx> Trace<'tcx> {
                     .kind(),
                     ty::Ref(..)
                 ),
-                mir::ProjectionElem::Field(..) | mir::ProjectionElem::Downcast(..) => true,
-                _ => false,
-            }
-        });
+                    mir::ProjectionElem::Field(..) | mir::ProjectionElem::Downcast(..) => true,
+                    _ => false,
+                });
         if !bounded_projection {
             return None;
         }
@@ -295,12 +327,8 @@ impl<'tcx> Trace<'tcx> {
                     fixed: true,
                 }))
             }
-            Rvalue::Discriminant(place) => {
-                self.place_origin(method, body, place, arguments)
-            }
-            Rvalue::CopyForDeref(place) => {
-                self.place_origin(method, body, place, arguments)
-            }
+            Rvalue::Discriminant(place) => self.place_origin(method, body, place, arguments),
+            Rvalue::CopyForDeref(place) => self.place_origin(method, body, place, arguments),
             Rvalue::UnaryOp(_, operand) => {
                 let origin = self.operand_origin(method, body, operand, arguments)?;
                 data_origin(origin)
@@ -336,24 +364,16 @@ impl<'tcx> Trace<'tcx> {
                 if !serde_serialize_call(self.tcx, *definition) || arguments.len() != 2 {
                     return None;
                 }
-                let value = self.operand_origin(
-                    caller,
-                    body,
-                    &arguments[0].node,
-                    caller_arguments,
-                )?;
+                let value =
+                    self.operand_origin(caller, body, &arguments[0].node, caller_arguments)?;
                 let Origin::Data { source, fixed } = value else {
                     return None;
                 };
                 if !source && !fixed {
                     return None;
                 }
-                if self.operand_origin(
-                    caller,
-                    body,
-                    &arguments[1].node,
-                    caller_arguments,
-                )? != Origin::Serializer
+                if self.operand_origin(caller, body, &arguments[1].node, caller_arguments)?
+                    != Origin::Serializer
                 {
                     return None;
                 }
@@ -370,23 +390,27 @@ impl<'tcx> Trace<'tcx> {
             if arguments.len() != 1 {
                 return None;
             }
-            return self.operand_origin(
-                caller,
-                body,
-                &arguments[0].node,
-                caller_arguments,
-            );
+            return self.operand_origin(caller, body, &arguments[0].node, caller_arguments);
         }
         if let [argument] = arguments {
-            let TerminatorKind::Call { destination, .. } = &body.basic_blocks[block].terminator().kind
-                else { return None; };
+            let TerminatorKind::Call { destination, .. } =
+                &body.basic_blocks[block].terminator().kind
+            else {
+                return None;
+            };
             let receiver = caller.instantiate_ty(self.tcx, argument.node.ty(body, self.tcx));
             let output = caller.instantiate_ty(self.tcx, destination.ty(body, self.tcx).ty);
             if crate::structural_scalar::fixed_string_borrow(
-                self.tcx, *definition, receiver, output,
+                self.tcx,
+                *definition,
+                receiver,
+                output,
             ) {
                 return data_origin(self.operand_origin(
-                    caller, body, &argument.node, caller_arguments,
+                    caller,
+                    body,
+                    &argument.node,
+                    caller_arguments,
                 )?);
             }
         }
@@ -397,12 +421,13 @@ impl<'tcx> Trace<'tcx> {
         }
         let actual: Option<Vec<_>> = arguments
             .iter()
-            .map(|argument| {
-                self.operand_origin(caller, body, &argument.node, caller_arguments)
-            })
+            .map(|argument| self.operand_origin(caller, body, &argument.node, caller_arguments))
             .collect();
         let actual = actual?;
-        if actual.iter().any(|origin| !matches!(origin, Origin::Data { .. })) {
+        if actual
+            .iter()
+            .any(|origin| !matches!(origin, Origin::Data { .. }))
+        {
             return None;
         }
         self.method_result_origin(instance, &actual)
@@ -439,16 +464,12 @@ impl<'tcx> Trace<'tcx> {
         else {
             return None;
         };
-        let Origin::Callback(callback) = self.operand_origin(
-            caller,
-            body,
-            &arguments[1].node,
-            caller_arguments,
-        )? else {
+        let Origin::Callback(callback) =
+            self.operand_origin(caller, body, &arguments[1].node, caller_arguments)?
+        else {
             return None;
         };
-        let callback_ty = caller
-            .instantiate_ty(self.tcx, arguments[1].node.ty(body, self.tcx));
+        let callback_ty = caller.instantiate_ty(self.tcx, arguments[1].node.ty(body, self.tcx));
         let ty::FnDef(callback_definition, callback_arguments) = callback_ty.kind() else {
             return None;
         };
@@ -491,11 +512,15 @@ impl<'tcx> Trace<'tcx> {
         arguments: &[Origin],
     ) -> Option<Origin> {
         if fixed_string_instance(self.tcx, instance) {
-            let [argument] = arguments else { return None; };
+            let [argument] = arguments else {
+                return None;
+            };
             return data_origin(*argument);
         }
         let method = instance.def_id();
-        if arguments.iter().any(|origin| !matches!(origin, Origin::Data { .. }))
+        if arguments
+            .iter()
+            .any(|origin| !matches!(origin, Origin::Data { .. }))
             || self.active_methods.contains(&method)
             || self.active_methods.len() >= self.tcx.recursion_limit().0
             || !self.tcx.is_mir_available(method)
@@ -539,10 +564,7 @@ fn body_is_bounded<'tcx>(
         || (1..=body.arg_count).any(|index| {
             matches!(
                 method
-                    .instantiate_ty(
-                        trace.tcx,
-                        body.local_decls[Local::from_usize(index)].ty,
-                    )
+                    .instantiate_ty(trace.tcx, body.local_decls[Local::from_usize(index)].ty,)
                     .kind(),
                 ty::Ref(_, _, ty::Mutability::Mut)
             )
@@ -555,20 +577,25 @@ fn body_is_bounded<'tcx>(
         let data = &body.basic_blocks[*block];
         for statement in &data.statements {
             match &statement.kind {
-                StatementKind::StorageLive(_) | StatementKind::StorageDead(_) | StatementKind::Nop => (),
+                StatementKind::StorageLive(_)
+                | StatementKind::StorageDead(_)
+                | StatementKind::Nop => (),
                 StatementKind::Assign(assignment) => {
                     let (target, value) = &**assignment;
                     if !target.projection.is_empty()
-                        || target.local.as_usize() > 0
-                            && target.local.as_usize() <= body.arg_count
-                        || trace.rvalue_origin(method, body, value, arguments).is_none()
+                        || target.local.as_usize() > 0 && target.local.as_usize() <= body.arg_count
+                        || trace
+                            .rvalue_origin(method, body, value, arguments)
+                            .is_none()
                     {
                         return false;
                     }
                 }
                 StatementKind::SetDiscriminant { place, .. }
-                    if place.projection.is_empty()
-                        && place.local.as_usize() > body.arg_count => (),
+                    if place.projection.is_empty() && place.local.as_usize() > body.arg_count =>
+                {
+                    ()
+                }
                 StatementKind::FakeRead(fake_read) => {
                     let (_, place) = &**fake_read;
                     if trace.place_origin(method, body, place, arguments).is_none() {
@@ -595,24 +622,25 @@ fn body_is_bounded<'tcx>(
                 }
             }
             TerminatorKind::SwitchInt { discr, .. } => {
-                if trace.operand_origin(method, body, discr, arguments).is_none() {
+                if trace
+                    .operand_origin(method, body, discr, arguments)
+                    .is_none()
+                {
                     return false;
                 }
             }
-            TerminatorKind::Drop {
-                place,
-                ..
-            } => {
+            TerminatorKind::Drop { place, .. } => {
                 let origin = trace.place_origin(method, body, place, arguments);
                 let serializer = place.local.as_usize() > 0
                     && place.local.as_usize() <= body.arg_count
                     && arguments.get(place.local.as_usize() - 1) == Some(&Origin::Serializer)
                     && origin == Some(Origin::Serializer);
                 if !place.projection.is_empty()
-                    || !(serializer || crate::structural_fixed::drop_is_fixed(
-                        trace.tcx,
-                        method.instantiate_ty(trace.tcx, place.ty(body, trace.tcx).ty),
-                    ))
+                    || !(serializer
+                        || crate::structural_fixed::drop_is_fixed(
+                            trace.tcx,
+                            method.instantiate_ty(trace.tcx, place.ty(body, trace.tcx).ty),
+                        ))
                 {
                     return false;
                 }
@@ -642,12 +670,16 @@ fn reachable_blocks(body: &mir::Body<'_>) -> HashSet<BasicBlock> {
 fn merge(current: Option<Origin>, next: Origin) -> Option<Origin> {
     match (current, next) {
         (None, value) => Some(value),
-        (Some(Origin::Data { source, fixed }), Origin::Data { source: next_source, fixed: next_fixed }) => {
-            Some(Origin::Data {
-                source: source || next_source,
-                fixed: fixed || next_fixed,
-            })
-        }
+        (
+            Some(Origin::Data { source, fixed }),
+            Origin::Data {
+                source: next_source,
+                fixed: next_fixed,
+            },
+        ) => Some(Origin::Data {
+            source: source || next_source,
+            fixed: fixed || next_fixed,
+        }),
         (Some(Origin::Serializer), Origin::Serializer) => Some(Origin::Serializer),
         (Some(Origin::Result), Origin::Result) => Some(Origin::Result),
         (Some(Origin::Callback(left)), Origin::Callback(right)) if left == right => {
@@ -661,12 +693,18 @@ fn combine_data(left: Origin, right: Origin) -> Origin {
     match (left, right) {
         (
             Origin::Data { source, fixed },
-            Origin::Data { source: next_source, fixed: next_fixed },
+            Origin::Data {
+                source: next_source,
+                fixed: next_fixed,
+            },
         ) => Origin::Data {
             source: source || next_source,
             fixed: fixed || next_fixed,
         },
-        _ => Origin::Data { source: false, fixed: false },
+        _ => Origin::Data {
+            source: false,
+            fixed: false,
+        },
     }
 }
 
@@ -707,13 +745,7 @@ fn serde_serialize_call(tcx: TyCtxt<'_>, definition: DefId) -> bool {
 }
 
 fn is_option_map(tcx: TyCtxt<'_>, definition: DefId) -> bool {
-    types::physical_inherent_method(
-        tcx,
-        definition,
-        "core",
-        &["option", "Option"],
-        "map",
-    )
+    types::physical_inherent_method(tcx, definition, "core", &["option", "Option"], "map")
 }
 
 fn is_option_as_ref(tcx: TyCtxt<'_>, definition: DefId) -> bool {
@@ -724,17 +756,25 @@ fn is_option_as_ref(tcx: TyCtxt<'_>, definition: DefId) -> bool {
         })
 }
 
-
 fn fixed_string_instance<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> bool {
-    if !matches!(tcx.def_kind(instance.def_id()),
-        rustc_hir::def::DefKind::Fn | rustc_hir::def::DefKind::AssocFn)
-    {
+    if !matches!(
+        tcx.def_kind(instance.def_id()),
+        rustc_hir::def::DefKind::Fn | rustc_hir::def::DefKind::AssocFn
+    ) {
         return false;
     }
-    let signature = tcx.fn_sig(instance.def_id()).instantiate(tcx, instance.args).skip_binder();
-    let [receiver] = signature.inputs() else { return false; };
+    let signature = tcx
+        .fn_sig(instance.def_id())
+        .instantiate(tcx, instance.args)
+        .skip_binder();
+    let [receiver] = signature.inputs() else {
+        return false;
+    };
     crate::structural_scalar::fixed_string_borrow(
-        tcx, instance.def_id(), *receiver, signature.output(),
+        tcx,
+        instance.def_id(),
+        *receiver,
+        signature.output(),
     )
 }
 
@@ -745,10 +785,7 @@ fn resolve_instance<'tcx>(
 ) -> Option<Instance<'tcx>> {
     let environment = ty::TypingEnv::fully_monomorphized();
     let arguments = tcx
-        .try_normalize_erasing_regions(
-            environment,
-            ty::Unnormalized::new_wip(arguments),
-        )
+        .try_normalize_erasing_regions(environment, ty::Unnormalized::new_wip(arguments))
         .ok()?;
     Instance::try_resolve(tcx, environment, definition, arguments)
         .ok()
