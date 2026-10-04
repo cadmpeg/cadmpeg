@@ -140,6 +140,7 @@ fn check_fixture(name: &str) {
             | "adapter_receipts"
             | "matrix_iteration"
             | "hash_tables"
+            | "member_keys"
             | "serde_storage"
             | "collection_sources"
             | "archive_probe"
@@ -252,6 +253,7 @@ fn check_fixture(name: &str) {
     if name == "external" {
         command.env("CADMPEG_POLICY_EXTERNALS", "1");
     }
+
     if name == "borrowed_identities" {
         command.env("CADMPEG_POLICY_CRATE_NAME", "cadmpeg_ir");
     }
@@ -1149,6 +1151,11 @@ fn concrete_matrix_and_map_sources_preserve_admission() {
 #[test]
 fn generic_instance_limits_reject_depth_and_distinct_state_overflow() {
     check_fixture("generic_limits");
+}
+
+#[test]
+fn member_key_callbacks_run_inside_hash_insertion() {
+    check_fixture("member_keys");
 }
 
 #[test]
