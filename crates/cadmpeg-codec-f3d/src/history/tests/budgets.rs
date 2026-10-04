@@ -383,31 +383,34 @@ fn history_topology_slot_index_refuses_collection_limit() {
     );
 }
 
-fn transition_error(max_items: u64) -> cadmpeg_core::CodecError {
-    use crate::history_records::{AsmEntityVersion, AsmHistoricalTopology, AsmTopologyCache};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+/// The adaptive ceiling includes all CollectionItems charged before the selected operation.
+fn transition_error(operation: &str) -> cadmpeg_core::CodecError {
+    crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        0,
+        |ctx| {
+            use crate::history_records::{AsmEntityVersion, AsmHistoricalTopology, AsmTopologyCache};
 
-    let mut history = one_state_history();
-    history.states[0].entity_versions.push(AsmEntityVersion {
-        entity_ref: 1,
-        record_ref: 1,
-    });
-    history.states[0].topology_cache = AsmTopologyCache::Complete(AsmHistoricalTopology {
-        bodies: vec![1],
-        ..Default::default()
-    });
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = max_items;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::bind_historical_transitions(&ctx, &mut history.states).unwrap_err()
+            let mut history = one_state_history();
+            history.states[0].entity_versions.push(AsmEntityVersion {
+                entity_ref: 1,
+                record_ref: 1,
+            });
+            history.states[0].topology_cache = AsmTopologyCache::Complete(AsmHistoricalTopology {
+                bodies: vec![1],
+                ..Default::default()
+            });
+            super::super::bind_historical_transitions(ctx, &mut history.states)
+        },
+    )
 }
 
 macro_rules! historical_transition_limit_test {
-    ($name:ident, $limit:expr, $operation:literal) => {
+    ($name:ident, $operation:literal) => {
         #[test]
         fn $name() {
-            let error = transition_error($limit);
+            let error = transition_error($operation);
             assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.operation == $operation));
         }
@@ -416,34 +419,46 @@ macro_rules! historical_transition_limit_test {
 
 historical_transition_limit_test!(
     history_transition_node_index_refuses_limit,
-    0,
     "index F3D transition nodes"
 );
 historical_transition_limit_test!(
     history_transition_vector_refuses_limit,
-    1,
     "collect F3D historical transitions"
 );
 historical_transition_limit_test!(
     history_transition_version_map_refuses_limit,
-    2,
     "index F3D transition versions"
 );
 historical_transition_limit_test!(
     history_transition_version_keys_refuses_limit,
-    3,
     "collect F3D transition version keys"
 );
 historical_transition_limit_test!(
     history_transition_entity_index_refuses_limit,
-    4,
     "index F3D current transition entities"
 );
 historical_transition_limit_test!(
     history_transition_delta_refuses_limit,
-    5,
     "collect F3D transition delta"
 );
+
+#[test]
+fn history_transition_node_index_refuses_scoped_storage_limit() {
+    let operation = "index F3D transition nodes";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        operation,
+        0,
+        |ctx| {
+            let mut history = one_state_history();
+            super::super::bind_historical_transitions(ctx, &mut history.states)
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
 
 #[test]
 fn history_transition_node_source_refuses_work_limit() {
@@ -839,6 +854,37 @@ fn history_change_parent_refuses_retained_limit() {
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "copy F3D ASM change parent")
     );
+}
+
+#[test]
+fn history_bulletin_board_parser_loops_refuse_work() {
+    let bytes = one_board_state();
+    for (operation, skip) in [
+        ("read F3D ASM bulletin board entry", 0),
+        ("read F3D ASM bulletin board entry", 1),
+        ("read F3D ASM entity change entry", 0),
+        ("read F3D ASM entity change entry", 1),
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            skip,
+            |ctx| {
+                super::super::decode(
+                    ctx,
+                    &bytes,
+                    "history",
+                    cadmpeg_asm::kernel_header::RefWidth::Four,
+                    &ctx.policy().limits,
+                )
+                .map(|_| ())
+            },
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+        ));
+    }
 }
 
 #[test]

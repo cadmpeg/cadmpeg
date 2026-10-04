@@ -327,6 +327,54 @@ fn changed_topology_members_refuse_collection_limit() {
 }
 
 #[test]
+fn changed_topology_family_member_scans_refuse_work() {
+    use crate::history_records::AsmHistoricalTopologyDelta;
+
+    let mut delta = AsmHistoricalTopologyDelta::default();
+    delta.bodies.inserted.push(1);
+    delta.bodies.updated.push(2);
+    delta.bodies.deleted.push(3);
+    for (deleted, skip) in [(false, 0), (false, 1), (true, 0)] {
+        let operation = "scan F3D changed topology family members";
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            skip,
+            |ctx| super::super::changed_family_refs(ctx, &delta, deleted).map(|_| ()),
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+        ));
+    }
+}
+
+#[test]
+fn affected_history_body_scan_refuses_work() {
+    let operation = "scan F3D affected history bodies";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            let (mut feature, scope, history, body) = output_binding_inputs();
+            super::super::bind_feature_outputs(
+                ctx,
+                std::slice::from_mut(&mut feature),
+                &[scope],
+                &[history],
+                &[body],
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
 fn affected_history_bodies_refuse_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let (_, _, history, _) = output_binding_inputs();

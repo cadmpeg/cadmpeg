@@ -1121,6 +1121,77 @@ fn snapshot_ordinals_bind_the_sorted_revision_interval() {
     );
 }
 
+fn snapshot_revision_scan_state() -> AsmDeltaState {
+    let state_id = "snapshot-state".to_string();
+    let board_id = "snapshot-board".to_string();
+    AsmDeltaState {
+        id: state_id.clone(),
+        parent: "snapshot-history".into(),
+        byte_offset: 0,
+        state_id: 1,
+        version_flag: 1,
+        state_flag: 0,
+        previous_ref: None,
+        next_ref: None,
+        node_index: 0,
+        partner_ref: None,
+        owner_ref: 0,
+        bulletin_boards: vec![AsmBulletinBoard {
+            id: board_id.clone(),
+            parent: state_id.clone(),
+            byte_offset: 0,
+            owner_ref: 0,
+            number: 1,
+            changes: vec![AsmEntityChange {
+                id: "snapshot-change".into(),
+                parent: board_id,
+                byte_offset: 0,
+                kind: AsmEntityChangeKind::Delete { old: 1 },
+            }],
+        }],
+        records: vec![AsmHistoryRecord {
+            id: "snapshot-record".into(),
+            parent: state_id,
+            revision_id: None,
+            byte_offset: 0,
+            framing: crate::history_records::AsmHistoryRecordFraming::Framed {
+                index: 0,
+                name: "edge".into(),
+                entity_references: Vec::new(),
+            },
+            raw_bytes: vec![0x11],
+        }],
+        entity_versions: Vec::new(),
+        topology_cache: crate::history_records::AsmTopologyCache::Absent,
+        transition: None,
+    }
+}
+
+#[test]
+fn snapshot_revision_source_scans_refuse_work() {
+    for operation in [
+        "scan F3D snapshot reference states",
+        "scan F3D snapshot reference boards",
+        "scan F3D snapshot reference changes",
+        "scan F3D snapshot record states",
+        "scan F3D snapshot records",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |ctx| {
+                let mut state = snapshot_revision_scan_state();
+                bind_snapshot_revision_ids(ctx, std::slice::from_mut(&mut state))
+            },
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+        ));
+    }
+}
+
 #[test]
 fn insert_only_history_uses_the_active_record_table_as_revisions() {
     let state = |node_index, next_ref, inserted: &[i64]| {

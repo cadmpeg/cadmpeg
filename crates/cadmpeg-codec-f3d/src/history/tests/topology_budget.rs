@@ -271,3 +271,71 @@ fn historical_topology_classified_face_loop_members_refuse_work() {
         cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
     ));
 }
+
+fn reference_brep() -> cadmpeg_asm::brep::AsmBrep {
+    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::geometry::{
+        Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+        SurfaceGeometry,
+    };
+    use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
+    use cadmpeg_ir::ids::{CurveId, EdgeId, PcurveId, PointId, SurfaceId, VertexId};
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::topology::{Edge, EdgeCarrier, Point, Vertex};
+
+    let mut brep = relation_brep(false);
+    let id = |slot| format!("f3d:brep:entity#{slot}");
+    let vertex = VertexId::mint(id(30)).unwrap();
+    let point = PointId::mint(id(31)).unwrap();
+    brep.edges.push(Edge {
+        id: EdgeId::mint(id(7)).unwrap(),
+        carrier: EdgeCarrier::new(None, None).unwrap(),
+        start: vertex.clone(),
+        end: vertex.clone(),
+        tolerance: None,
+    });
+    brep.vertices.push(Vertex {
+        id: vertex,
+        point: point.clone(),
+        tolerance: None,
+    });
+    brep.points.push(Point::new(
+        point,
+        FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+        None,
+    ));
+    brep.surfaces.push(Surface {
+        id: SurfaceId::mint(id(20)).unwrap(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+        source_object: None,
+    });
+    brep.curves.push(Curve {
+        id: CurveId::mint(id(32)).unwrap(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+        source_object: None,
+    });
+    brep.pcurves.push(Pcurve {
+        id: PcurveId::mint(id(33)).unwrap(),
+        geometry: PcurveGeometry::Line(LinePcurve::U_AXIS),
+        metadata: PcurveMetadata::default(),
+    });
+    brep
+}
+
+#[test]
+fn historical_topology_reference_owner_slices_refuse_work() {
+    let brep = reference_brep();
+    let operation = "scan F3D historical topology reference owners";
+    for skip in 0..12 {
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            skip,
+            |ctx| super::super::historical_topology(ctx, &brep).map(|_| ()),
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+        ));
+    }
+}
