@@ -669,29 +669,28 @@ fn validate_sketches(
         let mut auxiliary_references: Option<
             AdmittedIter<std::slice::Iter<'_, PmDcReference>>,
         > = None;
-        let auxiliary_references = std::iter::from_fn(|| loop {
-            if let Err(error) = ctx.charge_work(
-                1,
-                "visit Inventor PmDc sketch auxiliary reference iterator",
-            ) {
-                return Some(Err(error));
-            }
-            if let Some(references) = auxiliary_references.as_mut() {
-                if let Some(reference) = references.next() {
-                    return Some(Ok(reference.index()));
+        let auxiliary_references = std::iter::from_fn(|| {
+            (|| -> Result<Option<u32>, CodecError> {
+                loop {
+                    ctx.charge_work(
+                        1,
+                        "visit Inventor PmDc sketch auxiliary reference iterator",
+                    )?;
+                    if let Some(references) = auxiliary_references.as_mut() {
+                        if let Some(reference) = references.next() {
+                            return Ok(Some(reference.index()));
+                        }
+                        auxiliary_references = None;
+                    }
+                    let Some(list) = auxiliary_lists.next() else {
+                        return Ok(None);
+                    };
+                    auxiliary_references = Some(ctx.admit_iter(
+                        list.references(),
+                        "resolve Inventor PmDc sketch auxiliary references",
+                    )?);
                 }
-                auxiliary_references = None;
-            }
-            let Some(list) = auxiliary_lists.next() else {
-                return None;
-            };
-            match ctx.admit_iter(
-                list.references(),
-                "resolve Inventor PmDc sketch auxiliary references",
-            ) {
-                Ok(references) => auxiliary_references = Some(references),
-                Err(limit) => return Some(Err(CodecError::ResourceLimit(limit))),
-            }
+            })().transpose()
         });
         let header_references = [
             sketch.header.next.index(),

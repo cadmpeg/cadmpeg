@@ -34,24 +34,25 @@ pub(crate) fn project_catalog(
             std::slice::Iter<'_, cadmpeg_protein::DecodedRecord>,
         >,
     > = None;
-    let records = std::iter::from_fn(move || loop {
-        if let Err(error) = ctx.charge_work(1, "flatten Inventor material records") {
-            return Some(Err(error));
-        }
-        if let Some(records) = instance_records.as_mut() {
-            if let Some(record) = records.next() {
-                return Some(Ok(record));
+    let records = std::iter::from_fn(move || {
+        (|| -> Result<Option<&cadmpeg_protein::DecodedRecord>, CodecError> {
+            loop {
+                ctx.charge_work(1, "flatten Inventor material records")?;
+                if let Some(records) = instance_records.as_mut() {
+                    if let Some(record) = records.next() {
+                        return Ok(Some(record));
+                    }
+                }
+                instance_records = None;
+                let Some(instance) = instances_iter.next() else {
+                    return Ok(None);
+                };
+                instance_records = Some(ctx.admit_iter(
+                    &instance.records,
+                    "Inventor material instance records",
+                )?);
             }
-        }
-        instance_records = None;
-        let instance = instances_iter.next()?;
-        match ctx.admit_iter(
-            &instance.records,
-            "Inventor material instance records",
-        ) {
-            Ok(records) => instance_records = Some(records),
-            Err(error) => return Some(Err(CodecError::from(error))),
-        }
+        })().transpose()
     });
     let records = records_storage.with_storage(|| {
         ctx.try_collect_vec(records, "Inventor material record references")

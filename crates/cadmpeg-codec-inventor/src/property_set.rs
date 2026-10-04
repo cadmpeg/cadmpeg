@@ -904,34 +904,28 @@ fn decode_code_page(
             }
         }
     }
-    let mut decoded_bytes =
-        ctx.alloc_filled(decoded_len, 0_u8, "retain OLE property string")?;
+    let mut decoded = String::new();
+    ctx.try_reserve_retained_text(
+        &mut decoded,
+        decoded_len,
+        "retain OLE property string",
+    )?;
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(source.len()),
         "decode OLE code-page string",
     )?;
     let mut decoder = selected_encoding.new_decoder_without_bom_handling();
-    let (result, read, written) = decoder.decode_to_utf8_without_replacement(
-        source,
-        &mut decoded_bytes,
-        true,
-    );
+    let (result, read) = decoder.decode_to_string_without_replacement(source, &mut decoded, true);
     if result != encoding_rs::DecoderResult::InputEmpty
         || read != source.len()
-        || written != decoded_len
+        || decoded.len() != decoded_len
     {
         return Err(CodecError::malformed(format_args!(
             "OLE code-page {} string is malformed",
             page
         )));
     }
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(decoded_len),
-        "validate OLE decoded UTF-8",
-    )?;
-    String::from_utf8(decoded_bytes).map_err(|_| {
-        CodecError::malformed(format_args!("OLE code-page {page} string is malformed"))
-    })
+    Ok(decoded)
 }
 
 fn encoding_for_code_page(code_page: u16) -> Option<&'static encoding_rs::Encoding> {
