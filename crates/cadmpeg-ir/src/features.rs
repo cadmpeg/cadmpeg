@@ -187,7 +187,6 @@ impl FinitePoint3 {
         y: 0.0,
         z: 0.0,
     });
-
     /// The point with three finite coordinates. Every coordinate is finite,
     /// so the point is admitted without a check.
     #[must_use]
@@ -198,14 +197,12 @@ impl FinitePoint3 {
             z: z.get(),
         })
     }
-
     /// Reflect through the model origin. Negation keeps every coordinate
     /// finite, so the result stays admitted.
     #[must_use]
     pub fn negated(self) -> Self {
         Self(Point3::new(-self.0.x, -self.0.y, -self.0.z))
     }
-
     /// The point with every coordinate times `scale`. The product is refused
     /// only when a coordinate overflows.
     #[must_use]
@@ -217,7 +214,6 @@ impl FinitePoint3 {
             self.0.z * scale,
         ))
     }
-
     /// Admit every point, or none of them.
     pub(crate) fn array<const N: usize>(values: [Point3; N]) -> Option<[Self; N]> {
         values
@@ -225,7 +221,6 @@ impl FinitePoint3 {
             .all(Point3::is_finite)
             .then(|| values.map(Self))
     }
-
     /// The raw points of the array, for a reader that writes or edits them.
     #[must_use]
     pub fn raw_array<const N: usize>(values: [Self; N]) -> [Point3; N] {
@@ -254,7 +249,6 @@ impl FiniteVector3 {
         y: 0.0,
         z: 0.0,
     });
-
     /// The vector with three finite components. Every component is finite,
     /// so the vector is admitted without a check.
     #[must_use]
@@ -265,7 +259,6 @@ impl FiniteVector3 {
             z: z.get(),
         })
     }
-
     /// Use admitted vector coordinates as a finite point.
     #[must_use]
     pub const fn as_point(self) -> FinitePoint3 {
@@ -275,13 +268,11 @@ impl FiniteVector3 {
             z: self.0.z,
         })
     }
-
     /// Reverse all components.
     #[must_use]
     pub fn negated(self) -> Self {
         Self(Vector3::new(-self.0.x, -self.0.y, -self.0.z))
     }
-
     /// Admit every vector, or none of them.
     pub(crate) fn array<const N: usize>(values: [Vector3; N]) -> Option<[Self; N]> {
         values
@@ -289,7 +280,6 @@ impl FiniteVector3 {
             .all(Vector3::is_finite)
             .then(|| values.map(Self))
     }
-
     /// The raw vectors of the array, for a reader that writes or edits them.
     #[must_use]
     pub fn raw_array<const N: usize>(values: [Self; N]) -> [Vector3; N] {
@@ -308,7 +298,6 @@ checked_feature_geometry!(
 impl cadmpeg_core::decode::cost::DecodeCost for FeatureDirection3 {
     const FIXED_BYTES: Option<u64> =
         <Vector3 as cadmpeg_core::decode::cost::DecodeCost>::FIXED_BYTES;
-
     fn decode_cost(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -346,7 +335,6 @@ impl Transform {
         let rows = self.affine_rows();
         FiniteVector3(Vector3::new(rows[0][3], rows[1][3], rows[2][3]))
     }
-
     /// The columns of the linear part. The transform admits only finite
     /// entries, so nothing is checked. The route lives beside
     /// [`FiniteVector3`] because only this module constructs one.
@@ -386,7 +374,6 @@ impl FeatureDirection3 {
         y: 0.0,
         z: 1.0,
     });
-
     /// Reverse all components. Each product of two components keeps its
     /// value under negation, so the squared norm is unchanged and the result
     /// stays admitted.
@@ -394,7 +381,6 @@ impl FeatureDirection3 {
     pub fn reversed(self) -> Self {
         Self(Vector3::new(-self.0.x, -self.0.y, -self.0.z))
     }
-
     /// Canonicalize a unit input by replacing components of magnitude at most
     /// `1e-12` with positive zero. A unit vector has a component above one
     /// half in magnitude, so the result keeps a finite nonzero squared norm.
@@ -428,7 +414,6 @@ impl FeatureRigidPlacement {
     pub fn identity() -> Self {
         Self(Transform::identity())
     }
-
     /// Replace the translation and keep the linear rows. Rigidity is a
     /// condition on the linear rows alone, so the result keeps the admission
     /// without a check.
@@ -436,7 +421,6 @@ impl FeatureRigidPlacement {
     pub fn with_translation(self, translation: FiniteVector3) -> Self {
         Self(self.0.with_translation(translation))
     }
-
     /// Scale the translation while keeping the admitted rigid linear rows.
     #[must_use]
     pub fn scaled_translation(self, scale: PositiveReal) -> Option<Self> {
@@ -476,7 +460,6 @@ impl FeatureUnitPlaneFrame {
         let v_axis = UnitVector3::new(v_axis)?;
         Self::from_parts(origin, u_axis, v_axis)
     }
-
     /// Build a plane frame from checked parts; only perpendicularity remains to check.
     pub fn from_parts(
         origin: FinitePoint3,
@@ -489,14 +472,12 @@ impl FeatureUnitPlaneFrame {
             v_axis,
         })
     }
-
     /// Replace the origin and keep the admitted axes. The axes alone satisfy
     /// the frame contract, so the result needs no new admission.
     #[must_use]
     pub fn with_origin(self, origin: FinitePoint3) -> Self {
         Self { origin, ..self }
     }
-
     /// Return the model-space origin.
     pub fn origin(self) -> FinitePoint3 {
         self.origin
@@ -552,7 +533,6 @@ impl FeatureCoordinateFrame {
         let z_axis = UnitVector3::new(z_axis)?;
         Self::from_parts(plane, z_axis)
     }
-
     /// Build a frame from admitted axes and an admitted plane origin.
     pub fn from_parts(plane: FeatureUnitPlaneFrame, z_axis: UnitVector3) -> Option<Self> {
         let x_axis = *plane.u_axis().as_raw();
@@ -746,17 +726,14 @@ impl FeatureLineSegment {
         let end = FinitePoint3::new(end)?;
         Self::from_parts(start, end)
     }
-
     /// Build a line from admitted endpoints, checking only that they differ.
     pub fn from_parts(start: FinitePoint3, end: FinitePoint3) -> Option<Self> {
         (start != end).then_some(Self { start, end })
     }
-
     /// Return the start point.
     pub fn start(self) -> FinitePoint3 {
         self.start
     }
-
     /// Return the end point.
     pub fn end(self) -> FinitePoint3 {
         self.end
@@ -801,7 +778,6 @@ impl FeaturePolyline {
             .collect::<Option<Vec<_>>>()?;
         Self::from_parts(points, closed)
     }
-
     /// Build a polyline from finite points if its chain is admissible.
     pub fn from_parts(points: Vec<FinitePoint3>, closed: bool) -> Option<Self> {
         if points.len() < 2
@@ -812,12 +788,10 @@ impl FeaturePolyline {
         }
         Some(Self { points, closed })
     }
-
     /// Return the ordered vertices.
     pub fn points(&self) -> &[FinitePoint3] {
         &self.points
     }
-
     /// Whether the last vertex connects to the first.
     pub fn closed(&self) -> bool {
         self.closed
@@ -889,27 +863,22 @@ impl FeatureEquationCurve {
             domain,
         })
     }
-
     /// Return the independent parameter symbol.
     pub fn parameter(&self) -> &str {
         &self.parameter
     }
-
     /// Return the model-space x expression.
     pub fn x_expression(&self) -> &str {
         &self.x_expression
     }
-
     /// Return the model-space y expression.
     pub fn y_expression(&self) -> &str {
         &self.y_expression
     }
-
     /// Return the model-space z expression.
     pub fn z_expression(&self) -> &str {
         &self.z_expression
     }
-
     /// Return the admitted parameter domain.
     pub fn domain(&self) -> crate::topology::IncreasingParameterInterval {
         self.domain
@@ -968,7 +937,6 @@ impl FeatureCircularArc {
             angles,
         ))
     }
-
     /// Build an arc from checked parts. The argument types state the whole
     /// arc contract, so nothing is checked again.
     #[must_use]
@@ -985,22 +953,18 @@ impl FeatureCircularArc {
             angles,
         }
     }
-
     /// Return the circle center.
     pub fn center(self) -> FinitePoint3 {
         self.center
     }
-
     /// Return the circle-plane normal.
     pub fn normal(self) -> FeatureDirection3 {
         self.normal
     }
-
     /// Return the radius.
     pub fn radius(self) -> PositiveLength {
         self.radius
     }
-
     /// Return the directed angular interval in radians.
     pub fn angles(self) -> crate::geometry::DirectedParameterRange {
         self.angles
@@ -1088,7 +1052,6 @@ impl FeatureEllipticArc {
             angles,
         })
     }
-
     /// Replace the center and keep the admitted radii, directions and
     /// interval. The center takes part in no other condition, so nothing is
     /// checked.
@@ -1096,7 +1059,6 @@ impl FeatureEllipticArc {
     pub const fn with_center(self, center: FinitePoint3) -> Self {
         Self { center, ..self }
     }
-
     /// The arc with both radii times `scale`, keeping the center, directions
     /// and interval.
     ///
@@ -1110,27 +1072,22 @@ impl FeatureEllipticArc {
             PositiveLength::scale_ordered_pair(self.radii.map(PositiveLength::get), scale).ok()?;
         Some(Self { radii, ..self })
     }
-
     /// Return the ellipse center.
     pub fn center(self) -> FinitePoint3 {
         self.center
     }
-
     /// Return the ellipse-plane normal.
     pub fn normal(self) -> FeatureDirection3 {
         self.normal
     }
-
     /// Return the major-axis direction.
     pub fn major_axis(self) -> FeatureDirection3 {
         self.major_axis
     }
-
     /// Return the major and minor semiaxis radii.
     pub fn radii(self) -> [PositiveLength; 2] {
         self.radii
     }
-
     /// Return the directed angular interval in radians.
     pub fn angles(self) -> crate::geometry::DirectedParameterRange {
         self.angles
@@ -1383,7 +1340,6 @@ impl ConfigurationEvaluation {
     pub const fn is_suppressed(&self) -> bool {
         matches!(self, Self::Suppressed {})
     }
-
     /// Bodies produced or modified by an active feature.
     #[must_use]
     pub fn outputs(&self) -> &[BodyId] {
@@ -1609,7 +1565,6 @@ pub enum DimensionDisplay {
 
 impl cadmpeg_core::decode::cost::DecodeCost for DimensionDisplay {
     const FIXED_BYTES: Option<u64> = Some(1);
-
     fn decode_cost(
         &self,
         _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -1728,7 +1683,6 @@ impl FeatureEvaluation {
             outputs,
         }
     }
-
     /// Construct an evaluation with no produced bodies.
     #[must_use]
     pub const fn from_definition(definition: FeatureDefinition) -> Self {
@@ -1737,22 +1691,18 @@ impl FeatureEvaluation {
             outputs: DistinctMembers(Vec::new()),
         }
     }
-
     /// Consume the evaluation and return its semantics and produced bodies.
     pub fn into_parts(self) -> (FeatureDefinition, DistinctMembers<BodyId>) {
         (self.definition, self.outputs)
     }
-
     /// Return the neutral construction semantics.
     pub const fn definition(&self) -> &FeatureDefinition {
         &self.definition
     }
-
     /// Return the produced or modified body identities.
     pub const fn outputs(&self) -> &Vec<BodyId> {
         &self.outputs.0
     }
-
     /// Edit the semantics and the produced bodies together.
     pub fn edit(
         &mut self,
@@ -1760,12 +1710,10 @@ impl FeatureEvaluation {
     ) {
         edit(&mut self.definition, &mut self.outputs);
     }
-
     /// Replace the construction semantics.
     pub fn set_definition(&mut self, definition: FeatureDefinition) {
         self.definition = definition;
     }
-
     /// Replace the produced body identities.
     pub fn set_outputs(&mut self, outputs: DistinctMembers<BodyId>) {
         self.outputs = outputs;
@@ -1847,7 +1795,6 @@ impl<'a> FeatureWriteWire<'a> {
             native_ref: &feature.native_ref,
         }
     }
-
     fn standalone(feature: &'a Feature) -> Self {
         Self::new(feature, None)
     }
@@ -1992,7 +1939,6 @@ impl JsonSchema for Feature {
     fn schema_name() -> std::borrow::Cow<'static, str> {
         "Feature".into()
     }
-
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         FeatureReadWire::json_schema(generator)
     }
@@ -2094,7 +2040,6 @@ pub enum FeatureResultMemberError {
 
 impl TryFrom<NonEmptyMembers<SelectionMember>> for FeatureResultMembers {
     type Error = FeatureResultMemberError;
-
     fn try_from(members: NonEmptyMembers<SelectionMember>) -> Result<Self, Self::Error> {
         let mut sorted = Self {
             bodies: Vec::new(),
@@ -2138,7 +2083,6 @@ impl FeatureResultMembers {
         }
         .validate(&membership::DecodeAdmission { ctx, operation })
     }
-
     fn validate<S: membership::Admission>(
         self,
         admission: &S,
@@ -2206,7 +2150,6 @@ impl FeatureResultTopology {
             native_ref,
         }
     }
-
     /// Feature-local body identities.
     pub fn bodies(&self) -> &[NonBlankString] {
         &self.members.bodies
@@ -2249,7 +2192,6 @@ impl FeatureContent {
         Self::build(&membership::DecodeAdmission { ctx, operation }, value)?
             .map_err(FeatureCollectionError::Invalid)
     }
-
     fn build<S: membership::Admission>(
         admission: &S,
         value: Vec<FeatureSourceContent>,
@@ -2270,12 +2212,10 @@ impl FeatureContent {
         }
         Ok(Ok(Self(value)))
     }
-
     /// Constructs text-only content in source order, retaining repeated text.
     pub fn text(values: impl IntoIterator<Item = String>) -> Self {
         Self(values.into_iter().map(FeatureSourceContent::Text).collect())
     }
-
     /// Append decoded content without repeating a parameter or child-feature reference.
     pub fn push(
         &mut self,
@@ -2297,7 +2237,6 @@ impl FeatureContent {
         self.0.push(value);
         Ok(())
     }
-
     /// Reserves capacity for additional ordered source-content entries.
     pub fn reserve_for_decode(
         &mut self,
@@ -2308,7 +2247,6 @@ impl FeatureContent {
         ctx.reserve_capacity_limit(&mut self.0, additional, operation)
             .map_err(Into::into)
     }
-
     /// Whether the sequence has no content.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
@@ -2581,7 +2519,6 @@ impl JsonSchema for NativeFeatureKind {
     fn schema_name() -> std::borrow::Cow<'static, str> {
         "NativeFeatureKind".into()
     }
-
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         String::json_schema(generator)
     }
@@ -2844,7 +2781,6 @@ impl TreeChildren {
         )?
         .map_err(FeatureCollectionError::Invalid)
     }
-
     fn build<S: membership::Admission>(
         active_admission: &S,
         member_admission: &S,
@@ -2876,17 +2812,14 @@ impl TreeChildren {
             active_child,
         }))
     }
-
     /// Whether the node has no children.
     pub fn is_empty(&self) -> bool {
         self.children.is_empty()
     }
-
     /// Return the active child identity.
     pub fn active_child(&self) -> &Option<FeatureId> {
         &self.active_child
     }
-
     /// Add a child after admitting its membership comparisons and retained slot.
     pub fn insert(
         &mut self,
@@ -4289,7 +4222,6 @@ impl FeatureDefinition {
     ) -> Result<Self, cadmpeg_core::CodecError> {
         decode_clone::CloneForDecode::try_clone_for_decode(self, ctx, operation)
     }
-
     /// The operation this definition performs, its post-processing layer aside.
     #[must_use]
     pub const fn operation(&self) -> &FeatureOperation {
@@ -4297,7 +4229,6 @@ impl FeatureDefinition {
             Self::PostProcess { operation, .. } | Self::Operation(operation) => operation,
         }
     }
-
     /// Family name of a definition whose replay produces body geometry, and
     /// `None` for definitions that do not.
     ///
@@ -4519,7 +4450,6 @@ impl PrimitiveSolid {
             .then_some(Self(kind))
             .ok_or(INVALID_PRIMITIVE_DIMENSIONS)
     }
-
     /// The primitive with every length times `scale`, keeping its angles and
     /// side count.
     ///
@@ -4703,7 +4633,6 @@ impl PrimitiveSolid {
                 INVALID_PRIMITIVE_DIMENSIONS,
             ))
     }
-
     /// Returns the primitive form and dimensions.
     pub fn kind(&self) -> &PrimitiveSolidKind {
         &self.0
@@ -4712,7 +4641,6 @@ impl PrimitiveSolid {
 
 impl TryFrom<PrimitiveSolidKind> for PrimitiveSolid {
     type Error = &'static str;
-
     fn try_from(kind: PrimitiveSolidKind) -> Result<Self, Self::Error> {
         Self::new(kind)
     }
