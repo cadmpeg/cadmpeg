@@ -2,12 +2,12 @@
 //! Unit scaling of solved carriers tests only what scaling can break.
 
 use super::ScaleRefusal;
-use crate::geometry::analytic::{ConeSurface, EllipseCurve, PlaneSurface};
+use crate::geometry::analytic::{ConeSurface, EllipseCurve, LineCurve, PlaneSurface};
 use crate::geometry::sampled::{
     GeometryLayoutError, PolygonalSurface, PolylineCurve, PolylineSamples, PolylineVertex,
 };
 use crate::geometry::{
-    PlacedSurface, SolvedCurveGeometry, SolvedSurfaceGeometry, MAX_GEOMETRY_NESTING,
+    PlacedCurve, PlacedSurface, SolvedCurveGeometry, SolvedSurfaceGeometry, MAX_GEOMETRY_NESTING,
 };
 use crate::math::{Point3, Vector3};
 use crate::scalar::PositiveReal;
@@ -131,49 +131,135 @@ fn plane() -> SolvedSurfaceGeometry {
 /// original chain.
 #[test]
 fn a_scaled_placement_chain_keeps_its_nesting_depth() {
-    let translation = Transform::affine([
-        [1.0, 0.0, 0.0, 1.0],
-        [0.0, 1.0, 0.0, 2.0],
-        [0.0, 0.0, 1.0, 3.0],
-    ])
-    .expect("a translation fixture");
-    let mut chain = plane();
-    for _ in 0..MAX_GEOMETRY_NESTING {
-        chain = SolvedSurfaceGeometry::Transformed(
-            PlacedSurface::try_new(Box::new(chain), translation)
-                .expect("the chain is within the bound"),
-        );
-    }
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_recursion_depth = u64::try_from(MAX_GEOMETRY_NESTING).expect("fixture depth");
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let scaled = chain
-        .scaled(&ctx, scale(25.4))
-        .expect("fixture scaling admission")
-        .expect("finite scaled chain");
-    assert_eq!(scaled.nesting_depth(), MAX_GEOMETRY_NESTING);
-    assert!(PlacedSurface::try_new(Box::new(scaled.clone()), translation).is_err());
+    std::thread::Builder::new()
+        .stack_size(1024 * 1024)
+        .spawn(|| {
+            let translation = Transform::affine([
+                [1.0, 0.0, 0.0, 1.0],
+                [0.0, 1.0, 0.0, 2.0],
+                [0.0, 0.0, 1.0, 3.0],
+            ])
+            .expect("a translation fixture");
+            let mut chain = plane();
+            for _ in 0..MAX_GEOMETRY_NESTING {
+                chain = SolvedSurfaceGeometry::Transformed(
+                    PlacedSurface::try_new(Box::new(chain), translation)
+                        .expect("the chain is within the bound"),
+                );
+            }
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_recursion_depth =
+                u64::try_from(MAX_GEOMETRY_NESTING).expect("fixture depth");
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("root");
+            let scaled = chain
+                .scaled(&ctx, scale(25.4))
+                .expect("fixture scaling admission")
+                .expect("finite scaled chain");
+            assert_eq!(scaled.nesting_depth(), MAX_GEOMETRY_NESTING);
+            assert!(PlacedSurface::try_new(Box::new(scaled.clone()), translation).is_err());
 
-    let SolvedSurfaceGeometry::Transformed(outer) = &scaled else {
-        panic!("a scaled placement stays a placement");
-    };
-    assert_eq!(
-        outer.transform().affine_rows().map(|row| row[3]),
-        [25.4, 2.0 * 25.4, 3.0 * 25.4]
-    );
-    let mut leaf = &scaled;
-    while let SolvedSurfaceGeometry::Transformed(placed) = leaf {
-        leaf = placed.basis();
-    }
-    let SolvedSurfaceGeometry::Plane(plane) = leaf else {
-        panic!("the leaf stays a plane");
-    };
-    assert_eq!(
-        plane.origin().get(),
-        Point3::new(25.4, 2.0 * 25.4, 3.0 * 25.4)
-    );
+            let SolvedSurfaceGeometry::Transformed(outer) = &scaled else {
+                panic!("a scaled placement stays a placement");
+            };
+            assert_eq!(
+                outer.transform().affine_rows().map(|row| row[3]),
+                [25.4, 2.0 * 25.4, 3.0 * 25.4]
+            );
+            let mut leaf = &scaled;
+            while let SolvedSurfaceGeometry::Transformed(placed) = leaf {
+                leaf = placed.basis();
+            }
+            let SolvedSurfaceGeometry::Plane(plane) = leaf else {
+                panic!("the leaf stays a plane");
+            };
+            assert_eq!(
+                plane.origin().get(),
+                Point3::new(25.4, 2.0 * 25.4, 3.0 * 25.4)
+            );
+        })
+        .expect("start a thread with a one MiB stack")
+        .join()
+        .expect("scale the full placement chain on a one MiB stack");
+}
+
+#[test]
+fn a_scaled_curve_chain_fits_a_small_stack_and_keeps_resource_limits() {
+    std::thread::Builder::new()
+        .stack_size(1024 * 1024)
+        .spawn(|| {
+            let translation = Transform::affine([
+                [1.0, 0.0, 0.0, 1.0],
+                [0.0, 1.0, 0.0, 2.0],
+                [0.0, 0.0, 1.0, 3.0],
+            ])
+            .expect("translation");
+            let mut chain = SolvedCurveGeometry::Line(
+                LineCurve::try_new(Point3::new(1.0, 2.0, 3.0), Vector3::new(1.0, 0.0, 0.0))
+                    .expect("line"),
+            );
+            for _ in 0..MAX_GEOMETRY_NESTING {
+                chain = SolvedCurveGeometry::Transformed(
+                    PlacedCurve::try_new(Box::new(chain), translation).expect("admitted depth"),
+                );
+            }
+            let depth = u64::try_from(MAX_GEOMETRY_NESTING).expect("depth");
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_recursion_depth = depth;
+            policy.limits.max_work_units = 2 * (depth + 1);
+            policy.limits.max_collection_items = depth;
+            policy.limits.max_retained_bytes = depth
+                * u64::try_from(std::mem::size_of::<SolvedCurveGeometry>()).expect("carrier size");
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("root");
+            let borrowed = chain
+                .scaled(&ctx, scale(25.4))
+                .expect("admitted carrier copy")
+                .expect("finite scaled chain");
+            ctx.finish_session()
+                .expect("exact copy and scaling budgets");
+            for (work, nesting, operation) in [
+                (depth, depth, "IR geometry unit scaling work"),
+                (depth + 1, depth - 1, "IR geometry unit scaling nesting"),
+            ] {
+                let refused = with_scaling_limits(work, 0, nesting, |ctx| {
+                    chain.clone().scaled_owned(ctx, scale(25.4))
+                });
+                assert!(
+                    matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                    if limit.operation == operation)
+                );
+            }
+            let scaled = with_scaling_limits(depth + 1, 0, depth, |ctx| {
+                chain.scaled_owned(ctx, scale(25.4))
+            })
+            .expect("exact work and depth budgets")
+            .expect("finite scaled chain");
+            assert_eq!(borrowed, scaled);
+            assert_eq!(scaled.nesting_depth(), MAX_GEOMETRY_NESTING);
+            let mut leaf = &scaled;
+            while let SolvedCurveGeometry::Transformed(placed) = leaf {
+                assert_eq!(
+                    placed.transform().affine_rows().map(|row| row[3]),
+                    [25.4, 2.0 * 25.4, 3.0 * 25.4]
+                );
+                leaf = placed.basis();
+            }
+            let SolvedCurveGeometry::Line(line) = leaf else {
+                panic!("the leaf stays a line");
+            };
+            assert_eq!(
+                line.origin().get(),
+                Point3::new(25.4, 2.0 * 25.4, 3.0 * 25.4)
+            );
+        })
+        .expect("start a thread with a one MiB stack")
+        .join()
+        .expect("scale the full curve chain on a one MiB stack");
 }
 
 #[test]
