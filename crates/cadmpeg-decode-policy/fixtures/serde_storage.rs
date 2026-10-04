@@ -27,14 +27,19 @@ struct NonConsumingLoop(Option<Box<NonConsumingLoop>>);
 struct TransparentLoop(Option<Box<TransparentLoop>>);
 
 #[derive(serde::Deserialize)]
-struct ScanningDrop(String);
+struct WideRecord {
+    ordinal: u64,
+    name: String,
+    path: String,
+    children: Vec<u64>,
+}
 
-impl Drop for ScanningDrop {
-    fn drop(&mut self) {
-        for character in self.0.chars() {
-            std::hint::black_box(character);
-        }
-    }
+#[derive(serde::Deserialize)]
+struct WideOptionalRecord {
+    ordinal: Option<u64>,
+    name: Option<String>,
+    path: Option<String>,
+    children: Option<Vec<u64>>,
 }
 
 pub fn bounded_targets(ctx: &DecodeContext, text: &str) {
@@ -63,6 +68,19 @@ pub fn non_consuming_recursion(ctx: &DecodeContext, text: &str) {
     let _transparent = ctx.parse_json::<TransparentLoop>(text, "transparent recursion"); // finding: unproven_decode_charge
 }
 
-pub fn custom_drop_target(ctx: &DecodeContext, text: &str) {
-    let _values = ctx.parse_json::<Vec<ScanningDrop>>(text, "custom drop"); // finding: unproven_decode_charge
+pub fn wide_records(ctx: &DecodeContext, text: &str) {
+    // Each required field is its own JSON node, so its member allowance covers the record.
+    let _values = ctx.parse_json::<Vec<WideRecord>>(text, "wide records");
+    // Optional fields may be absent, leaving one node for a record wider than one slot.
+    let _values = ctx.parse_json::<Vec<WideOptionalRecord>>(text, "optional fields"); // finding: unproven_decode_charge
+}
+
+#[derive(serde::Deserialize)]
+#[serde(tag = "kind")]
+enum InternallyTagged {
+    Point { x: u8 },
+}
+
+pub fn buffered_tagged_target(ctx: &DecodeContext, text: &str) {
+    let _value = ctx.parse_json::<InternallyTagged>(text, "internally tagged"); // finding: unproven_decode_charge
 }

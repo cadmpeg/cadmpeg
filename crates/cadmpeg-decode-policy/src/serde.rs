@@ -25,6 +25,8 @@ fn custom_deserializer(tcx: TyCtxt<'_>, definition: DefId) -> bool {
                                 | "skip_deserializing"
                                 | "flatten"
                                 | "untagged"
+                                | "tag"
+                                | "content"
                                 | "remote"
                         )
                     })
