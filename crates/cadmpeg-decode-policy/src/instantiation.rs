@@ -640,7 +640,7 @@ pub(crate) fn check_imported<'tcx>(
                             | external::Allocation::Conversion
                             | external::Allocation::Result
                             | external::Allocation::Input(0)
-                ) {
+                    ) {
                 types::Shape::Fixed
             } else if (summary.work == external::Work::TextCharacter
                 || operation_name.is_some_and(|name| name.as_str() == "write_str"))
@@ -655,9 +655,8 @@ pub(crate) fn check_imported<'tcx>(
                 allocation_shape(output, receiver, true)
             };
             let string_fmt_write = summary.allocation == external::Allocation::Growth
-                && operation_name.is_some_and(|name| {
-                    matches!(name.as_str(), "write_char" | "write_str")
-                });
+                && operation_name
+                    .is_some_and(|name| matches!(name.as_str(), "write_char" | "write_str"));
             // A generic fmt::Write receiver has no String allocation summary.
             let symbolic_formatter = string_fmt_write
                 && raw_receiver.is_some_and(|receiver| !types::standard_string(tcx, receiver));
