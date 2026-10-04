@@ -41,25 +41,77 @@ fn plane() -> SubdPlaneFrame {
 
 #[test]
 fn cage_validation_admits_each_topology_and_grip_walk_before_visiting() {
-    for (cap, operation) in [
-        (0, "validate SubD edge rows"),
-        (1, "validate SubD edge vertices"),
-        (3, "validate SubD edge rows"),
-        (9, "validate SubD face rows"),
-        (10, "validate SubD face edge references"),
-        (12, "validate SubD directed ring"),
-        (16, "validate SubD vertex rows"),
-        (17, "validate SubD grip wedges"),
-        (18, "validate SubD grip edge"),
-        (19, "validate SubD grip edge owner"),
-        (20, "validate SubD grip face"),
-        (21, "validate SubD grip face edges"),
-        (22, "validate SubD grip face owner"),
-        (23, "validate SubD grip slots"),
-        (24, "validate SubD grip slots"),
-        (25, "SubD validation member search"),
-        (26, "validate SubD vertex rows"),
-        (27, "validate SubD vertex rows"),
+    // Core's BTreeSet<u32> node bound is 11 u32 key lanes + 16 pointer widths + two max-alignment pads.
+    // On 64-bit targets: 752 first-node + 1,504 second-insert + 88 key-comparison + 27 prior work = 2,371 before two final vertex visits, for 2,373 total.
+    const NODE_ALIGNMENT: usize = if std::mem::align_of::<u32>() > std::mem::align_of::<usize>() {
+        std::mem::align_of::<u32>()
+    } else {
+        std::mem::align_of::<usize>()
+    };
+    const NODE_BYTES: u64 = cadmpeg_core::decode::u64_from_index(
+        11 * std::mem::size_of::<u32>() + 16 * std::mem::size_of::<usize>() + 2 * NODE_ALIGNMENT,
+    );
+    let first_node_work = 4 * NODE_BYTES;
+    let second_insert_work = 8 * NODE_BYTES;
+    let after_first_node = 24 + first_node_work;
+    let before_final_vertices = 27 + first_node_work + second_insert_work + 2 * 44;
+    let full_work = before_final_vertices + 2;
+
+    for (cap, operation, used, additional) in [
+        (0, "validate SubD edge rows", 0, 1),
+        (1, "validate SubD edge vertices", 1, 1),
+        (3, "validate SubD edge rows", 3, 1),
+        (9, "validate SubD face rows", 9, 1),
+        (10, "validate SubD face edge references", 10, 1),
+        (12, "validate SubD directed ring", 12, 1),
+        (16, "validate SubD vertex rows", 16, 1),
+        (17, "validate SubD grip wedges", 17, 1),
+        (18, "validate SubD grip edge", 18, 1),
+        (19, "validate SubD grip edge owner", 19, 1),
+        (20, "validate SubD grip face", 20, 1),
+        (21, "validate SubD grip face edges", 21, 1),
+        (22, "validate SubD grip face owner", 22, 1),
+        (23, "validate SubD grip slots", 23, 1),
+        (24, "SubD validation members", 24, first_node_work),
+        (25, "SubD validation members", 24, first_node_work),
+        (26, "SubD validation members", 24, first_node_work),
+        (27, "SubD validation members", 24, first_node_work),
+        (
+            after_first_node,
+            "validate SubD grip slots",
+            after_first_node,
+            1,
+        ),
+        (
+            after_first_node + 1,
+            "SubD validation member search",
+            after_first_node + 1,
+            1,
+        ),
+        (
+            after_first_node + 2,
+            "SubD validation members",
+            after_first_node + 2,
+            1,
+        ),
+        (
+            before_final_vertices - 1,
+            "SubD validation members",
+            before_final_vertices - 44,
+            44,
+        ),
+        (
+            before_final_vertices,
+            "validate SubD vertex rows",
+            before_final_vertices,
+            1,
+        ),
+        (
+            before_final_vertices + 1,
+            "validate SubD vertex rows",
+            before_final_vertices + 1,
+            1,
+        ),
     ] {
         let cage = gripped_cage();
         let arena = DecodeArena::new();
@@ -73,10 +125,22 @@ fn cage_validation_admits_each_topology_and_grip_walk_before_visiting() {
         };
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(limit.operation, operation);
+        assert_eq!(limit.used, used);
+        assert_eq!(limit.additional, additional);
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
         );
     }
+    // This admits both grip slots, searches, key comparisons, B-tree mutations and remaining vertex rows.
+    let cage = gripped_cage();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = full_work;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    SubdCage::new(cage.vertices, cage.edges, cage.faces, cage.symmetries, &ctx)
+        .unwrap()
+        .unwrap();
+    ctx.finish_session().unwrap();
 }
 
 #[test]
@@ -245,11 +309,12 @@ fn subdivision_symmetry_and_layout_constructors_use_the_caller_session() {
 
 #[test]
 fn subdivision_vertex_edit_refusals_are_atomic_and_release_candidates() {
+    // The edit callback follows 4 vertex iterator steps, 2 each for wedge, spoke and sector iterators, and 3 edit slots: 13 work units.
     for (dimension, cap, edited) in [
         (ResourceDimension::MaterializedBytes, 0, false),
         (ResourceDimension::CollectionItems, 0, false),
         (ResourceDimension::WorkUnits, 0, false),
-        (ResourceDimension::WorkUnits, 9, true),
+        (ResourceDimension::WorkUnits, 13, true),
         (ResourceDimension::RetainedBytes, 0, true),
     ] {
         let mut cage = gripped_cage();

@@ -203,7 +203,11 @@ fn scope(tokens: TokenStream, inherited: &Imports) -> Result<(Imports, Vec<Token
     let mut body = Vec::new();
     let mut index = 0;
     while index < tokens.len() {
-        if matches!(&tokens[index], TokenTree::Ident(ident) if ident == "use") {
+        let capture_bound = matches!(
+            tokens.get(index + 1),
+            Some(TokenTree::Punct(punct)) if punct.as_char() == '<'
+        );
+        if matches!(&tokens[index], TokenTree::Ident(ident) if ident == "use") && !capture_bound {
             let end = tokens[index..]
                 .iter()
                 .position(|token| is_punct(token, ';'))
@@ -329,7 +333,7 @@ pub(super) fn layout_reads(root: &Path) -> Result<Reads, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{layout_reads, production_tokens, scan, Imports};
+    use super::{layout_reads, parent_imports, production_tokens, resolve, scan, Imports};
     use std::collections::BTreeSet;
 
     fn reads(source: &str) -> Result<BTreeSet<(String, String)>, String> {
@@ -398,6 +402,41 @@ mod tests {
         assert!(!reads.test_only("header", "LEN"));
         assert!(reads.test_only("header", "MAGIC"));
         assert!(!reads.contains("unread", "OFFSET"));
+        Ok(())
+    }
+
+    #[test]
+    fn layout_reads_resolve_parent_imports_with_precise_capture_bounds(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let temporary = tempfile::tempdir()?;
+        let root = temporary.path();
+        std::fs::create_dir(root.join("container"))?;
+        std::fs::write(root.join("lib.rs"), "mod container; mod layout;")?;
+        std::fs::write(
+            root.join("container.rs"),
+            "use crate::layout::header as h;\n\
+             fn values<'a>(value: &'a [u8]) -> impl Iterator<Item = &'a [u8]> + use<'a> {\n\
+                 let _ = h::LEN;\n\
+                 std::iter::once(value)\n\
+             }\n\
+             #[cfg(test)] mod tests;",
+        )?;
+        let test_module = root.join("container/tests.rs");
+        std::fs::write(
+            &test_module,
+            "use super::h; const TEST_READ: usize = h::MAGIC;",
+        )?;
+
+        let inherited = parent_imports(&test_module, root)?;
+        assert_eq!(
+            resolve(&["h".to_string()], &inherited),
+            vec!["layout".to_string(), "header".to_string()]
+        );
+        let reads = layout_reads(root)?;
+        assert!(reads.contains("header", "LEN"));
+        assert!(!reads.test_only("header", "LEN"));
+        assert!(reads.contains("header", "MAGIC"));
+        assert!(reads.test_only("header", "MAGIC"));
         Ok(())
     }
 
