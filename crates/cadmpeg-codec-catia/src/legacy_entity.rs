@@ -1267,7 +1267,9 @@ pub(crate) fn parse_relation_signature(
     let mut names = std::collections::HashSet::new();
     if !clauses.trim().is_empty() {
         for clause in clauses.split(',') {
-            let Some((parameter, role_type)) = clause.split_once(':') else {
+            let Some((parameter, role_type)) =
+                ctx.split_once(clause, ":", "catia_legacy_relation_clause_split")?
+            else {
                 return Ok(None);
             };
             let parameter = parameter.trim();
