@@ -615,16 +615,23 @@ fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
         });
     }
 
-    let (transferred, _) = crate::decode::with_test_decode_ctx(|ctx| {
-        transfer_feature_dimensions(
-            ctx,
-            &scan,
-            &mut ir,
-            &mut AnnotationBuilder::new(),
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        )
-    })
-    .expect("valid test fixture");
+    let (transferred, ir) = crate::test_support::assert_work_boundaries(
+        &[
+            "creo dimension owner feature ID lookup",
+            "creo dimension owner lookup",
+        ],
+        |ctx| {
+            let mut ir = ir.clone();
+            let (transferred, _) = transfer_feature_dimensions(
+                ctx,
+                &scan,
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )?;
+            Ok::<_, cadmpeg_core::CodecError>((transferred, ir))
+        },
+    );
 
     assert_eq!(transferred, 1);
     assert!(ir

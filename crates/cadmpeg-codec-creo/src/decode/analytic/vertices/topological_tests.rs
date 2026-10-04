@@ -556,6 +556,37 @@ fn solve_topological_vertices_refuses_analytic_domain_node() {
 }
 
 #[test]
+fn nurbs_endpoint_witness_membership_refuses_work_and_preserves_service_result() {
+    let (scan, ir, carriers) = pcurve_vertex_case();
+    let nurbs_endpoint_witnesses = std::collections::BTreeSet::from([
+        cadmpeg_ir::ids::CurveId::mint("creo:visibgeom:curve#7")
+            .expect("valid NURBS endpoint witness identity"),
+    ]);
+    let result = crate::test_support::assert_work_boundaries(
+        &["creo NURBS endpoint witness membership"],
+        |ctx| {
+            solve_topological_vertices(
+                ctx,
+                &scan,
+                &ir,
+                &carriers,
+                &nurbs_endpoint_witnesses,
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+        },
+    );
+    assert_eq!(result.diagnostics.pcurve.accepted_records, 1);
+    assert_eq!(result.diagnostics.pcurve_constraints, 1);
+    assert_eq!(
+        result.points,
+        std::collections::BTreeMap::from([
+            (1, [1.0, 2.0, 0.0]),
+            (2, [3.0, 4.0, 0.0]),
+        ]),
+    );
+}
+
+#[test]
 fn pcurve_vertex_fixture_keeps_service_result() {
     let result = pcurve_vertex_result(1_000_000).expect("service vertex solve");
     assert_eq!(result.diagnostics.pcurve.accepted_records, 1);

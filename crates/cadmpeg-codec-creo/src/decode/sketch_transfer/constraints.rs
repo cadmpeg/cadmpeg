@@ -199,31 +199,60 @@ pub(in super::super) fn reconcile_constraint_entity_references(
     definition: &mut SketchConstraintDefinitionInput,
     emitted: &BTreeSet<SketchEntityId>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let locus_emitted = |locus: &SketchLocus| match locus {
-        SketchLocus::Entity(entity)
-        | SketchLocus::Start(entity)
-        | SketchLocus::End(entity)
-        | SketchLocus::Center(entity) => emitted.contains(entity),
+    let locus_emitted = |locus: &SketchLocus| -> Result<bool, cadmpeg_core::CodecError> {
+        match locus {
+            SketchLocus::Entity(entity)
+            | SketchLocus::Start(entity)
+            | SketchLocus::End(entity)
+            | SketchLocus::Center(entity) => ctx.contains_btree_set(
+                emitted,
+                entity,
+                "creo constraint emitted entity membership",
+            ),
+        }
     };
     Ok(match definition {
         SketchConstraintDefinitionInput::Native { entities, .. } => {
             ctx.retain_vec(
                 entities,
-                |entity| Ok(emitted.contains(entity)),
+                |entity| {
+                    ctx.contains_btree_set(
+                        emitted,
+                        entity,
+                        "creo constraint emitted entity membership",
+                    )
+                },
                 "creo constraint emitted entity retention",
             )?;
             true
         }
         SketchConstraintDefinitionInput::Coincident { entities }
         | SketchConstraintDefinitionInput::Distance { entities, .. } => {
-            ctx.admit_iter(entities, "creo constraint entity references")?
-                .all(|entity| emitted.contains(entity))
+            let mut all_emitted = true;
+            for entity in ctx.admit_iter(entities, "creo constraint entity references")? {
+                if !ctx.contains_btree_set(
+                    emitted,
+                    entity,
+                    "creo constraint emitted entity membership",
+                )? {
+                    all_emitted = false;
+                    break;
+                }
+            }
+            all_emitted
         }
-        SketchConstraintDefinitionInput::CoincidentLoci { loci } => ctx
-            .admit_iter(loci, "creo coincident constraint loci")?
-            .all(locus_emitted),
+        SketchConstraintDefinitionInput::CoincidentLoci { loci } => {
+            let mut all_emitted = true;
+            for locus in ctx.admit_iter(loci, "creo coincident constraint loci")? {
+                if !locus_emitted(locus)? {
+                    all_emitted = false;
+                    break;
+                }
+            }
+            all_emitted
+        }
         SketchConstraintDefinitionInput::SameCoordinate { relation } => {
-            locus_emitted(relation.first()) && locus_emitted(relation.second())
+            locus_emitted(relation.first())? && locus_emitted(relation.second())?
         }
         SketchConstraintDefinitionInput::TangentLoci { first, second }
         | SketchConstraintDefinitionInput::DistanceLoci { first, second, .. }
@@ -232,38 +261,58 @@ pub(in super::super) fn reconcile_constraint_entity_references(
         | SketchConstraintDefinitionInput::PolarDistance { first, second, .. }
         | SketchConstraintDefinitionInput::HorizontalDistance { first, second, .. }
         | SketchConstraintDefinitionInput::VerticalDistance { first, second, .. } => {
-            locus_emitted(first) && locus_emitted(second)
+            locus_emitted(first)? && locus_emitted(second)?
         }
         SketchConstraintDefinitionInput::EqualDistance { first, second } => {
-            locus_emitted(&first.first)
-                && locus_emitted(&first.second)
-                && locus_emitted(&second.first)
-                && locus_emitted(&second.second)
+            locus_emitted(&first.first)?
+                && locus_emitted(&first.second)?
+                && locus_emitted(&second.first)?
+                && locus_emitted(&second.second)?
         }
         SketchConstraintDefinitionInput::Midpoint { point, entity } => {
-            locus_emitted(point) && emitted.contains(entity)
+            locus_emitted(point)? && ctx.contains_btree_set(
+                emitted,
+                entity,
+                "creo constraint emitted entity membership",
+            )?
         }
         SketchConstraintDefinitionInput::PointCoordinateValues { point, .. } => {
-            locus_emitted(point)
+            locus_emitted(point)?
         }
         SketchConstraintDefinitionInput::AtIntersection {
             point,
             first,
             second,
-        } => locus_emitted(point) && emitted.contains(first) && emitted.contains(second),
+        } => locus_emitted(point)? && ctx.contains_btree_set(
+                emitted,
+                first,
+                "creo constraint emitted entity membership",
+            )? && ctx.contains_btree_set(
+                emitted,
+                second,
+                "creo constraint emitted entity membership",
+            )?,
         SketchConstraintDefinitionInput::PointOnObject { point, entity } => {
-            locus_emitted(point) && emitted.contains(entity)
+            locus_emitted(point)? && ctx.contains_btree_set(
+                emitted,
+                entity,
+                "creo constraint emitted entity membership",
+            )?
         }
         SketchConstraintDefinitionInput::Symmetric {
             first,
             second,
             axis,
-        } => locus_emitted(first) && locus_emitted(second) && emitted.contains(axis),
+        } => locus_emitted(first)? && locus_emitted(second)? && ctx.contains_btree_set(
+                emitted,
+                axis,
+                "creo constraint emitted entity membership",
+            )?,
         SketchConstraintDefinitionInput::PointSymmetric {
             first,
             second,
             center,
-        } => locus_emitted(first) && locus_emitted(second) && locus_emitted(center),
+        } => locus_emitted(first)? && locus_emitted(second)? && locus_emitted(center)?,
         SketchConstraintDefinitionInput::Concentric { first, second }
         | SketchConstraintDefinitionInput::Coradial { first, second }
         | SketchConstraintDefinitionInput::Collinear { first, second }
@@ -276,29 +325,67 @@ pub(in super::super) fn reconcile_constraint_entity_references(
         | SketchConstraintDefinitionInput::Tangent { first, second }
         | SketchConstraintDefinitionInput::Equal { first, second }
         | SketchConstraintDefinitionInput::Angle { first, second, .. } => {
-            emitted.contains(first) && emitted.contains(second)
+            ctx.contains_btree_set(
+                emitted,
+                first,
+                "creo constraint emitted entity membership",
+            )? && ctx.contains_btree_set(
+                emitted,
+                second,
+                "creo constraint emitted entity membership",
+            )?
         }
         SketchConstraintDefinitionInput::Horizontal { entity }
         | SketchConstraintDefinitionInput::Vertical { entity }
         | SketchConstraintDefinitionInput::Fixed { entity }
         | SketchConstraintDefinitionInput::Radius { entity, .. }
-        | SketchConstraintDefinitionInput::Diameter { entity, .. } => emitted.contains(entity),
+        | SketchConstraintDefinitionInput::Diameter { entity, .. } => ctx.contains_btree_set(
+            emitted,
+            entity,
+            "creo constraint emitted entity membership",
+        )?,
         SketchConstraintDefinitionInput::ArcAngle { entity, .. }
-        | SketchConstraintDefinitionInput::EllipseAngle { entity, .. } => emitted.contains(entity),
+        | SketchConstraintDefinitionInput::EllipseAngle { entity, .. } => ctx.contains_btree_set(
+            emitted,
+            entity,
+            "creo constraint emitted entity membership",
+        )?,
         SketchConstraintDefinitionInput::SnellsLaw {
             incident,
             refracted,
             interface,
             ..
-        } => locus_emitted(incident) && locus_emitted(refracted) && emitted.contains(interface),
-        SketchConstraintDefinitionInput::Weight { entity, .. } => emitted.contains(entity),
+        } => locus_emitted(incident)? && locus_emitted(refracted)? && ctx.contains_btree_set(
+                emitted,
+                interface,
+                "creo constraint emitted entity membership",
+            )?,
+        SketchConstraintDefinitionInput::Weight { entity, .. } => ctx.contains_btree_set(
+            emitted,
+            entity,
+            "creo constraint emitted entity membership",
+        )?,
         SketchConstraintDefinitionInput::InternalAlignment { helper, parent, .. } => {
-            emitted.contains(helper) && emitted.contains(parent)
+            ctx.contains_btree_set(
+                emitted,
+                helper,
+                "creo constraint emitted entity membership",
+            )? && ctx.contains_btree_set(
+                emitted,
+                parent,
+                "creo constraint emitted entity membership",
+            )?
         }
         SketchConstraintDefinitionInput::Group { elements }
         | SketchConstraintDefinitionInput::Text { elements, .. } => {
-            ctx.admit_iter(elements, "creo grouped constraint loci")?
-                .all(locus_emitted)
+            let mut all_emitted = true;
+            for locus in ctx.admit_iter(elements, "creo grouped constraint loci")? {
+                if !locus_emitted(locus)? {
+                    all_emitted = false;
+                    break;
+                }
+            }
+            all_emitted
         }
         SketchConstraintDefinitionInput::Disabled {} => true,
         _ => true,
@@ -306,15 +393,21 @@ pub(in super::super) fn reconcile_constraint_entity_references(
 }
 
 pub(in super::super) fn reconcile_constraint_parameter_reference(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &mut SketchConstraintDefinitionInput,
     emitted: &BTreeSet<ParameterId>,
-) -> bool {
-    match definition {
+) -> Result<bool, cadmpeg_core::CodecError> {
+    Ok(match definition {
         SketchConstraintDefinitionInput::Native { parameter, .. } => {
-            if parameter
-                .as_ref()
-                .is_some_and(|parameter| !emitted.contains(parameter))
-            {
+            let should_remove = match parameter.as_ref() {
+                Some(parameter) => !ctx.contains_btree_set(
+                    emitted,
+                    parameter,
+                    "creo constraint parameter membership",
+                )?,
+                None => false,
+            };
+            if should_remove {
                 *parameter = None;
             }
             true
@@ -322,19 +415,29 @@ pub(in super::super) fn reconcile_constraint_parameter_reference(
         SketchConstraintDefinitionInput::PolarDistance {
             distance_parameter, ..
         } => {
-            if distance_parameter
-                .as_ref()
-                .is_some_and(|parameter| !emitted.contains(parameter))
-            {
+            let should_remove = match distance_parameter.as_ref() {
+                Some(parameter) => !ctx.contains_btree_set(
+                    emitted,
+                    parameter,
+                    "creo constraint parameter membership",
+                )?,
+                None => false,
+            };
+            if should_remove {
                 *distance_parameter = None;
             }
             true
         }
         SketchConstraintDefinitionInput::DistanceLociValue { parameter, .. } => {
-            if parameter
-                .as_ref()
-                .is_some_and(|parameter| !emitted.contains(parameter))
-            {
+            let should_remove = match parameter.as_ref() {
+                Some(parameter) => !ctx.contains_btree_set(
+                    emitted,
+                    parameter,
+                    "creo constraint parameter membership",
+                )?,
+                None => false,
+            };
+            if should_remove {
                 *parameter = None;
             }
             true
@@ -345,11 +448,17 @@ pub(in super::super) fn reconcile_constraint_parameter_reference(
         | SketchConstraintDefinitionInput::VerticalDistance { parameter, .. }
         | SketchConstraintDefinitionInput::Angle { parameter, .. }
         | SketchConstraintDefinitionInput::Radius { parameter, .. }
-        | SketchConstraintDefinitionInput::Diameter { parameter, .. } => {
-            emitted.contains(parameter)
-        }
+        | SketchConstraintDefinitionInput::Diameter { parameter, .. } => ctx.contains_btree_set(
+            emitted,
+            parameter,
+            "creo constraint parameter membership",
+        )?,
         SketchConstraintDefinitionInput::SnellsLaw { parameter, .. }
-        | SketchConstraintDefinitionInput::Weight { parameter, .. } => emitted.contains(parameter),
+        | SketchConstraintDefinitionInput::Weight { parameter, .. } => ctx.contains_btree_set(
+            emitted,
+            parameter,
+            "creo constraint parameter membership",
+        )?,
         SketchConstraintDefinitionInput::Coincident { .. }
         | SketchConstraintDefinitionInput::CoincidentLoci { .. }
         | SketchConstraintDefinitionInput::SameCoordinate { .. }
@@ -379,7 +488,7 @@ pub(in super::super) fn reconcile_constraint_parameter_reference(
         | SketchConstraintDefinitionInput::Group { .. }
         | SketchConstraintDefinitionInput::Text { .. } => true,
         _ => true,
-    }
+    })
 }
 
 pub(in super::super) fn close_sketch_constraint_parameter_references(
@@ -388,7 +497,11 @@ pub(in super::super) fn close_sketch_constraint_parameter_references(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut emitted = BTreeSet::new();
     for parameter in ctx.admit_iter(&ir.model.parameters, "creo emitted parameter rows")? {
-        if !emitted.contains(&parameter.id) {
+        if !ctx.contains_btree_set(
+            &emitted,
+            &parameter.id,
+            "creo emitted parameter identity membership",
+        )? {
             ctx.insert_btree_set(
                 &mut emitted,
                 parameter
@@ -401,14 +514,13 @@ pub(in super::super) fn close_sketch_constraint_parameter_references(
     ctx.retain_mut(
         &mut ir.model.sketch_constraints,
         |constraint| {
-            let retained = match constraint
+            match constraint
                 .definition
-                .edit(|kind| reconcile_constraint_parameter_reference(kind, &emitted))
+                .edit(|kind| reconcile_constraint_parameter_reference(ctx, kind, &emitted))
             {
-                Ok(retained) => retained,
-                Err(_) => false,
-            };
-            Ok(retained)
+                Ok(result) => result,
+                Err(_) => Ok(false),
+            }
         },
         "creo sketch constraint parameter reconciliation",
     )?;
@@ -994,8 +1106,11 @@ fn reconcile_section_segment_radius_constraint(
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let entity_reconciled =
         reconcile_constraint_entity_references(ctx, constraint_definition, emitted)?;
-    let parameter_reconciled =
-        reconcile_constraint_parameter_reference(constraint_definition, available_parameters);
+    let parameter_reconciled = reconcile_constraint_parameter_reference(
+        ctx,
+        constraint_definition,
+        available_parameters,
+    )?;
     if entity_reconciled && parameter_reconciled {
         return Ok(true);
     }
@@ -1014,9 +1129,10 @@ fn reconcile_section_segment_radius_constraint(
     Ok(
         reconcile_constraint_entity_references(ctx, constraint_definition, emitted)?
             && reconcile_constraint_parameter_reference(
+                ctx,
                 constraint_definition,
                 available_parameters,
-            ),
+            )?,
     )
 }
 
@@ -2410,8 +2526,11 @@ pub(super) fn reconcile_section_dimension_constraint(
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let entity_reconciled =
         reconcile_constraint_entity_references(ctx, constraint_definition, emitted)?;
-    let parameter_reconciled =
-        reconcile_constraint_parameter_reference(constraint_definition, available_parameters);
+    let parameter_reconciled = reconcile_constraint_parameter_reference(
+        ctx,
+        constraint_definition,
+        available_parameters,
+    )?;
     if entity_reconciled && parameter_reconciled {
         return Ok(true);
     }
@@ -2424,9 +2543,10 @@ pub(super) fn reconcile_section_dimension_constraint(
     Ok(
         reconcile_constraint_entity_references(ctx, constraint_definition, emitted)?
             && reconcile_constraint_parameter_reference(
+                ctx,
                 constraint_definition,
                 available_parameters,
-            ),
+            )?,
     )
 }
 
@@ -2964,6 +3084,7 @@ pub(in super::super) fn section_linear_distance_vectors(vectors: [[Option<u32>; 
 mod tests {
     mod retain_vec;
     mod retain_mut;
+    mod set_owner_tests;
 
     use super::{
         close_sketch_constraint_parameter_references, insert_native_equation_property,

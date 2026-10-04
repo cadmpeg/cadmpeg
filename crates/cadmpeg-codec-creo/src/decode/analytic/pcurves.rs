@@ -411,8 +411,16 @@ impl PcurvePathActivity {
             "creo pcurve topology face comparison",
         )?;
         let active_paths = [
-            self.active_paths.contains(&(faces[0], curve_id)),
-            self.active_paths.contains(&(faces[1], curve_id)),
+            ctx.contains_btree_set(
+                &self.active_paths,
+                &(faces[0], curve_id),
+                "creo active pcurve path membership",
+            )?,
+            ctx.contains_btree_set(
+                &self.active_paths,
+                &(faces[1], curve_id),
+                "creo active pcurve path membership",
+            )?,
         ];
         Ok(faces_match.then_some(active_paths))
     }
@@ -2575,6 +2583,23 @@ mod tests {
     use cadmpeg_ir::math::{Point3, Vector3};
     use std::collections::BTreeMap;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn active_pcurve_path_membership_refuses_work_and_preserves_service_result() {
+        let face_zero = std::num::NonZeroU32::new(10).expect("one-based fixture face");
+        let face_one = std::num::NonZeroU32::new(11).expect("one-based fixture face");
+        let faces = [Some(face_zero), Some(face_one)];
+        let activity = super::PcurvePathActivity {
+            active_paths: BTreeSet::from([(Some(face_zero), 7)]),
+            topology_faces: BTreeMap::from([(7, faces)]),
+            prototype_faces: BTreeMap::new(),
+        };
+        let selected = crate::test_support::assert_work_boundaries(
+            &["creo active pcurve path membership"],
+            |ctx| activity.selected_paths(ctx, 7, faces, false),
+        );
+        assert_eq!(selected, Some([true, false]));
+    }
 
     #[test]
     fn pcurve_vertex_propagation_round_refuses_work() {

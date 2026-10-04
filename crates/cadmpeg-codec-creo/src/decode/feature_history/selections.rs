@@ -243,7 +243,11 @@ pub(in super::super) fn generated_curve_edge_refs(
         )?;
         let feature = IrFeatureId::mint(feature_text)
             .map_err(|_| CodecError::Malformed("constructed Creo feature ID is invalid".into()))?;
-        if !available_features.contains(&feature)
+        if !ctx.contains_btree_set(
+            available_features,
+            &feature,
+            "creo generated curve feature lookup",
+        )?
             || !result_edge_ids
                 .get(&row.feature_id)
                 .is_some_and(|ids| ids.contains(&curve_id))
@@ -692,6 +696,42 @@ mod tests {
 
 
     #[test]
+    fn generated_curve_feature_membership_miss_preserves_result_id_laziness() {
+        let rows = one_edge();
+        let available = BTreeSet::from([
+            cadmpeg_ir::features::FeatureId::mint("creo:model:feature#98")
+                .expect("nonmatching feature ID"),
+        ]);
+        let results = std::collections::BTreeMap::from([(97, vec![77])]);
+        let refusal = crate::test_support::last_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            "creo generated curve feature lookup",
+            |ctx| generated_curve_edge_refs(ctx, &[77], &rows, &available, &results),
+        );
+        let limit = match refusal {
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "creo generated curve feature lookup" => limit,
+            error => panic!("expected generated feature membership refusal, got {error:?}"),
+        };
+        let cap = limit.used.checked_add(limit.additional).expect("work cap");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty source is admitted");
+        assert!(generated_curve_edge_refs(&ctx, &[77], &rows, &available, &results)
+            .expect("a feature miss returns before result-ID membership")
+            .is_none());
+        assert!(crate::decode::with_test_decode_ctx(|ctx| {
+            generated_curve_edge_refs(ctx, &[77], &rows, &available, &results)
+        })
+        .expect("service profile preserves the feature-miss result")
+        .is_none());
+    }
+
+    #[test]
     fn generated_curve_feature_identity_validation_refuses_at_work_boundary() {
         let rows = one_edge();
         let available = BTreeSet::from([
@@ -700,7 +740,10 @@ mod tests {
         ]);
         let results = std::collections::BTreeMap::from([(97, vec![77])]);
         let generated = crate::test_support::assert_work_boundaries(
-            &["creo generated curve feature identity validation"],
+            &[
+                "creo generated curve feature identity validation",
+                "creo generated curve feature lookup",
+            ],
             |ctx| generated_curve_edge_refs(ctx, &[77], &rows, &available, &results),
         )
         .expect("the feature result contains the selected curve");

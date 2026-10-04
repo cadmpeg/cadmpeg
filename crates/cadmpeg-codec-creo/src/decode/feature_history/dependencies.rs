@@ -536,7 +536,11 @@ pub(in super::super) fn reconcile_feature_links(
     }
     let mut emitted = BTreeSet::new();
     for feature in ctx.admit_iter(&ir.model.features, "creo emitted feature identities")? {
-        if emitted.contains(&feature.id) {
+        if ctx.contains_btree_set(
+            &emitted,
+            &feature.id,
+            "creo emitted feature identity lookup",
+        )? {
             continue;
         }
         let id = lookup_storage.with_storage(|| {
@@ -599,7 +603,11 @@ pub(in super::super) fn reconcile_feature_links(
                 "creo reconciled native dependency identity validation",
             )?;
             let id = IrFeatureId::mint(text).map_err(cadmpeg_core::CodecError::malformed)?;
-            if emitted.contains(&id)
+            if ctx.contains_btree_set(
+                &emitted,
+                &id,
+                "creo reconciled feature emission lookup",
+            )?
                 && !ctx.equal(
                     &id,
                     &feature.id,
@@ -657,7 +665,11 @@ pub(in super::super) fn reconcile_feature_links(
                 &parent,
                 &feature.id,
                 "creo regeneration feature identity comparison",
-            )? && emitted.contains(&parent)
+            )? && ctx.contains_btree_set(
+                &emitted,
+                &parent,
+                "creo regeneration parent identity lookup",
+            )?
             {
                 let child = feature
                     .id
@@ -706,7 +718,15 @@ pub(in super::super) fn reconcile_feature_links(
                 )?
                 .chain(ir.model.feature_parent(&feature.id))
             {
-                if emitted.contains(required) && !preceding.contains(required) {
+                if ctx.contains_btree_set(
+                    &emitted,
+                    required,
+                    "creo emitted dependency identity lookup",
+                )? && !ctx.contains_btree_set(
+                    &preceding,
+                    required,
+                    "creo preceding dependency identity lookup",
+                )? {
                     ready = false;
                     break;
                 }
@@ -824,7 +844,11 @@ pub(in super::super) fn reconciled_dependencies(
 ) -> Result<Vec<IrFeatureId>, CodecError> {
     let mut dependencies = Vec::new();
     for dependency in ctx.admit_iter(established, "creo established feature dependencies")? {
-        if !emitted.contains(dependency)
+        if !ctx.contains_btree_set(
+            emitted,
+            dependency,
+            "creo established dependency emission lookup",
+        )?
             || ctx.equal(
                 dependency,
                 feature_id,
@@ -839,7 +863,11 @@ pub(in super::super) fn reconciled_dependencies(
         dependencies.push(id);
     }
     for dependency in native {
-        if emitted.contains(&dependency)
+        if ctx.contains_btree_set(
+            emitted,
+            &dependency,
+            "creo native dependency emission lookup",
+        )?
             && !ctx.equal(
                 &dependency,
                 feature_id,

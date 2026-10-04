@@ -267,6 +267,52 @@ fn available_parameter_ids_refuse_planned_tree_node() {
     assert_eq!(ids, BTreeSet::from([id]));
 }
 
+#[test]
+fn available_parameter_ids_refuse_membership_work() {
+    let first = ParameterId::mint("creo:featdefs:parameter#first").expect("parameter ID");
+    let second = ParameterId::mint("creo:featdefs:parameter#second").expect("parameter ID");
+    let ids = crate::test_support::assert_work_boundaries(
+        &["creo available parameter ID membership"],
+        |ctx| available_parameter_ids(ctx, [&first, &second], BTreeSet::new()),
+    );
+    assert_eq!(ids, BTreeSet::from([first, second]));
+}
+
+#[test]
+fn constraint_entity_membership_refuses_work() {
+    let entity = SketchEntityId::mint("creo:model:sketch_entity#1").expect("entity ID");
+    let emitted = BTreeSet::from([entity.clone()]);
+    let mut definition = SketchConstraintDefinitionInput::Horizontal { entity };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = super::reconcile_constraint_entity_references(&ctx, &mut definition, &emitted)
+        .expect_err("entity membership exceeds zero work units");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo constraint emitted entity membership"));
+}
+
+#[test]
+fn constraint_parameter_membership_refuses_work() {
+    let parameter = ParameterId::mint("creo:featdefs:parameter#1").expect("parameter ID");
+    let emitted = BTreeSet::from([parameter.clone()]);
+    let mut definition = SketchConstraintDefinitionInput::Radius {
+        entity: SketchEntityId::mint("creo:model:sketch_entity#1").expect("entity ID"),
+        parameter,
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = super::reconcile_constraint_parameter_reference(&ctx, &mut definition, &emitted)
+        .expect_err("parameter membership exceeds zero work units");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo constraint parameter membership"));
+}
+
 macro_rules! map_node_test {
     ($name:ident, $operation:literal) => {
         #[test]
@@ -444,4 +490,173 @@ fn definition_body_position_refuses_out_of_bounds_and_source_overflow() {
         definition.body_position(1).expect("body position").source(),
         Err(CodecError::Malformed(_))
     ));
+}
+
+
+
+#[test]
+fn sketch_profile_entity_membership_refuses_work_and_preserves_resolved_chain() {
+    let mut scan = empty_section_scan();
+    let definition = &mut scan.features.definitions[0];
+    let variable = |variable_type: crate::feature::definitions::VariableType,
+                    key: u32,
+                    value: f64| crate::feature::definitions::FeatureVariableRow {
+        variable_type,
+        key,
+        value: crate::feature::definitions::ScalarLane::Value(value),
+        value_body: Vec::new(),
+        guess: crate::feature::definitions::ScalarLane::Undefined,
+        guess_body: Vec::new(),
+        known: None,
+        homogeneity: None,
+        uvar_id: None,
+        offset: usize::try_from(key).expect("fixture index fits usize"),
+    };
+    definition.variables = Some(crate::feature::definitions::FeatureVariableTable {
+        declared_count: 6,
+        entity_ref: None,
+        rows: vec![
+            variable(crate::feature::definitions::VariableType::U, 1, 0.0),
+            variable(crate::feature::definitions::VariableType::V, 1, 0.0),
+            variable(crate::feature::definitions::VariableType::U, 2, 1.0),
+            variable(crate::feature::definitions::VariableType::V, 2, 0.0),
+            variable(crate::feature::definitions::VariableType::U, 3, 0.0),
+            variable(crate::feature::definitions::VariableType::V, 3, 1.0),
+        ],
+        offset: 0,
+    });
+    let segment = |external_id: u32, point_ids: [u32; 2]| {
+        crate::feature::definitions::FeatureSegment {
+            kind: crate::feature::definitions::FeatureSegmentKind::Line(point_ids),
+            directions: [None; 3],
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id,
+            body: Vec::new(),
+            offset: usize::try_from(external_id).expect("fixture index fits usize"),
+        }
+    };
+    definition.segments = Some(crate::feature::definitions::FeatureSegmentTable {
+        declared_count: 3,
+        has_elided_prototype: false,
+        entity_ref: None,
+        rows: [segment(10, [1, 2]), segment(11, [2, 3]), segment(12, [3, 1])]
+            .into_iter()
+            .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+            .collect(),
+        offset: 0,
+    });
+
+    let run = |ctx: &DecodeContext<'_>| -> Result<cadmpeg_ir::document::CadIr, CodecError> {
+        let mut output = cadmpeg_ir::document::CadIr::empty();
+        super::transfer_sketches(
+            ctx,
+            &scan,
+            &mut output,
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &mut Vec::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )?;
+        Ok(output)
+    };
+    let operation = "creo sketch profile entity membership";
+    let service_work_limit = DecodePolicy::service().limits.max_work_units;
+    let mut work_cap = 0_u64;
+    loop {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = work_cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        match run(&ctx) {
+            Err(CodecError::ResourceLimit(resource)) => {
+                assert_eq!(resource.dimension, ResourceDimension::WorkUnits);
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(&resource));
+                let need = resource
+                    .used
+                    .checked_add(resource.additional)
+                    .expect("work need fits");
+                assert!(need > work_cap);
+                assert!(need <= service_work_limit, "triangle exceeds service work limit");
+                if resource.operation == operation {
+                    assert!(resource.additional > 0, "named membership work is positive");
+                    let below = need.checked_sub(1).expect("positive work need");
+                    let below_arena = DecodeArena::new();
+                    policy.limits.max_work_units = below;
+                    let (below_ctx, _) = DecodeContext::from_root_bytes(
+                        &[],
+                        &below_arena,
+                        &policy,
+                    )
+                    .expect("empty root");
+                    match run(&below_ctx) {
+                        Err(CodecError::ResourceLimit(below_resource)) => {
+                            assert_eq!(below_resource.dimension, ResourceDimension::WorkUnits);
+                            assert_eq!(below_resource.operation, operation);
+                            assert_eq!(
+                                below_ctx.resource_refusal().as_ref(),
+                                Some(&below_resource)
+                            );
+                            assert_eq!(
+                                below_resource
+                                    .used
+                                    .checked_add(below_resource.additional),
+                                Some(need)
+                            );
+                        }
+                        Err(error) => panic!("unexpected refusal below named boundary: {error:?}"),
+                        Ok(_) => panic!("named boundary must refuse one unit below its need"),
+                    }
+                    let at_arena = DecodeArena::new();
+                    policy.limits.max_work_units = need;
+                    let (at_ctx, _) =
+                        DecodeContext::from_root_bytes(&[], &at_arena, &policy)
+                            .expect("empty root");
+                    match run(&at_ctx) {
+                        Err(CodecError::ResourceLimit(at_resource)) => {
+                            assert_eq!(at_resource.dimension, ResourceDimension::WorkUnits);
+                            assert_eq!(at_ctx.resource_refusal().as_ref(), Some(&at_resource));
+                            assert!(
+                                at_resource.used >= need,
+                                "the named charge must pass at its exact work limit"
+                            );
+                        }
+                        Err(error) => panic!(
+                            "unexpected transfer error at named boundary: {error:?}"
+                        ),
+                        Ok(_) => {}
+                    }
+                    break;
+                }
+                work_cap = need;
+            }
+            Err(error) => panic!("unexpected triangle transfer refusal: {error:?}"),
+            Ok(_) => panic!("service route completed before named work boundary"),
+        }
+    }
+    let service = crate::decode::with_test_decode_ctx(|ctx| run(ctx))
+        .expect("service triangle transfer");
+    assert_eq!(service.model.sketches.len(), 1);
+    assert_eq!(service.model.sketch_entities.len(), 3);
+    let sketch = &service.model.sketches[0];
+    assert_eq!(sketch.profiles.len(), 1);
+    assert_eq!(sketch.profiles[0].len(), 3);
+    assert_eq!(
+        sketch.profiles[0]
+            .iter()
+            .map(|entity_use| (entity_use.entity.as_str(), entity_use.reversed))
+            .collect::<Vec<_>>(),
+        vec![
+            ("creo:featdefs:sketch_entity#7:10", false),
+            ("creo:featdefs:sketch_entity#7:11", false),
+            ("creo:featdefs:sketch_entity#7:12", false),
+        ]
+    );
+    assert!(service
+        .model
+        .sketch_entities
+        .iter()
+        .all(|entity| !entity.construction));
 }

@@ -781,7 +781,7 @@ pub(in crate::decode) fn solve_topological_vertices(
             row.id,
             "creo vertex curve lookup identity",
         )?;
-        if !nurbs_endpoint_witnesses.contains(&id) {
+        if !ctx.contains_btree_set(&nurbs_endpoint_witnesses, &id, "creo NURBS endpoint witness membership")? {
             continue;
         }
         let Some(geometry) = unique_model_curve(ctx, ir, &id)? else {

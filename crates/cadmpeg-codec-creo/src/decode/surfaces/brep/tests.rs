@@ -24,6 +24,7 @@ use super::{
 
 mod body_index;
 mod component_topology;
+mod contains_set;
 mod eligible_index;
 mod face_references;
 mod loop_ring;

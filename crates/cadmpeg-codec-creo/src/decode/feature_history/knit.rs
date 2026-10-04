@@ -721,7 +721,11 @@ pub(in super::super) fn generated_surface_face_refs(
         )?;
         let feature = IrFeatureId::mint(feature_text)
             .map_err(|_| CodecError::Malformed("constructed Creo feature ID is invalid".into()))?;
-        if !available_features.contains(&feature)
+        if !ctx.contains_btree_set(
+            available_features,
+            &feature,
+            "creo generated surface feature lookup",
+        )?
             || !result_surface_ids
                 .get(&row.feature_id)
                 .is_some_and(|ids| ids.contains(surface_id))
