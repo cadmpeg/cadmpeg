@@ -68,7 +68,7 @@ where
     S::Iter<'a>: Iterator<Item = &'a CurveId>,
 {
     for id in ctx.admit_iter(source, "creo borrowed derived curve ID traversal")? {
-        if target.contains(id) {
+        if ctx.contains_btree_set(target, id, "creo derived curve identity lookup")? {
             continue;
         }
         ctx.insert_btree_set(
@@ -1156,5 +1156,27 @@ mod tests {
             coverage.get("transferred_topology_bound_plane_surface_count"),
             Some(&1)
         );
+    }
+
+    #[test]
+    fn derived_curve_identity_lookup_refuses_before_duplicate_skip() {
+        let id = CurveId::mint("creo:visibgeom:curve#12").expect("identity grammar");
+        let mut target = BTreeSet::from([id.clone()]);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // The one source visit precedes the variable-size identity lookup.
+        policy.limits.max_work_units = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let error = append_borrowed_curve_ids(&ctx, &mut target, std::slice::from_ref(&id))
+            .expect_err("identity lookup exceeds work limit");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::WorkUnits
+                && resource.operation == "creo derived curve identity lookup"));
+        assert_eq!(target, BTreeSet::from([id.clone()]));
+
+        crate::decode::with_test_decode_ctx(|ctx| {
+            append_borrowed_curve_ids(ctx, &mut target, std::slice::from_ref(&id))
+        }).expect("service duplicate lookup");
+        assert_eq!(target, BTreeSet::from([id]));
     }
 }
