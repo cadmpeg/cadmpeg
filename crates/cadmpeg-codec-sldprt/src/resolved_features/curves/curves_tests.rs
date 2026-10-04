@@ -343,6 +343,23 @@ fn closed_profile_limit_entities() -> Vec<SketchEntity> {
 }
 
 #[test]
+fn incomplete_closed_profile_clear_propagates_work_refusal() {
+    let entities = closed_profile_limit_entities();
+    let entities = &entities[..1];
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert!(closed_marker_profiles_allowing_shared_endpoints(&ctx, entities)
+        .unwrap()
+        .is_empty());
+    let error = crate::test_support::work_refusal_at(
+        "discard SLDPRT incomplete closed profile",
+        |ctx| closed_marker_profiles_allowing_shared_endpoints(ctx, entities),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "discard SLDPRT incomplete closed profile"));
+}
+
+#[test]
 fn closed_profile_refuses_collection_limit() {
     let entities = closed_profile_limit_entities();
     let mut policy = DecodePolicy::service();

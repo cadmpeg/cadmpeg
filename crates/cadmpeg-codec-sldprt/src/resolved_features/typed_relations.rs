@@ -1880,7 +1880,7 @@ fn axis_relation_point_loci(
     if collection.loci.len() > 2 {
         return Ok(None);
     }
-    collection.loci.clear();
+    ctx.clear_vec(&mut collection.loci, "discard SLDPRT incomplete axis relation loci")?;
     collection.locus_bytes = 0;
     collection.visited.clear();
     collection.visited_bytes = 0;
