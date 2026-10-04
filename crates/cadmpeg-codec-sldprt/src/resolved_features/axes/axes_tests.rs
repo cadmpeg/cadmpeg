@@ -1324,6 +1324,16 @@ fn omitted_origin_and_principal_axes_use_unique_maximum_incidence_support_lines(
             .expect("principal axis scan fits service policy"),
         Some([[0.0, 0.0], [0.0, 1.0]])
     );
+    crate::test_support::work_refusal_at("collect SLDPRT principal axis candidates", |ctx| {
+        profile_roster_principal_axis_endpoints(ctx, &lane, "profile-native", &markers)
+    });
+    assert!(super::profile_roster_implicit_axis_endpoints(&ctx, &lane, "profile-native", &markers)
+        .unwrap().is_none());
+    for operation in ["collect SLDPRT implicit axis curves", "collect SLDPRT implicit axis endpoints"] {
+        crate::test_support::work_refusal_at(operation, |ctx| {
+            super::profile_roster_implicit_axis_endpoints(ctx, &lane, "profile-native", &markers)
+        });
+    }
 }
 
 #[test]

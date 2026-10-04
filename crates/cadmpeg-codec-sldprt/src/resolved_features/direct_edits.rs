@@ -247,12 +247,14 @@ pub(crate) fn enrich_history_move_face_translations(
             let Some(line_ref) = line_ref else {
                 continue;
             };
-            let mut directions = declared_line_reference_directions(
+            let mut direction_storage = ctx.reserve_scoped(0, "hold SLDPRT move-face directions")?;
+            let mut directions = direction_storage.with_storage(|| declared_line_reference_directions(
                 ctx,
                 &lane.native_payload,
                 line_ref.offset,
                 end,
-            )?;
+            ))?;
+            let mut excluded_storage = ctx.reserve_scoped(0, "hold SLDPRT move-face excluded handles")?;
             let excluded_handles = match usize::try_from(line_ref.offset) {
                 Ok(offset) => {
                     let handle = |relative| offset.checked_add(relative).ok_or_else(|| {
@@ -262,21 +264,23 @@ pub(crate) fn enrich_history_move_face_translations(
                             u64::MAX,
                         )
                     });
-                    ctx.collect_vec(
+                    excluded_storage.with_storage(|| ctx.collect_vec(
                         [handle(136)?, handle(144)?],
                         "collect SLDPRT move-face excluded handles",
-                    )?
+                    ))?
                 }
                 Err(_) => Vec::new(),
             };
-            let compact = compact_line_reference_directions(
+            let mut compact_storage = ctx.reserve_scoped(0, "hold SLDPRT compact move-face directions")?;
+            let compact = compact_storage.with_storage(|| compact_line_reference_directions(
                 ctx,
                 &lane.native_payload,
                 start,
                 end,
                 &excluded_handles,
-            )?;
-            ctx.extend_vec(&mut directions, compact, "merge SLDPRT move-face directions")?;
+            ))?;
+            direction_storage.with_storage(|| ctx.extend_vec(&mut directions, compact, "merge SLDPRT move-face directions"))?;
+            drop(compact_storage);
             let mut unique = Vec::new();
             for direction in ctx.admit_iter(&directions, "scan SLDPRT unique move-face directions")?
                 .copied()
@@ -830,4 +834,26 @@ mod tests {
             None
         );
     }
+    #[test]
+    fn move_face_excluded_handle_storage_propagates_refusal() {
+        let lane = line_reference_lane(&[Vector3::new(0.0, -1.0, 0.0)], 1);
+        cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+            "collect SLDPRT move-face excluded handles",
+            |cap| {
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_materialized_bytes = cap;
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let mut histories = vec![move_face_history()];
+                let result = super::enrich_history_move_face_translations(&ctx, &mut histories,
+                    std::slice::from_ref(&lane));
+                if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+                    assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+                }
+                result
+            },
+        );
+    }
+
 }
