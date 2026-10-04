@@ -197,7 +197,7 @@ impl FaceAdmissionDetail {
             }
             if let Some(binding) = incidence.get(half_edge) {
                 if detail.vertex_ids.len() < FACE_REJECTION_OPERAND_SAMPLE_LIMIT
-                    && !detail.vertex_ids.contains(&binding.start_vertex_id.get())
+                    && !ctx.contains(&detail.vertex_ids, &binding.start_vertex_id.get(), "creo B-rep rejection vertex lookup")?
                 {
                     ctx.reserve_vec(
                         &mut detail.vertex_ids,
