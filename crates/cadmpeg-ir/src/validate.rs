@@ -225,13 +225,7 @@ fn validate_model_with_annotations(
 ) -> Result<ValidationReport, CodecError> {
     let index = crate::index::ModelIndex::build(ir, ctx)?;
     let mut report = validate_model_with_index(ctx, ir, losses, &index)?;
-    validate_annotations(
-        ctx,
-        &index,
-        annotations,
-        None,
-        &mut report.findings,
-    )?;
+    validate_annotations(ctx, &index, annotations, None, &mut report.findings)?;
     Ok(report)
 }
 
@@ -323,7 +317,8 @@ mod tests {
                 crate::source_fidelity::RetainedSourceRecord::whole("test:source", Vec::new()),
             )
             .unwrap();
-        let report = super::validate_neutral_with_source_fidelity(&ir, &source, Vec::new()).unwrap();
+        let report =
+            super::validate_neutral_with_source_fidelity(&ir, &source, Vec::new()).unwrap();
         assert!(!report.findings.iter().any(|finding| {
             finding.check == crate::report::check::Check::Annotations
                 && finding.entity.as_deref() == Some(id)

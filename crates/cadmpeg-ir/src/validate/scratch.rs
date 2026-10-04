@@ -44,12 +44,8 @@ impl<'ctx, T> Scratch<'ctx, T> {
         key: impl Fn(&T) -> &K,
         compare: impl FnMut(&K, &K) -> std::cmp::Ordering,
     ) -> Result<(), CodecError> {
-        self.ctx.stable_sort_by(
-            &mut self.values,
-            key,
-            compare,
-            "sort validation scratch",
-        )
+        self.ctx
+            .stable_sort_by(&mut self.values, key, compare, "sort validation scratch")
     }
 
     pub(super) fn push(&mut self, value: T) -> Result<(), CodecError> {

@@ -362,10 +362,9 @@ pub(super) fn check_carrier_reachability(
             }
             ProceduralSurfaceDefinition::Net(definition_payload) => {
                 let construction = definition_payload.construction();
-                for section in ctx.admit_iter(
-                    &construction.sections[..],
-                    "carrier net section scan",
-                )? {
+                for section in
+                    ctx.admit_iter(&construction.sections[..], "carrier net section scan")?
+                {
                     for entry in ctx.admit_iter(&section.entries, "carrier reference scan")? {
                         if let Some(curve) = &entry.path.path {
                             curves.insert_unique(curve.id.as_str(), ())?;
@@ -386,7 +385,9 @@ pub(super) fn check_carrier_reachability(
                         }
                     }
                 }
-                for formula in ctx.admit_iter(&construction.formulas[..], "carrier reference scan")? {
+                for formula in
+                    ctx.admit_iter(&construction.formulas[..], "carrier reference scan")?
+                {
                     for variable in formula.variables() {
                         ctx.charge_work(1, "carrier reference scan")?;
                         collect_law_curves(variable, &mut curves, ctx)?;
@@ -892,17 +893,18 @@ pub(super) fn check_carrier_reachability(
                     ctx.charge_work(1, "carrier reference scan")?;
                     match record {
                         crate::native::view::NativeEntity::Product(product) => {
-                            for link in crate::native::view::NativeEntity::Product(product).links(ctx)? {
+                            for link in
+                                crate::native::view::NativeEntity::Product(product).links(ctx)?
+                            {
                                 let link = link?;
                                 surfaces.insert_unique(link, ())?;
                                 curves.insert_unique(link, ())?;
                             }
                         }
                         crate::native::view::NativeEntity::Source(source) => {
-                            for link in ctx.admit_iter(
-                                source.links(),
-                                "native outgoing link scan",
-                            )? {
+                            for link in
+                                ctx.admit_iter(source.links(), "native outgoing link scan")?
+                            {
                                 surfaces.insert_unique(link.as_str(), ())?;
                                 curves.insert_unique(link.as_str(), ())?;
                             }

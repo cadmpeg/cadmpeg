@@ -77,8 +77,7 @@ fn procedural_support_allowance(
     document_tolerance: crate::scalar::PositiveLength,
     cache_fit_tolerance: Option<f64>,
 ) -> Result<f64, CodecError> {
-    Ok(COINCIDENCE_TOLERANCE
-        + allowance(ctx, document_tolerance, &[cache_fit_tolerance])?)
+    Ok(COINCIDENCE_TOLERANCE + allowance(ctx, document_tolerance, &[cache_fit_tolerance])?)
 }
 
 /// Embedded support pcurves must map through their surfaces onto the curve

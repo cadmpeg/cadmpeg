@@ -145,13 +145,7 @@ pub fn admit_with_native_unknowns(
         crate::index::ModelIndex::with_native_unknowns(ir, format, records, &order.positions, ctx)?;
     let mut report = super::validate_model_with_index(ctx, ir, losses, &index)?;
     if let Some(annotations) = annotations {
-        super::validate_annotations(
-            ctx,
-            &index,
-            annotations,
-            None,
-            &mut report.findings,
-        )?;
+        super::validate_annotations(ctx, &index, annotations, None, &mut report.findings)?;
     }
     Ok(Ok(filter_checks(ctx, report, allowed)?))
 }
@@ -218,7 +212,11 @@ fn native_unknown_order<'ctx>(
         for second_position in positions {
             let first = records[first_position].id().as_str();
             let second = records[second_position].id().as_str();
-            if ctx.equal(first, second, "source product identity duplicate comparison")? {
+            if ctx.equal(
+                first,
+                second,
+                "source product identity duplicate comparison",
+            )? {
                 let message = ctx.format_retained(
                     format_args!("duplicate native unknown record {first}"),
                     "native unknown identity collision",

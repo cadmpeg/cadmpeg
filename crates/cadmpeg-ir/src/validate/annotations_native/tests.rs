@@ -258,7 +258,8 @@ fn annotation_paths_preserve_utf8_and_empty_components() {
     let value = serde_value::to_value(serde_json::json!({
         "": {"": true, "β": true},
         "é": {"": true, "β": true}
-    })).unwrap();
+    }))
+    .unwrap();
     for (path, resolves) in [
         ("", true),
         (".", true),
@@ -269,7 +270,11 @@ fn annotation_paths_preserve_utf8_and_empty_components() {
         ("β", false),
         ("é.γ", false),
     ] {
-        assert_eq!(super::field_path_resolves(&ctx, &value, path).unwrap(), resolves, "{path}");
+        assert_eq!(
+            super::field_path_resolves(&ctx, &value, path).unwrap(),
+            resolves,
+            "{path}"
+        );
     }
     ctx.finish_session().unwrap();
 }
@@ -283,12 +288,15 @@ fn annotation_path_scan_preserves_original_refusal() {
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let value = serde_value::Value::Bool(true);
-    let Err(CodecError::ResourceLimit(limit)) = super::field_path_resolves(&ctx, &value, "é.β") else {
+    let Err(CodecError::ResourceLimit(limit)) = super::field_path_resolves(&ctx, &value, "é.β")
+    else {
         panic!("path scan must refuse");
     };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!(limit.operation, "annotation field path scan");
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+    );
 }
 
 #[test]
@@ -297,7 +305,10 @@ fn source_annotation_paths_preserve_index_grammar_and_bounds() {
         "test:native:record#paths".try_into().unwrap(),
         0,
         Vec::new(),
-        vec!["test:model:point#first".into(), "test:model:point#second".into()],
+        vec![
+            "test:model:point#first".into(),
+            "test:model:point#second".into(),
+        ],
     );
     let ctx = cadmpeg_test_support::service_decode_context();
     for (path, expected) in [
@@ -316,7 +327,11 @@ fn source_annotation_paths_preserve_index_grammar_and_bounds() {
         ("links.0.extra", false),
         ("link.0", false),
     ] {
-        assert_eq!(super::source_field_path_resolves(&ctx, &record, path).unwrap(), expected, "{path}");
+        assert_eq!(
+            super::source_field_path_resolves(&ctx, &record, path).unwrap(),
+            expected,
+            "{path}"
+        );
     }
     let empty = crate::unknown::UnknownRecord::retained(
         "test:native:record#empty".try_into().unwrap(),
@@ -351,6 +366,8 @@ fn source_annotation_path_refusal_preserves_original_error() {
         };
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(limit.operation, "annotation source field path scan");
-        assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit)
+        );
     }
 }

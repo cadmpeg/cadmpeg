@@ -235,9 +235,7 @@ fn field_path_resolves(
     mut value: &Value,
     path: &str,
 ) -> Result<bool, CodecError> {
-    let resolve_component = |current: &mut &Value,
-                                 component: &str|
-     -> Result<bool, CodecError> {
+    let resolve_component = |current: &mut &Value, component: &str| -> Result<bool, CodecError> {
         loop {
             ctx.charge_work(1, "annotation field path node")?;
             match *current {

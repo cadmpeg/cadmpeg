@@ -61,8 +61,10 @@ fn check_order<T>(
     for value in ctx.admit_iter(values, "compare validation arena order")? {
         let id = identity(value);
         let unordered = match previous {
-            Some(value) => ctx.compare(value, id, "compare validation arena order")?
-                != std::cmp::Ordering::Less,
+            Some(value) => {
+                ctx.compare(value, id, "compare validation arena order")?
+                    != std::cmp::Ordering::Less
+            }
             None => false,
         };
         if unordered {
@@ -127,10 +129,14 @@ pub(super) fn check_identity_and_order(
                 NativeArena::Product(records) => (records, &[], &[]),
                 NativeArena::Source(records, order) => (&[], records, order),
             };
-            for record in ctx.admit_iter(products, "validation native identity scan")?
+            for record in ctx
+                .admit_iter(products, "validation native identity scan")?
                 .map(NativeEntity::Product)
-                .chain(ctx.admit_iter(order, "validation native identity scan")?
-                    .map(|index| NativeEntity::Source(&sources[*index]))) {
+                .chain(
+                    ctx.admit_iter(order, "validation native identity scan")?
+                        .map(|index| NativeEntity::Source(&sources[*index])),
+                )
+            {
                 push_identity(ctx, &mut seen, findings, record.id())?;
             }
             if records.len() == 0 {
@@ -143,10 +149,16 @@ pub(super) fn check_identity_and_order(
                 )?;
                 let mut new_ids = Vec::new();
                 let ids = if ctx.contains_key_btree_map(
-                    &by_arena.0, &label, "group validation native arenas",
+                    &by_arena.0,
+                    &label,
+                    "group validation native arenas",
                 )? {
-                    ctx.get_mut_btree_map(&mut by_arena.0, &label, "group validation native arenas")?
-                        .ok_or_else(|| CodecError::malformed("validation arena group disappeared"))?
+                    ctx.get_mut_btree_map(
+                        &mut by_arena.0,
+                        &label,
+                        "group validation native arenas",
+                    )?
+                    .ok_or_else(|| CodecError::malformed("validation arena group disappeared"))?
                 } else {
                     &mut new_ids
                 };
@@ -157,7 +169,10 @@ pub(super) fn check_identity_and_order(
                 if !new_ids.is_empty() {
                     // discarded-value: lookup found no group for this arena label.
                     let _ = ctx.insert_btree_map(
-                        &mut by_arena.0, label, new_ids, "validation native arena slots",
+                        &mut by_arena.0,
+                        label,
+                        new_ids,
+                        "validation native arena slots",
                     )?;
                 }
                 Ok::<_, CodecError>(())
