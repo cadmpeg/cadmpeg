@@ -40,9 +40,8 @@ fn persistence_object_data_name_refuses_at_matching_retained_limit() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Body"/></Objects><ObjectData Count="1"><Object name="Body"><Properties Count="0"/></Object></ObjectData></Document>"#;
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    // One object-data hash allocation: four buckets, four control bytes,
-    // sixteen trailing controls and at most fifteen alignment bytes.
-    let lookup = 4 * std::mem::size_of::<(String, roxmltree::Node<'_, '_>)>() + 4 + 31;
+    // The unfiltered declaration and data vectors each retain four Node slots during name copying.
+    let child_nodes = 8 * std::mem::size_of::<roxmltree::Node<'_, '_>>();
     let nodes = 2 * document.bytes().filter(|byte| *byte == b'<').count() + 2;
     let attributes = document.bytes().filter(|byte| *byte == b'=').count();
     // Core XML admission keeps its tree bound live during graph construction.
@@ -54,7 +53,7 @@ fn persistence_object_data_name_refuses_at_matching_retained_limit() {
         + 8 * document.len()
         + 1024;
     policy.limits.max_materialized_bytes =
-        cadmpeg_core::decode::u64_from_index(xml + lookup + "Body".len() - 1);
+        cadmpeg_core::decode::u64_from_index(xml + child_nodes + "Body".len() - 1);
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy)
             .expect("source context");
@@ -97,7 +96,7 @@ fn persistence_extension_identity_refuses_at_retained_limit() {
     let expected = crate::native::native_child_id("extension", owner, child);
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
     policy.limits.max_retained_bytes =
-        cadmpeg_core::decode::u64_from_index("2".len() + child.len() + expected.len()) - 1;
+        cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
     assert!(matches!(super::extension_id(&ctx, owner, "Proxy", 2),
@@ -112,17 +111,17 @@ fn persistence_extension_identity_refuses_at_retained_limit() {
 }
 
 #[test]
-fn persistence_extension_order_refuses_at_retained_limit() {
+fn persistence_extension_order_refuses_at_scoped_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
     let error = super::extension_id(&ctx, "fcstd:native:object#Body", "Proxy", 2)
         .expect_err("extension order text must be admitted");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
-        if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+        if failure.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
             && failure.operation == "FCStd extension order text"),
         "{error:?}"
     );
@@ -277,9 +276,87 @@ fn x62_persistence_object_collection_is_admitted_before_allocation() {
 }
 
 #[test]
+fn x62_persistence_object_record_push_refuses_at_collection_limit() {
+    let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object name="A" type="Part::Feature"/></Objects><ObjectData Count="1"><Object name="A"/></ObjectData></Document>"#;
+    assert_persistence_collection_at_operation(document, "FCStd object records");
+}
+
+#[test]
+fn persistence_count_parse_refuses_at_work_limit() {
+    let document = r#"<Document><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    let xml = roxmltree::Document::parse(document).expect("XML");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // Root selection costs 1; section searches cost 33 and 39; Count lookup costs 11.
+    policy.limits.max_work_units = 84;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy)
+            .expect("root");
+    let error = super::parse_document(document, &xml, crate::dialect::FcstdDialect::Schema4, &ctx)
+        .err()
+        .expect("count parse refuses");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "FCStd object count parse"
+                && Some(refusal) == ctx.resource_refusal()
+    ));
+}
+
+#[test]
 fn dependency_lookup_refuses_on_collection_limit() {
     let document = r#"<Document SchemaVersion="4"><Objects Count="1" Dependencies="1"><ObjectDeps Name="A" Count="0"/><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"/></ObjectData></Document>"#;
     assert_persistence_collection_at_operation(document, "FCStd dependency lookup");
+}
+
+#[test]
+fn dependency_item_push_refuses_at_collection_limit() {
+    let document = r#"<Document SchemaVersion="4"><Objects Count="2" Dependencies="1"><ObjectDeps Name="A" Count="1"><Dep Name="B"/></ObjectDeps><ObjectDeps Name="B" Count="0"/><Object type="App::Feature" name="A"/><Object type="App::Feature" name="B"/></Objects><ObjectData Count="2"><Object name="A"/><Object name="B"/></ObjectData></Document>"#;
+    assert_persistence_collection_at_operation(document, "FCStd object dependencies");
+}
+
+#[test]
+fn dependency_vector_iteration_refuses_at_work_limit() {
+    let document = r#"<Document><Objects Count="1" Dependencies="1"><ObjectDeps Name="A" Count="0"/><Object name="A" type="T"/></Objects><ObjectData Count="1"><Object name="A"/></ObjectData></Document>"#;
+    let xml = roxmltree::Document::parse(document).expect("XML");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // Root, sections and count cost 85; declaration visits/names cost 33; Dependencies costs 43; ordering and selection cost 68.
+    policy.limits.max_work_units = 229;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy)
+            .expect("root");
+    let error = super::parse_document(document, &xml, crate::dialect::FcstdDialect::Schema4, &ctx)
+        .err()
+        .expect("dependency vector iteration refuses");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "FCStd object dependency records"
+                && Some(refusal) == ctx.resource_refusal()
+    ));
+}
+
+#[test]
+fn dependency_map_entry_refuses_at_work_limit() {
+    let document = r#"<Document><Objects Count="1" Dependencies="1"><ObjectDeps Name="A" Count="0"/><Object name="A" type="T"/></Objects><ObjectData Count="1"><Object name="A"/></ObjectData></Document>"#;
+    let xml = roxmltree::Document::parse(document).expect("XML");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // The dependency prefix costs 230; Name lookup/copy costs 10; empty child collection costs 1; Count costs 22; AllowPartial costs 35.
+    policy.limits.max_work_units = 298;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy)
+            .expect("root");
+    let error = super::parse_document(document, &xml, crate::dialect::FcstdDialect::Schema4, &ctx)
+        .err()
+        .expect("dependency key work refuses");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "FCStd dependency lookup"
+                && Some(refusal) == ctx.resource_refusal()
+    ));
 }
 
 fn assert_persistence_collection_at_operation(document: &str, operation: &str) {
@@ -316,23 +393,9 @@ fn extension_owner_refuses_at_matching_retained_limit() {
 
 fn assert_link_collection_at_operation(xml: &str, type_name: &str, operation: &str) {
     let document = roxmltree::Document::parse(xml).expect("valid link XML");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    for limit in 0..12 {
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &policy)
-                .expect("link XML fits input policy");
-        let result = super::parse_link_targets(document.root_element(), type_name, &ctx);
-        if matches!(result,
-            Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
-                if refusal.operation == operation
-                    && refusal.used + refusal.additional == limit + 1)
-        {
-            return;
-        }
-    }
-    panic!("{operation} was not reached under a matching link limit");
+    crate::test_support::assert_collection_refusal_at(xml.as_bytes(), operation, |ctx| {
+        super::parse_link_targets(document.root_element(), type_name, ctx)
+    });
 }
 
 #[test]
@@ -390,6 +453,37 @@ fn cross_document_link_list_refuses_at_matching_collection_limit() {
 }
 
 #[test]
+fn link_sublist_subelement_push_refuses_at_matching_collection_limit() {
+    assert_link_collection_at_operation(
+        "<Property><LinkSubList count=\"1\"><Link obj=\"A\" sub=\"Face1\"/></LinkSubList></Property>",
+        "App::PropertyLinkSubList",
+        "FCStd link subelements",
+    );
+}
+
+#[test]
+fn link_carrier_name_search_refuses_at_work_limit() {
+    let property = r#"<Property><Link value="A"/></Property>"#;
+    let xml = roxmltree::Document::parse(property).expect("XML");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // Child collection/search/tag, nested framing, attribute collection and search cost 15.
+    policy.limits.max_work_units = 15;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(property.as_bytes(), &arena, &policy)
+            .expect("root");
+    let error = super::parse_link_targets(xml.root_element(), "App::PropertyLink", &ctx)
+        .err()
+        .expect("carrier-name search refuses");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "FCStd link carrier names"
+                && Some(refusal) == ctx.resource_refusal()
+    ));
+}
+
+#[test]
 fn extension_name_set_refuses_on_collection_limit() {
     let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"><Extensions Count="1"><Extension name="E" type="T"/></Extensions></Object></ObjectData></Document>"#;
     assert_persistence_collection_at_operation(document, "FCStd extension name set");
@@ -411,6 +505,26 @@ fn x62_persistence_property_collection_is_admitted_before_allocation() {
 fn x62_persistence_value_collection_is_admitted_before_allocation() {
     let document = r#"<Document SchemaVersion="4"><Properties Count="1"><Property name="P" type="App::PropertyString"><String value="x"/></Property></Properties><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
     assert_persistence_collection_at_operation(document, "FCStd property value records");
+}
+
+#[test]
+fn x62_persistence_extension_record_push_refuses_at_collection_limit() {
+    let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object name="A" type="Part::Feature"/></Objects><ObjectData Count="1"><Object name="A"><Extensions Count="1"><Extension name="E" type="T"/></Extensions></Object></ObjectData></Document>"#;
+    assert_persistence_collection_at_operation(document, "FCStd extension records");
+}
+
+#[test]
+fn x62_persistence_property_record_pushes_refuse_at_collection_limit() {
+    let transient = r#"<Document SchemaVersion="4"><Properties Count="0" TransientCount="1"><_Property name="P" type="T"/></Properties><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    assert_persistence_collection_at_operation(transient, "FCStd transient property records");
+    let persisted = r#"<Document SchemaVersion="4"><Properties Count="1"><Property name="P" type="T"/></Properties><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    assert_persistence_collection_at_operation(persisted, "FCStd persisted property records");
+}
+
+#[test]
+fn x62_persistence_side_entry_push_refuses_at_collection_limit() {
+    let document = r#"<Document SchemaVersion="4"><Properties Count="1"><Property name="P" type="App::PropertyFile"><File name="document.txt"/></Property></Properties><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    assert_persistence_collection_at_operation(document, "FCStd side entry references");
 }
 
 #[test]
@@ -505,17 +619,10 @@ fn x63_transient_and_persisted_property_xml_copies_are_charged() {
 #[test]
 fn x63_nested_value_xml_charges_the_actual_copied_bytes() {
     let document = r#"<Document SchemaVersion="4"><Properties Count="1"><Property name="P" type="App::PropertyString"><String value="x"/></Property></Properties><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
-    assert_retained_operation(
-        &parse_with_retained_limit(
-            document,
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<crate::native::ValueRecord>())
-                + 1
-                + cadmpeg_core::decode::u64_from_index("App::PropertyString".len())
-                + 6
-                + 5
-                + 1,
-        ),
+    crate::test_support::assert_retained_refusal_at(
+        document.as_bytes(),
         "FCStd value XML",
+        |ctx| super::parse_with_context(document.as_bytes(), "4", ctx),
     );
 }
 
@@ -525,22 +632,10 @@ fn x63_link_target_attribute_copy_is_charged() {
     let document = format!(
         r#"<Document SchemaVersion="4"><Properties Count="1"><Property name="P" type="App::PropertyLink">{value}</Property></Properties><Objects Count="0"/><ObjectData Count="0"/></Document>"#
     );
-    let prior_copies = "P".len()
-        + "App::PropertyLink".len()
-        + "Link".len()
-        + "value".len()
-        + "A".len()
-        + value.len();
-    assert_retained_operation(
-        &parse_with_retained_limit(
-            &document,
-            cadmpeg_core::decode::u64_from_index(
-                prior_copies
-                    + std::mem::size_of::<crate::native::ValueRecord>()
-                    + std::mem::size_of::<Option<crate::native::LinkTarget>>(),
-            ),
-        ),
+    crate::test_support::assert_retained_refusal_at(
+        document.as_bytes(),
         "FCStd link object",
+        |ctx| super::parse_with_context(document.as_bytes(), "4", ctx),
     );
 }
 
@@ -1277,6 +1372,44 @@ fn object_declaration_framing_precedes_collection_admission() {
     }
 }
 
+fn assert_duplicate_name_work_refusal<T>(
+    input: &[u8],
+    operation: &str,
+    name_bytes: usize,
+    parse: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+) {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    for _ in 0..1024 {
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(input, &arena, &policy)
+            .expect("root");
+        let error = parse(&ctx).err().expect("comparison must refuse");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("expected name comparison refusal: {error:?}");
+        };
+        assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+        assert_eq!(Some(limit), ctx.resource_refusal());
+        let threshold = limit.used.checked_add(limit.additional).expect("work threshold");
+        assert!(threshold > policy.limits.max_work_units);
+        if limit.operation == operation
+            && limit.additional == cadmpeg_core::decode::u64_from_index(name_bytes)
+        {
+            // Each equal operand is admitted separately by its exact UTF-8 byte length.
+            policy.limits.max_work_units = threshold - 1;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(input, &arena, &policy)
+                .expect("root");
+            assert!(matches!(parse(&ctx), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+                if refusal.operation == operation && refusal.additional == limit.additional
+                    && refusal.used + refusal.additional == threshold
+                    && Some(*refusal) == ctx.resource_refusal()));
+            return;
+        }
+        policy.limits.max_work_units = threshold;
+    }
+    panic!("{operation} operand admission was not reached");
+}
+
 #[test]
 fn duplicate_object_name_comparisons_admit_prefix_bytes() {
     let prefix = "a".repeat(10000);
@@ -1284,18 +1417,9 @@ fn duplicate_object_name_comparisons_admit_prefix_bytes() {
         r#"<Document><Objects Count="2"><Object name="{prefix}A" type="Part::Feature"/><Object name="{prefix}B" type="Part::Feature"/></Objects><ObjectData Count="2"><Object name="{prefix}A"/><Object name="{prefix}B"/></ObjectData></Document>"#
     );
     let xml = roxmltree::Document::parse(&document).expect("XML");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 60000;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy)
-            .expect("root");
-    let error = super::parse_document(&document, &xml, crate::dialect::FcstdDialect::Schema4, &ctx)
-        .err()
-        .expect("prefix comparisons exceed allowance");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "FCStd duplicate object names" && Some(limit) == ctx.resource_refusal())
+    assert_duplicate_name_work_refusal(
+        document.as_bytes(), "FCStd duplicate object names", prefix.len() + 1,
+        |ctx| super::parse_document(&document, &xml, crate::dialect::FcstdDialect::Schema4, ctx),
     );
 }
 
@@ -1306,23 +1430,9 @@ fn duplicate_property_name_comparisons_admit_lookup_and_prefix_bytes() {
         r#"<Properties Count="2"><Property name="{prefix}A" type="App::PropertyString"/><Property name="{prefix}B" type="App::PropertyString"/></Properties>"#
     );
     let xml = roxmltree::Document::parse(&document).expect("XML");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 100;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy)
-            .expect("root");
-    let error = super::parse_properties(
-        &document,
-        xml.root_element(),
-        "owner",
-        &mut Vec::new(),
-        &ctx,
-    )
-    .expect_err("prefix comparisons exceed allowance");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "FCStd duplicate property names" && Some(limit) == ctx.resource_refusal())
+    assert_duplicate_name_work_refusal(
+        document.as_bytes(), "FCStd duplicate property names", prefix.len() + 1,
+        |ctx| super::parse_properties(&document, xml.root_element(), "owner", &mut Vec::new(), ctx),
     );
 }
 
