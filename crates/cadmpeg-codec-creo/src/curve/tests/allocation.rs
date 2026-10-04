@@ -238,6 +238,20 @@ fn solve_line_index_nodes_refuse_before_insert() {
 }
 
 #[test]
+fn prohibited_name_case_fold_refuses_work() {
+    let lines = expression_lines(&["ABS(x)"]);
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "creo prohibited function case fold",
+        |ctx| super::super::curve_equation_prohibited_constructs(ctx, &lines),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "creo prohibited function case fold"));
+}
+
+#[test]
 fn solve_keyword_comparison_refuses_work() {
     let lines = expression_lines(&["SOLVE"]);
     let error = crate::test_support::last_refusal_at(
