@@ -78,7 +78,7 @@ fn surface_trim_output_refuses_identifier_and_collection_limits() {
     let (bytes, mut scope) = surface_trim_selection_and_cell_table();
     scope.id = format!(
         "{}:design-parameter-scope#800",
-        crate::ids::native_scope(ENTRY)
+        crate::test_support::with_decode_context(|ctx| {crate::ids::native_scope(ctx, ENTRY, "retain F3D native scope").expect("test F3D native identity")})
     );
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
@@ -98,11 +98,11 @@ fn surface_trim_output_refuses_identifier_and_collection_limits() {
             operations[0].id,
             format!(
                 "{}:design-surface-trim-operation#{}",
-                crate::ids::native_scope(ENTRY),
+                crate::test_support::with_decode_context(|ctx| {crate::ids::native_scope(ctx, ENTRY, "retain F3D native scope").expect("test F3D native identity")}),
                 scope.byte_offset(),
             ),
         );
-        let scope_len = u64_from_index(crate::ids::native_scope(ENTRY).len());
+        let scope_len = u64_from_index(crate::test_support::with_decode_context(|ctx| {crate::ids::native_scope(ctx, ENTRY, "retain F3D native scope").expect("test F3D native identity")}).len());
         for (items, retained, dimension, operation) in [
             (
                 27,

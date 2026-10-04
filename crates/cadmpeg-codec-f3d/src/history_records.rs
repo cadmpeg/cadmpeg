@@ -357,6 +357,20 @@ pub(crate) struct AsmEntityVersion {
     pub(crate) record_ref: i64,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for AsmEntityVersion {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.entity_ref, &self.record_ref),
+            ctx,
+            operation,
+        )
+    }
+}
+
 /// Stable entity-slot membership of one re-derived historical B-rep.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalTopology {
@@ -452,6 +466,20 @@ pub(crate) struct AsmHistoricalSurfaceAxis {
 pub(crate) struct AsmHistoricalSurfaceRadius {
     pub(crate) surface: i64,
     pub(crate) radius: f64,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for AsmHistoricalSurfaceRadius {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.surface, &self.radius),
+            ctx,
+            operation,
+        )
+    }
 }
 
 /// Stable geometry of one right-circular cylinder carrier.

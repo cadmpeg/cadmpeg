@@ -151,8 +151,11 @@ fn charged_native_scope_matches_identity_encoding() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     for name in ["Design/BulkStream.dat", "a:b#c%d e", "α\u{2003}β"] {
         assert_eq!(
-            crate::design::decode::sketch::native_scope_charged(&ctx, name).unwrap(),
-            crate::ids::native_scope(name)
+            crate::ids::native_scope(&ctx, name, "f3d native stream key").unwrap(),
+            crate::test_support::with_decode_context(|ctx| {
+                crate::ids::native_scope(ctx, name, "retain F3D native scope")
+                    .expect("test F3D native identity")
+            })
         );
     }
 }
@@ -164,7 +167,7 @@ fn native_scope_key_refuses_retained_limit() {
     policy.limits.max_retained_bytes = 4;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        crate::design::decode::sketch::native_scope_charged(&ctx, "a"),
+        crate::ids::native_scope(&ctx, "a", "f3d native stream key"),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
     ));
@@ -174,7 +177,7 @@ fn native_scope_key_refuses_retained_limit() {
 fn scoped_native_scope_key_refuses_materialized_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    let expected = crate::ids::native_scope("a:b");
+    let expected = crate::test_support::with_decode_context(|ctx| {crate::ids::native_scope(ctx, "a:b", "retain F3D native scope").expect("test F3D native identity")});
     policy.limits.max_materialized_bytes = u64_from_index(expected.len()) - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
@@ -208,7 +211,7 @@ fn record_header_stream_charges_emitted_index_output_and_id() {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&indexed_header(7));
     bytes.extend_from_slice(&indexed_header(7));
-    let scope = crate::ids::native_scope("BulkStream.dat");
+    let scope = crate::test_support::with_decode_context(|ctx| {crate::ids::native_scope(ctx, "BulkStream.dat", "retain F3D native scope").expect("test F3D native identity")});
     let wanted = std::collections::HashSet::from([(scope.as_str(), 7)]);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
@@ -245,7 +248,7 @@ fn record_header_stream_charges_emitted_index_output_and_id() {
     assert_eq!(out.len(), 1);
     assert_eq!(
         out[0].id,
-        crate::ids::native_design_record_header_id("BulkStream.dat", 0)
+        crate::test_support::with_decode_context(|ctx| {crate::ids::native_design_record_header_id(ctx, "BulkStream.dat", 0).expect("test F3D native identity")})
     );
 }
 
@@ -314,8 +317,8 @@ fn entity_header_existing_index_refuses_collection_limit() {
 fn entity_header_meta_scope_and_module_refuse_byte_limits() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    let bulk_scope = crate::ids::native_scope("a/BulkStream.dat");
-    let expected = crate::ids::native_scope("a/MetaStream.dat");
+    let bulk_scope = crate::test_support::with_decode_context(|ctx| {crate::ids::native_scope(ctx, "a/BulkStream.dat", "retain F3D native scope").expect("test F3D native identity")});
+    let expected = crate::test_support::with_decode_context(|ctx| {crate::ids::native_scope(ctx, "a/MetaStream.dat", "retain F3D native scope").expect("test F3D native identity")});
     policy.limits.max_materialized_bytes = u64_from_index(expected.len()) - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(

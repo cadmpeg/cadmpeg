@@ -26,11 +26,14 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
             AsmHistoricalEntityKind::Loop => topology.loops.push(42),
             _ => panic!("test history kind"),
         }
-        let id = crate::ids::native_scoped_id(
-            &format!("Asset/Breps.BlobParts/{blob}"),
-            "asm-history",
-            0,
-        );
+        let id = crate::test_support::with_decode_context(|ctx| {
+            crate::ids::native_scoped_id(
+                ctx,
+                &format!("Asset/Breps.BlobParts/{blob}"),
+                "asm-history",
+                0,
+            ).expect("test F3D native identity")
+        });
         AsmHistory {
             states: vec![AsmDeltaState {
                 id: format!("{id}:state#{state_id}"),
@@ -60,7 +63,7 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
     let design_stream = "Asset/Design1/BulkStream.dat";
     let naming_spaces = vec![
         crate::records::recipes::DesignComponentNamingSpace {
-            id: crate::ids::native_design_component_naming_space_id(design_stream, 0),
+            id: crate::test_support::with_decode_context(|ctx| { crate::ids::native_design_component_naming_space_id(ctx, design_stream, 0).expect("test F3D native identity") }),
             byte_offset: 0,
             component_record_index: 10,
             context_uuid: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
@@ -70,7 +73,7 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
             context_uuid_offset: 12,
         },
         crate::records::recipes::DesignComponentNamingSpace {
-            id: crate::ids::native_design_component_naming_space_id(design_stream, 100),
+            id: crate::test_support::with_decode_context(|ctx| { crate::ids::native_design_component_naming_space_id(ctx, design_stream, 100).expect("test F3D native identity") }),
             byte_offset: 100,
             component_record_index: 20,
             context_uuid: "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb"
@@ -83,7 +86,7 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
     let binding = |at, entity_suffix, blob_name: &str| {
         crate::records::bodies::DesignBodyBinding::try_from(
             crate::records::bodies::DesignBodyBindingWire::<String> {
-                id: crate::ids::native_design_body_binding_id(design_stream, at),
+                id: crate::test_support::with_decode_context(|ctx| { crate::ids::native_design_body_binding_id(ctx, design_stream, at).expect("test F3D native identity") }),
                 stream: design_stream.into(),
                 pair_count: 1,
                 pair_ordinal: 0,
@@ -109,7 +112,7 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
     let mut members = vec![
         crate::records::topology::extrude_selection::DesignExtrudeSelectionMember::try_new(
             crate::records::topology::extrude_selection::DesignExtrudeSelectionMemberDraft {
-                id: crate::ids::native_scoped_id(design_stream, "extrude-selection-member", 400),
+                id: crate::test_support::with_decode_context(|ctx| { crate::ids::native_scoped_id(ctx, design_stream, "extrude-selection-member", 400).expect("test F3D native identity") }),
                 group_record_index: 1,
                 group_member_ordinal: 0,
                 record_index: 2,
@@ -169,7 +172,7 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
 fn component_history_context_comparison_propagates_work_refusal() {
     let design_stream = "Asset/Design1/BulkStream.dat";
     let naming_spaces = [crate::records::recipes::DesignComponentNamingSpace {
-        id: crate::ids::native_design_component_naming_space_id(design_stream, 0),
+        id: crate::test_support::with_decode_context(|ctx| { crate::ids::native_design_component_naming_space_id(ctx, design_stream, 0).expect("test F3D native identity") }),
         byte_offset: 0,
         component_record_index: 10,
         context_uuid: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
@@ -180,7 +183,7 @@ fn component_history_context_comparison_propagates_work_refusal() {
     }];
     let member = crate::records::topology::extrude_selection::DesignExtrudeSelectionMember::try_new(
         crate::records::topology::extrude_selection::DesignExtrudeSelectionMemberDraft {
-            id: crate::ids::native_scoped_id(design_stream, "extrude-selection-member", 400),
+            id: crate::test_support::with_decode_context(|ctx| { crate::ids::native_scoped_id(ctx, design_stream, "extrude-selection-member", 400).expect("test F3D native identity") }),
             group_record_index: 1,
             group_member_ordinal: 0,
             record_index: 2,
@@ -488,6 +491,42 @@ fn historical_recipe_face_list_refuses_collection_limit() {
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D historical recipe faces")
     );
+}
+
+#[test]
+fn historical_recipe_face_identity_refuses_validation_work() {
+    let operation = "validate F3D historical face identity";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |decode| {
+            let (topology, _) = recipe_limit_case();
+            historical_recipe_faces(decode, 301, &topology).map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn historical_recipe_edge_identity_refuses_validation_work() {
+    let operation = "validate F3D historical edge identity";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |decode| {
+            let (topology, mut reference) = recipe_limit_case();
+            bind_historical_recipe_reference_candidates(decode, &mut reference, &topology)
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
 }
 
 #[test]

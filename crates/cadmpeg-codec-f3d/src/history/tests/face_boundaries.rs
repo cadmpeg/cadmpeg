@@ -371,3 +371,31 @@ fn bounded_face_identity_selects_ordered_deleted_treatment_edges() {
     .unwrap();
     assert!(identities[0].resolved_edge_slots.is_empty());
 }
+
+#[test]
+fn bounded_face_identity_comparisons_propagate_work_refusal() {
+    for operation in [
+        "find F3D bounded treatment face operand",
+        "find additional F3D bounded treatment face operand",
+        "compare F3D bounded treatment operand streams",
+        "compare F3D bounded treatment operand class tags",
+        "compare F3D bounded treatment preceding faces",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |decode| {
+                let (mut identities, face) = bounded_face_rule_fixture();
+                let faces = if operation == "find additional F3D bounded treatment face operand" {
+                    vec![face.clone(), face]
+                } else {
+                    vec![face]
+                };
+                bind_edge_identity_bounded_face_rules(decode, &mut identities, &faces)
+            },
+        );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == operation));
+    }
+}

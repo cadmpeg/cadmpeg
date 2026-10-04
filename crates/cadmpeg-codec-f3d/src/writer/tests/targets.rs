@@ -28,7 +28,9 @@ fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable(
     let mut fidelity = SourceFidelity::default();
     fidelity
         .insert_retained_record(
-            crate::ids::file_source_image_id(),
+            crate::test_support::with_decode_context(|ctx| {
+                crate::ids::file_source_image_id(ctx).expect("test F3D source image identity")
+            }),
             RetainedSourceRecord::whole("f3d", data),
         )
         .expect("distinct retained source image");

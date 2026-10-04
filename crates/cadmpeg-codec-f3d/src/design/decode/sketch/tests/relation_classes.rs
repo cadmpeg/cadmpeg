@@ -42,7 +42,7 @@ fn sketch_relation_assembly_refuses_collection_and_retained_limits() {
         (
             None,
             Some(u64_from_index(
-                crate::ids::native_scope("BulkStream.dat").len(),
+                crate::test_support::with_decode_context(|ctx| {crate::ids::native_scope(ctx, "BulkStream.dat", "retain F3D native scope").expect("test F3D native identity")}).len(),
             )),
             false,
             ResourceDimension::RetainedBytes,
@@ -53,7 +53,7 @@ fn sketch_relation_assembly_refuses_collection_and_retained_limits() {
             Some(u64_from_index(
                 format!(
                     "{}:sketch-relation#7",
-                    crate::ids::native_scope("BulkStream.dat")
+                    crate::test_support::with_decode_context(|ctx| {crate::ids::native_scope(ctx, "BulkStream.dat", "retain F3D native scope").expect("test F3D native identity")})
                 )
                 .len(),
             )),
@@ -145,7 +145,7 @@ fn sketch_relation_assembly_refuses_collection_and_retained_limits() {
         admitted[0].id,
         format!(
             "{}:sketch-relation#7",
-            crate::ids::native_scope("BulkStream.dat")
+            crate::test_support::with_decode_context(|ctx| {crate::ids::native_scope(ctx, "BulkStream.dat", "retain F3D native scope").expect("test F3D native identity")})
         )
     );
     assert_eq!(admitted[0].raw_bytes(), record);

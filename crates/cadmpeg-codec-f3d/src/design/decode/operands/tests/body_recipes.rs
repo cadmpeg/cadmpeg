@@ -594,7 +594,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     ));
     let limited_arena = cadmpeg_core::decode::DecodeArena::new();
     let mut limited_policy = cadmpeg_core::decode::DecodePolicy::default();
-    let id_len = crate::ids::native_scope("Design/BulkStream.dat").len()
+    let id_len = crate::test_support::with_decode_context(|ctx| {crate::ids::native_scope(ctx, "Design/BulkStream.dat", "retain F3D native scope").expect("test F3D native identity")}).len()
         + ":design-body-recipe-operand#".len()
         + 1;
     limited_policy.limits.max_retained_bytes = u64::try_from(id_len - 1).unwrap();
@@ -997,10 +997,10 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         stream_name,
         &bytes,
     );
-    group.id = crate::ids::native_scoped_id(stream_name, "operand-group", 90);
-    record.id = crate::ids::native_scoped_id(stream_name, "record", 100);
-    recipe.id = crate::ids::native_scoped_id(stream_name, "construction-recipe", recipe_at);
-    let output_id = crate::ids::native_scoped_id(stream_name, "design-body-recipe-operand", 0);
+    group.id = crate::test_support::with_decode_context(|ctx| {crate::ids::native_scoped_id(ctx, stream_name, "operand-group", 90).expect("test F3D native identity")});
+    record.id = crate::test_support::with_decode_context(|ctx| {crate::ids::native_scoped_id(ctx, stream_name, "record", 100).expect("test F3D native identity")});
+    recipe.id = crate::test_support::with_decode_context(|ctx| {crate::ids::native_scoped_id(ctx, stream_name, "construction-recipe", recipe_at).expect("test F3D native identity")});
+    let output_id = crate::test_support::with_decode_context(|ctx| {crate::ids::native_scoped_id(ctx, stream_name, "design-body-recipe-operand", 0).expect("test F3D native identity")});
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::default();

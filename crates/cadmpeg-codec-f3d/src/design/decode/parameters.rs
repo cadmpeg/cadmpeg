@@ -9,7 +9,7 @@ use crate::container::ContainerScan;
 use crate::design::decode::body::decode_stream;
 use crate::design::decode::dimension_frames::companion_owned_interval;
 use crate::design::decode::sketch::{
-    native_scope_charged, next_indexed_record_offset, IndexedRecordOffsets,
+    next_indexed_record_offset, IndexedRecordOffsets,
 };
 use crate::design::decode::text::design_record_id_charged;
 use crate::ids::{self, native_stream};
@@ -153,49 +153,72 @@ impl ParsedDesignParameter {
                 ))
             })
             .transpose()?;
-        Ok((|| {
+        (|| -> Result<Option<DesignParameter>, CodecError> {
             let family_discriminator = match self.family_discriminator {
-                Some(value) => Some(crate::records::identity::Located {
-                    value,
-                    offset: FrameRelative(i128::from(DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET))
-                        .absolute(frame_start)?,
-                }),
+                Some(value) => {
+                    let offset =
+                        FrameRelative(i128::from(DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET))
+                            .absolute(frame_start);
+                    let Some(offset) = offset else {
+                        return Ok(None);
+                    };
+                    Some(crate::records::identity::Located { value, offset })
+                }
                 None => None,
             };
             let unit = match unit {
-                Some((value, offset)) => Some(crate::records::identity::RecordedValue {
-                    value,
-                    offset: offset.absolute(frame_start)?,
-                }),
+                Some((value, offset)) => {
+                    let Some(offset) = offset.absolute(frame_start) else {
+                        return Ok(None);
+                    };
+                    Some(crate::records::identity::RecordedValue { value, offset })
+                }
                 None => None,
             };
-            crate::records::parameters::DesignParameter::try_from(
+            let id = ids::native_design_parameter_id(ctx, stream, frame_start)?;
+            let source = match crate::records::parameters::DesignParameterSource::new(
+                source_kind,
+                self.owner_record_index,
+                family_discriminator,
+            ) {
+                Ok(source) => source,
+                Err(_) => return Ok(None),
+            };
+            let Some(expression_offset) = self.expression_offset.absolute(frame_start) else {
+                return Ok(None);
+            };
+            let Some(source_kind_offset) = self.source_kind_offset.absolute(frame_start) else {
+                return Ok(None);
+            };
+            let Some(name_offset) = self.name_offset.absolute(frame_start) else {
+                return Ok(None);
+            };
+            let Some(evaluated_value_offset) = self.evaluated_value_offset.absolute(frame_start)
+            else {
+                return Ok(None);
+            };
+            Ok(crate::records::parameters::DesignParameter::try_from(
                 crate::records::parameters::DesignParameterDraft::<
                     cadmpeg_core::text::NonBlankText<String>,
                 > {
-                    id: ids::native_design_parameter_id(stream, frame_start),
+                    id,
                     byte_offset: frame_start,
                     class_tag: self.class_tag,
                     record_index: self.record_index,
                     source_ordinal: self.source_ordinal,
-                    source: crate::records::parameters::DesignParameterSource::new(
-                        source_kind,
-                        self.owner_record_index,
-                        family_discriminator,
-                    )
-                    .ok()?,
+                    source,
                     expression,
-                    expression_offset: self.expression_offset.absolute(frame_start)?,
-                    source_kind_offset: self.source_kind_offset.absolute(frame_start)?,
+                    expression_offset,
+                    source_kind_offset,
                     unit,
                     name,
-                    name_offset: self.name_offset.absolute(frame_start)?,
+                    name_offset,
                     evaluated_value: self.evaluated_value,
-                    evaluated_value_offset: self.evaluated_value_offset.absolute(frame_start)?,
+                    evaluated_value_offset,
                 },
             )
-            .ok()
-        })())
+            .ok())
+        })()
     }
 }
 
@@ -626,7 +649,7 @@ pub(crate) fn decode_parameter_owners(
             continue;
         }
         let bytes = scan.entry_bytes(ctx, &entry.name)?;
-        let stream = native_scope_charged(ctx, &entry.name)?;
+        let stream = ids::native_scope(ctx, &entry.name, "f3d native stream key")?;
         if streams.contains_key(&stream) {
             return Err(CodecError::Malformed(
                 "F3D contains duplicate Design BulkStream identities".into(),
@@ -690,7 +713,7 @@ pub(crate) fn decode_parameter_owners(
             })
             .transpose()?
             .ok_or_else(|| malformed("does not match the parameter-owner grammar"))?
-            .into_record(&entry.name, header.byte_offset)
+            .into_record(ctx, &entry.name, header.byte_offset)?
             .ok_or_else(|| malformed("has invalid owner fields or evaluated-value offset"))?;
         if owner.record_index() != owner_index
             || owner.parameter_record_index() != parameter.record_index
@@ -744,12 +767,17 @@ impl ParsedParameterOwner {
     /// Locate this owner in its containing stream.
     pub(in crate::design) fn into_record(
         self,
+        ctx: &DecodeContext<'_>,
         stream: &str,
         frame_start: u64,
-    ) -> Option<DesignParameterOwner> {
-        crate::records::parameters::DesignParameterOwner::from_parts(
+    ) -> Result<Option<DesignParameterOwner>, CodecError> {
+        let Some(evaluated_value_offset) = self.evaluated_value_offset.absolute(frame_start) else {
+            return Ok(None);
+        };
+        let id = ids::native_design_parameter_owner_id(ctx, stream, frame_start)?;
+        Ok(crate::records::parameters::DesignParameterOwner::from_parts(
             crate::records::parameters::DesignParameterOwnerWire {
-                id: ids::native_design_parameter_owner_id(stream, frame_start),
+                id,
                 byte_offset: frame_start,
                 frame_length: self.frame_length,
                 class_tag: self.class_tag,
@@ -757,14 +785,14 @@ impl ParsedParameterOwner {
                 scope_record_index: self.scope_record_index,
                 local_ordinal: self.local_ordinal,
                 evaluated_value: self.evaluated_value,
-                evaluated_value_offset: self.evaluated_value_offset.absolute(frame_start)?,
+                evaluated_value_offset,
                 parameter_record_index: self.parameter_record_index,
                 owned_ordinal: self.owned_ordinal,
                 variant: self.variant,
                 companion_record_index: self.companion_record_index,
             },
         )
-        .ok()
+        .ok())
     }
 }
 

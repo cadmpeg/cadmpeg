@@ -22,7 +22,7 @@ pub(in crate::design::decode) fn design_record_id_charged(
     offset: u64,
     charge_operation: &'static str,
 ) -> Result<String, CodecError> {
-    let mut id = super::sketch::native_scope_charged(ctx, stream)?;
+    let mut id = crate::ids::native_scope(ctx, stream, "f3d native stream key")?;
     ctx.append_formatted_retained(&mut id, format_args!("{suffix}{offset}"), charge_operation)?;
     Ok(id)
 }

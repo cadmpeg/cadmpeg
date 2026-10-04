@@ -104,6 +104,34 @@ fn native_entity_reference_finding_refuses_retained_limit() {
 }
 
 #[test]
+fn native_validation_finding_message_refuses_retained_limit() {
+    crate::test_support::with_decode_context(|service_ctx| {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let native = crate::native::F3dNative::default();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        ctx.decode = &decode;
+        let error = ctx
+            .push_constant_finding(
+                &mut Vec::new(),
+                super::super::Check::NativeLinks,
+                "fixed validation finding message",
+                None,
+            )
+            .unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "retain F3D validation finding message")
+        );
+    })
+}
+
+#[test]
 fn native_sketch_relation_finding_refuses_retained_limit() {
     crate::test_support::with_decode_context(|service_ctx| {
         use crate::records::identity::ReferenceRun;

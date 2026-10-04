@@ -85,10 +85,14 @@ fn history_state_predecessors_are_component_qualified() {
     let scopes = vec![first, local_predecessor.clone(), second.clone()];
     let naming_space = |component_record_index, context_uuid: &str| {
         crate::records::recipes::DesignComponentNamingSpace {
-            id: crate::ids::native_design_component_naming_space_id(
-                bulk_stream,
-                component_record_index,
-            ),
+            id: crate::test_support::with_decode_context(|ctx| {
+                crate::ids::native_design_component_naming_space_id(
+                    ctx,
+                    bulk_stream,
+                    component_record_index,
+                )
+                .expect("test F3D native identity")
+            }),
             byte_offset: component_record_index,
             component_record_index,
             context_uuid: context_uuid.to_owned().try_into().expect("GUID"),

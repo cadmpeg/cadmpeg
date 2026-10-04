@@ -10,7 +10,8 @@ use std::fmt::Write;
 
 use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
-use crate::design::decode::sketch::{native_scope_charged, next_indexed_record_offset};
+use crate::design::decode::sketch::next_indexed_record_offset;
+use crate::ids::native_scope;
 
 use crate::records::feature::assembly_features::DesignComponentOccurrence;
 
@@ -28,7 +29,7 @@ pub(crate) fn decode_component_occurrences(
             continue;
         }
         let bytes = scan.entry_bytes(ctx, &entry.name)?;
-        let scope = native_scope_charged(ctx, &entry.name)?;
+        let scope = native_scope(ctx, &entry.name, "f3d native stream key")?;
         let mut at = 0;
         while let Some(start) = next_indexed_record_offset(bytes, at) {
             if let Some(occurrence) = exact_component_occurrence(ctx, bytes, start, &scope)? {

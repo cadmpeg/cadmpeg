@@ -1251,3 +1251,200 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
     assert_eq!(faces.len(), 1);
     assert_eq!(input_topologies[0].faces.as_slice(), faces.as_slice());
 }
+
+fn face_selection_group(
+    id: &str,
+    role: DesignOperandRole,
+    members: Vec<crate::records::identity::Located<u32>>,
+) -> crate::records::topology::construction::DesignConstructionOperandGroup {
+    use crate::records::{
+        identity::Located,
+        references::DesignClassTag,
+        topology::construction::{
+            DesignConstructionOperandGroup, DesignConstructionOperandGroupDraft,
+            DesignConstructionOperandGroupFrame, DesignConstructionOperandGroupFrameDraft,
+            DesignConstructionOperandRole,
+        },
+    };
+
+    DesignConstructionOperandGroup::try_from(DesignConstructionOperandGroupDraft {
+        id: id.to_owned(),
+        scope_record_index: 42,
+        scope_reference_ordinal: 2,
+        record_index: 100,
+        byte_offset: 1000,
+        class_tag: DesignClassTag::try_from("297".to_owned()).unwrap(),
+        members,
+        lost_edge_references: Vec::new(),
+        frame: DesignConstructionOperandGroupFrame::try_from(
+            DesignConstructionOperandGroupFrameDraft {
+                member_count_offset: 1008,
+                auxiliary_records: Vec::<Located<u32>>::new(),
+                auxiliary_paths: Vec::new(),
+                trailing_records: Vec::new(),
+                trailing_transforms: Vec::new(),
+                trailing_dual_transforms: Vec::new(),
+                trailing_flags: Vec::new(),
+                opaque_index: 1,
+                opaque_index_offset: 1048,
+                opaque_scalar: 0.0,
+                opaque_scalar_offset: 1052,
+                variant: false,
+            },
+        )
+        .unwrap(),
+        operand_role: DesignConstructionOperandRole::Other(role),
+        role_offset: 1030,
+        paired_class_tag: DesignClassTag::try_from("259".to_owned()).unwrap(),
+        paired_byte_offset: 1100,
+    })
+    .unwrap()
+}
+
+fn face_selection_scope() -> crate::records::feature::scope::DesignParameterScope {
+    crate::records::feature::scope::DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#42",
+        crate::records::feature::scope::DesignFeatureKind::SplitFace,
+        42,
+    )
+}
+
+#[test]
+fn face_selection_scope_identity_comparison_propagates_work_refusal() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_ir::features::FaceSelection;
+
+    let scope = face_selection_scope();
+    let operation = "compare F3D face selection scope identity";
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            let mut selection =
+                FaceSelection::Native("f3d:Design/OtherStream.dat:group#100".into());
+            crate::history::selection::bind_face_selection(
+                ctx,
+                &mut selection,
+                &scope,
+                &[],
+                &[],
+                &[],
+            )
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn face_selection_group_identity_search_propagates_work_refusal() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_ir::features::FaceSelection;
+
+    let scope = face_selection_scope();
+    let group_id = "f3d:Design/BulkStream.dat:operand-group#100";
+    let groups = [face_selection_group(
+        group_id,
+        DesignOperandRole::ROLE_0X10,
+        Vec::new(),
+    )];
+    let operation = "compare F3D face selection group identity";
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            let mut selection = FaceSelection::Native(group_id.into());
+            crate::history::selection::bind_face_selection(
+                ctx,
+                &mut selection,
+                &scope,
+                &groups,
+                &[],
+                &[],
+            )
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn face_selection_group_member_scan_propagates_work_refusal() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_ir::features::FaceSelection;
+
+    let scope = face_selection_scope();
+    let group_id = "f3d:Design/BulkStream.dat:operand-group#100";
+    let groups = [face_selection_group(
+        group_id,
+        DesignOperandRole::ROLE_0X10,
+        vec![crate::records::identity::Located {
+            value: 200,
+            offset: 1010,
+        }],
+    )];
+    let operation = "scan F3D face selection group members";
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            let mut selection = FaceSelection::Native(group_id.into());
+            crate::history::selection::bind_face_selection(
+                ctx,
+                &mut selection,
+                &scope,
+                &groups,
+                &[],
+                &[],
+            )
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn body_recipe_face_selection_group_identity_propagates_work_refusal() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_ir::features::{FaceSelection, FeatureId};
+
+    let scope = face_selection_scope();
+    let group_id = "f3d:Design/BulkStream.dat:operand-group#100";
+    let groups = [face_selection_group(
+        group_id,
+        DesignOperandRole::ROLE_0X5,
+        Vec::new(),
+    )];
+    let feature_id = FeatureId::mint("f3d:test:feature#42").unwrap();
+    let operation = "compare F3D body recipe face selection group identity";
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            let mut selection = FaceSelection::Native(group_id.into());
+            crate::history::selection::bind_body_recipe_face_selection(
+                ctx,
+                &mut selection,
+                &feature_id,
+                1,
+                &scope,
+                &groups,
+                &[],
+            )
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}

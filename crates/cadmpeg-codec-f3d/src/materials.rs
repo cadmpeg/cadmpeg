@@ -1337,7 +1337,7 @@ pub(crate) fn decode_design_assignments(
                 continue;
             };
             let assignment = DesignMaterialAssignment {
-                id: crate::ids::native_scoped_id_charged(
+                id: crate::ids::native_scoped_id(
                     ctx,
                     &entry.name,
                     "material-assignment",
@@ -1438,10 +1438,15 @@ fn decode_body_appearance_overrides(
             else {
                 continue;
             };
+            let binding_id = crate::ids::native_design_body_binding_id(
+                ctx,
+                &entry.name,
+                map_pair.asm_key_offset,
+            )?;
             let Some(body) = resolved_body_for_map_pair(
                 ctx,
                 body_bindings,
-                &crate::ids::native_design_body_binding_id(&entry.name, map_pair.asm_key_offset),
+                &binding_id,
                 map_pair.asm_key,
                 u64_from_index(map_pair.asm_key_offset),
                 map_pair.entity_suffix,
@@ -1472,11 +1477,25 @@ fn decode_body_appearance_overrides(
         },
         "sort F3D body appearance overrides",
     )?;
-    out.dedup_by(|left, right| {
-        left.body == right.body
-            && left.entity_suffix == right.entity_suffix
-            && left.visual_guid.matches(&right.visual_guid)
-    });
+    ctx.dedup_by(
+        &mut out,
+        |left, right| {
+            Ok(ctx.equal(
+                &left.body,
+                &right.body,
+                "compare F3D body override body IDs",
+            )? && ctx.equal(
+                &left.entity_suffix,
+                &right.entity_suffix,
+                "compare F3D body override entity suffixes",
+            )? && ctx.eq_ignore_ascii_case(
+                &left.visual_guid,
+                &right.visual_guid,
+                "compare F3D body override visual GUIDs",
+            )?)
+        },
+        "deduplicate F3D body appearance overrides",
+    )?;
     Ok(out)
 }
 
@@ -2344,6 +2363,7 @@ fn lp_utf16_strings(
     let mut out = Vec::new();
     let mut offset = 0usize;
     while offset + 4 <= bytes.len() {
+        ctx.charge_work(1, "scan F3D UTF-16 string candidates")?;
         let Some(count) =
             View::u32_le_at(bytes, offset).and_then(|count| usize::try_from(count).ok())
         else {
@@ -2354,7 +2374,9 @@ fn lp_utf16_strings(
             offset += 1;
             continue;
         };
-        if !(2..=256).contains(&count) || !utf16_string_prefix_is_text(bytes, payload_at, count) {
+        if !(2..=256).contains(&count)
+            || !utf16_string_prefix_is_text(ctx, bytes, payload_at, count)?
+        {
             offset += 1;
             continue;
         }
@@ -2375,34 +2397,46 @@ fn lp_utf16_strings(
 /// Checking only the first four code units keeps the heuristic bounded while
 /// accepting supplementary-plane characters whose surrogate pair spans the
 /// prefix boundary. The full strict decode remains authoritative.
-fn utf16_string_prefix_is_text(bytes: &[u8], payload_at: usize, count: usize) -> bool {
+fn utf16_string_prefix_is_text(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    payload_at: usize,
+    count: usize,
+) -> Result<bool, CodecError> {
     let prefix_count = count.min(4);
+    let Some(prefix_bytes_len) = prefix_count.checked_mul(2) else {
+        return Ok(false);
+    };
+    let Some(prefix_end) = payload_at.checked_add(prefix_bytes_len) else {
+        return Ok(false);
+    };
+    let Some(prefix_bytes) = bytes.get(payload_at..prefix_end) else {
+        return Ok(false);
+    };
+    let prefix = ctx
+        .admit_iter(prefix_bytes, "validate F3D UTF-16 string prefix")?
+        .enumerate()
+        .step_by(2);
     let mut high_surrogate = false;
-    for ordinal in 0..prefix_count {
-        let Some(unit_offset) = ordinal
-            .checked_mul(2)
-            .and_then(|delta| payload_at.checked_add(delta))
-        else {
-            return false;
-        };
-        let Some(unit) = View::u16_le_at(bytes, unit_offset) else {
-            return false;
+    for (offset, _) in prefix {
+        let Some(unit) = View::u16_le_at(prefix_bytes, offset) else {
+            return Ok(false);
         };
         if high_surrogate && !(0xdc00..=0xdfff).contains(&unit) {
-            return false;
+            return Ok(false);
         }
         match unit {
-            0 => return false,
+            0 => return Ok(false),
             0xd800..=0xdbff => high_surrogate = true,
-            0xdc00..=0xdfff if !high_surrogate => return false,
+            0xdc00..=0xdfff if !high_surrogate => return Ok(false),
             0xdc00..=0xdfff => high_surrogate = false,
             value if char::from_u32(u32::from(value)).is_some_and(|value| !value.is_control()) => {
                 high_surrogate = false;
             }
-            _ => return false,
+            _ => return Ok(false),
         }
     }
-    true
+    Ok(true)
 }
 
 /// Decode one LP-UTF16 string at `offset`. Rejects a count outside 2..=256,

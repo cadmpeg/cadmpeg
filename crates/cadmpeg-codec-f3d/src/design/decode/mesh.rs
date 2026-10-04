@@ -17,7 +17,8 @@ use crate::design::decode::meta::{
     metadata_for_bulk_stream, typed_primary_frames, TypedPrimaryFrame,
 };
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
-use crate::design::decode::sketch::{native_scope_charged, IndexedRecordOffsets};
+use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::ids::native_scope;
 
 use crate::layout::indexed_design_record_header as indexed_header;
 use crate::layout::paramesh_body_wrapper as body_wrapper;
@@ -303,7 +304,7 @@ impl MeshBody {
             texture_ids,
             attributes,
         } = container;
-        let mut id = native_scope_charged(ctx, entry_name)?;
+    let mut id = native_scope(ctx, entry_name, "f3d native stream key")?;
         ctx.append_formatted_retained(
             &mut id,
             format_args!(":mesh-body#{body_byte_offset}"),
@@ -1489,7 +1490,7 @@ fn parse_mesh_design_records<F>(
 where
     F: FnMut(&str) -> Result<(String, cadmpeg_ir::assets::AssetId), CodecError>,
 {
-    let stream = native_scope_charged(ctx, source_entry_name)?;
+    let stream = native_scope(ctx, source_entry_name, "f3d native stream key")?;
     let records = IndexedRecordOffsets::build(ctx, bytes)?;
     let collection_frames = typed_primary_frames(
         ctx,
@@ -3505,7 +3506,7 @@ mod tests {
 
     #[test]
     fn mesh_feature_identifier_refuses_prefix_and_suffix_limits() {
-        let stream = crate::ids::native_scope("Synthetic/BulkStream.dat");
+        let stream = crate::test_support::with_decode_context(|ctx| {crate::ids::native_scope(ctx, "Synthetic/BulkStream.dat", "retain F3D native scope").expect("test F3D native identity")});
         for (limit, operation) in [
             (0, "f3d mesh feature ID prefix"),
             (u64_from_index(stream.len()), "f3d mesh feature ID suffix"),
@@ -3527,7 +3528,7 @@ mod tests {
             let id = super::mesh_feature_id_charged(ctx, &stream, 100).unwrap();
             assert_eq!(
                 id,
-                crate::ids::native_design_mesh_feature_id("Synthetic/BulkStream.dat", 100)
+                crate::test_support::with_decode_context(|ctx| {crate::ids::native_design_mesh_feature_id(ctx, "Synthetic/BulkStream.dat", 100).expect("test F3D native identity")})
             );
         });
     }
@@ -3892,7 +3893,7 @@ mod tests {
             texture_ids: None,
             attributes: Vec::new(),
         };
-        let native_scope_bytes = u64_from_index(crate::ids::native_scope("mesh.paramesh").len());
+        let native_scope_bytes = u64_from_index(crate::test_support::with_decode_context(|ctx| {crate::ids::native_scope(ctx, "mesh.paramesh", "retain F3D native scope").expect("test F3D native identity")}).len());
         for (collection_limit, retained_limit, dimension, operation) in [
             (
                 0,
@@ -3937,7 +3938,8 @@ mod tests {
                 .unwrap();
             assert_eq!(
                 body.id,
-                crate::ids::native_mesh_body_id("mesh.paramesh", 100)
+                crate::ids::native_mesh_body_id(ctx, "mesh.paramesh", 100)
+                    .expect("test F3D native identity")
             );
             assert_eq!(body.vertices.len(), 1);
             assert_eq!(body.corner_normals.unwrap().len(), 1);
