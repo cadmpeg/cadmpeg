@@ -184,7 +184,11 @@ fn scalar_operands_charged(
 ) -> Result<Vec<FeatureInputOperand>, CodecError> {
     let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
     let mut operands = Vec::new();
-    for (offset, kind, entity_index) in operand_cells(ctx, payload, trailer_offset)?
+    for ScalarOperandCell {
+        offset,
+        kind,
+        entity_index,
+    } in operand_cells(ctx, payload, trailer_offset)?
         .into_iter()
         .flatten()
     {
@@ -207,11 +211,17 @@ fn scalar_operands_charged(
     Ok(operands)
 }
 
+struct ScalarOperandCell {
+    offset: usize,
+    kind: FeatureInputOperandKind,
+    entity_index: u16,
+}
+
 fn operand_cells(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     trailer_offset: usize,
-) -> Result<[Option<(usize, FeatureInputOperandKind, u16)>; 2], CodecError> {
+) -> Result<[Option<ScalarOperandCell>; 2], CodecError> {
     let compact = compact_scalar_layout(ctx, payload, trailer_offset)?;
     let first = if compact || !legacy_scalar_layout(ctx, payload, trailer_offset)? {
         35
@@ -230,11 +240,11 @@ fn operand_cells(
             if cell[4..8] != [0xff; 4] {
                 return None;
             }
-            return Some((
+            return Some(ScalarOperandCell {
                 offset,
-                operand_kind([cell[0], cell[1]])?,
-                View::u16_le_at(cell, 2)?,
-            ));
+                kind: operand_kind([cell[0], cell[1]])?,
+                entity_index: View::u16_le_at(cell, 2)?,
+            });
         }
         let cell = payload.get(offset..offset.checked_add(operand_cell::LEN)?)?;
         if cell[operand_cell::REFERENCE_SENTINEL..operand_cell::ZERO_TRAILER] != [0xff; 4]
@@ -242,14 +252,14 @@ fn operand_cells(
         {
             return None;
         }
-        Some((
+        Some(ScalarOperandCell {
             offset,
-            operand_kind([
+            kind: operand_kind([
                 cell[operand_cell::CLASS_TOKEN],
                 cell[operand_cell::CLASS_TOKEN + 1],
             ])?,
-            View::u16_le_at(cell, operand_cell::MARKER_ADDRESS)?,
-        ))
+            entity_index: View::u16_le_at(cell, operand_cell::MARKER_ADDRESS)?,
+        })
     }))
 }
 

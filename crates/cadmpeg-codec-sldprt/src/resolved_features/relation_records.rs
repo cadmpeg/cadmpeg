@@ -104,15 +104,26 @@ pub(super) fn feature_intervals(
     Ok(intervals)
 }
 
+/// The matching interval's feature name and exclusive end.
+#[derive(Clone, Copy)]
+struct FeatureIntervalMatch<'a> {
+    feature_name: &'a str,
+    end: Option<u64>,
+}
+
 /// The interval that contains `offset`, if one does.
 fn feature_at_offset<'a>(
     ctx: &DecodeContext<'_>,
     offset: u64,
     intervals: &'a [(u64, Option<u64>, String)],
-) -> Result<Option<&'a (u64, Option<u64>, String)>, CodecError> {
+) -> Result<Option<FeatureIntervalMatch<'a>>, CodecError> {
     Ok(ctx
         .admit_iter(intervals, "find SLDPRT feature interval")?
-        .find(|(start, end, _)| offset >= *start && end.is_none_or(|end| offset < end)))
+        .find(|(start, end, _)| offset >= *start && end.is_none_or(|end| offset < end))
+        .map(|(_, end, feature)| FeatureIntervalMatch {
+            feature_name: feature.as_str(),
+            end: *end,
+        }))
 }
 
 /// The feature that owns `offset`, if one does.
@@ -121,7 +132,7 @@ fn feature_name_at_offset<'a>(
     offset: u64,
     intervals: &'a [(u64, Option<u64>, String)],
 ) -> Result<Option<&'a str>, CodecError> {
-    Ok(feature_at_offset(ctx, offset, intervals)?.map(|(_, _, feature)| feature.as_str()))
+    Ok(feature_at_offset(ctx, offset, intervals)?.map(|interval| interval.feature_name))
 }
 
 /// Bytes a class with no feature interval may carry its relation over.
@@ -154,7 +165,7 @@ fn relation_scope_end(
     intervals: &[(u64, Option<u64>, String)],
 ) -> Result<RelationScope, CodecError> {
     let class_interval = feature_at_offset(ctx, class.offset, intervals)?;
-    let class_feature = class_interval.map(|(_, _, feature)| feature.as_str());
+    let class_feature = class_interval.map(|interval| interval.feature_name);
     let mut next_class = None;
     for candidate in ctx.admit_iter(classes, "find SLDPRT relation scope end")? {
         if candidate.offset <= class.offset || relation_family(&candidate.name).is_none() {
@@ -180,7 +191,7 @@ fn relation_scope_end(
     // The interval the class sits in states its own end; a class in no
     // interval carries its relation over the unknown-feature span instead.
     let (feature_end, unknown_feature_limit) = match class_interval {
-        Some((_, end, _)) => (*end, None),
+        Some(interval) => (interval.end, None),
         None => {
             let Some(limit) = class.offset.checked_add(UNKNOWN_FEATURE_SPAN) else {
                 return Ok(RelationScope::Unstatable);
@@ -2221,9 +2232,9 @@ pub(super) fn shifted_value_only_scalar_trailer(
         || payload.get(
             trailer_offset + shifted_trailer::LAYOUT_MARKER..trailer_offset + shifted_trailer::ROLE,
         ) != Some(&[1, 0, 0, 0, 2, 0])
-        || !payload
+        || payload
             .get(trailer_offset + shifted_trailer::ROLE)
-            .is_some_and(|role| *role <= 1)
+            .is_none_or(|role| *role > 1)
     {
         return Ok(false);
     }

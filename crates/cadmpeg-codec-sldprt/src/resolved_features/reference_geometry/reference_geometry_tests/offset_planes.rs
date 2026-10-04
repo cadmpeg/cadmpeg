@@ -1,7 +1,7 @@
 use super::super::{
     for_each_classed_offset_plane_source, for_each_structured_offset_plane_source,
     legacy_offset_plane_face_alias, offset_plane_reference_source,
-    select_reference_plane_frame_source,
+    select_reference_plane_frame_source, ReferencePlaneFrameCandidate,
 };
 use crate::records::{Feature, FeatureSource};
 use crate::resolved_features::curves::{sketch_plane_frames, SketchPlaneUAxisSource};
@@ -31,21 +31,18 @@ fn classed_offset_plane_sources(ctx: &DecodeContext<'_>, payload: &[u8]) -> Vec<
     sources
 }
 
-fn frame_source_candidates(
-    sources: &[&str],
-) -> Vec<(String, (usize, usize), (Point3, Vector3, Vector3))> {
+fn frame_source_candidates(sources: &[&str]) -> Vec<ReferencePlaneFrameCandidate> {
     sources
         .iter()
-        .map(|source| {
-            (
-                (*source).into(),
-                (0, 0),
-                (
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                ),
-            )
+        .map(|source| ReferencePlaneFrameCandidate {
+            source: (*source).into(),
+            history_index: 0,
+            feature_index: 0,
+            frame: (
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            ),
         })
         .collect()
 }
@@ -207,7 +204,7 @@ fn frame_only_offset_plane_reference_requires_one_unique_source() {
         select_reference_plane_frame_source(
             &ctx,
             &frame_source_candidates(&["derived", "principal", "older"]),
-            |_, _, _| true,
+            |_| true,
             "select test plane source",
         )
         .expect("plane source selection fits service policy"),
@@ -217,7 +214,7 @@ fn frame_only_offset_plane_reference_requires_one_unique_source() {
         select_reference_plane_frame_source(
             &ctx,
             &frame_source_candidates(&["same", "same"]),
-            |_, _, _| true,
+            |_| true,
             "select test plane source",
         )
         .expect("plane source selection fits service policy"),
@@ -227,7 +224,7 @@ fn frame_only_offset_plane_reference_requires_one_unique_source() {
         select_reference_plane_frame_source(
             &ctx,
             &frame_source_candidates(&["first", "second"]),
-            |_, _, _| true,
+            |_| true,
             "select test plane source",
         )
         .expect("plane source selection fits service policy"),
@@ -242,7 +239,7 @@ fn frame_only_offset_plane_reference_does_not_use_feature_order() {
         select_reference_plane_frame_source(
             &ctx,
             &frame_source_candidates(&["older", "latest", "latest"]),
-            |_, _, _| true,
+            |_| true,
             "select test plane source",
         )
         .expect("plane source selection fits service policy"),
@@ -252,7 +249,7 @@ fn frame_only_offset_plane_reference_does_not_use_feature_order() {
         select_reference_plane_frame_source(
             &ctx,
             &frame_source_candidates(&["source", "source"]),
-            |_, _, _| true,
+            |_| true,
             "select test plane source",
         )
         .expect("plane source selection fits service policy"),
@@ -262,7 +259,7 @@ fn frame_only_offset_plane_reference_does_not_use_feature_order() {
         select_reference_plane_frame_source(
             &ctx,
             &frame_source_candidates(&["first", "second"]),
-            |_, _, _| true,
+            |_| true,
             "select test plane source",
         )
         .expect("plane source selection fits service policy"),

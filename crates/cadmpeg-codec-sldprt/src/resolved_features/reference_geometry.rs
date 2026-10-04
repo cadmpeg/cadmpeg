@@ -604,11 +604,12 @@ pub(crate) fn enrich_history_reference_planes(
                 1,
                 "collect SLDPRT reference frames",
             )?;
-            frames_by_reference.push((
-                reference,
-                (history_index, feature_index),
-                principal_sketch_frame(plane),
-            ));
+            frames_by_reference.push(ReferencePlaneFrameCandidate {
+                source: reference,
+                history_index,
+                feature_index,
+                frame: principal_sketch_frame(plane),
+            });
         }
     }
     for (&index, &frame) in ctx.admit_iter(&unique_frames, "collect SLDPRT reference frames")? {
@@ -619,7 +620,12 @@ pub(crate) fn enrich_history_reference_planes(
             1,
             "collect SLDPRT reference frames",
         )?;
-        frames_by_reference.push((reference, index, frame));
+        frames_by_reference.push(ReferencePlaneFrameCandidate {
+            source: reference,
+            history_index: index.0,
+            feature_index: index.1,
+            frame,
+        });
     }
     for (&index, frames) in ctx.admit_iter(
         &reference_frame_candidates,
@@ -633,15 +639,16 @@ pub(crate) fn enrich_history_reference_planes(
             let selected = select_reference_plane_frame_source(
                 ctx,
                 &frames_by_reference,
-                |_, candidate_index, candidate| {
-                    candidate_index.0 == index.0
-                        && (candidate_index.1 < index.1
+                |candidate| {
+                    candidate.history_index == index.0
+                        && (candidate.feature_index < index.1
                             || principal_plane_with_siblings(
-                                &histories[candidate_index.0].features[candidate_index.1],
-                                &histories[candidate_index.0].features,
+                                &histories[candidate.history_index].features
+                                    [candidate.feature_index],
+                                &histories[candidate.history_index].features,
                             )
                             .is_some())
-                        && offset_plane_reference_frame_matches(*candidate, reference, 0.0)
+                        && offset_plane_reference_frame_matches(candidate.frame, reference, 0.0)
                 },
                 "select SLDPRT inferred plane reference",
             )?;
@@ -689,9 +696,13 @@ pub(crate) fn enrich_history_reference_planes(
         if let Some(source) = select_reference_plane_frame_source(
             ctx,
             &frames_by_reference,
-            |_, candidate_index, candidate| {
-                candidate_index.0 == index.0
-                    && offset_plane_reference_frame_matches(*candidate, frame, distance.get())
+            |candidate| {
+                candidate.history_index == index.0
+                    && offset_plane_reference_frame_matches(
+                        candidate.frame,
+                        frame,
+                        distance.get(),
+                    )
             },
             "select SLDPRT offset plane reference",
         )? {
@@ -718,17 +729,17 @@ pub(crate) fn enrich_history_reference_planes(
                     .and_then(|value| crate::history::literals::parse_dimension_length_mm(value))
                 {
                     let compatible = |source: &String| -> Result<bool, CodecError> {
-                        for (candidate_source, candidate_index, candidate) in ctx.admit_iter(
+                        for candidate in ctx.admit_iter(
                             &frames_by_reference,
                             "match SLDPRT compatible plane sources",
                         )? {
                             if ctx.equal(
-                                candidate_source,
+                                &candidate.source,
                                 source,
                                 "compare SLDPRT compatible plane sources",
-                            )? && candidate_index.0 == history_index
+                            )? && candidate.history_index == history_index
                                 && offset_plane_reference_frame_matches(
-                                    *candidate,
+                                    candidate.frame,
                                     *offset,
                                     distance.get(),
                                 )
@@ -1831,24 +1842,31 @@ fn coordinate_system_frame_key(
     ]
 }
 
+struct ReferencePlaneFrameCandidate {
+    source: String,
+    history_index: usize,
+    feature_index: usize,
+    frame: (Point3, Vector3, Vector3),
+}
+
 fn select_reference_plane_frame_source<'a>(
     ctx: &DecodeContext<'_>,
-    candidates: &'a [(String, (usize, usize), (Point3, Vector3, Vector3))],
-    mut include: impl FnMut(&String, &(usize, usize), &(Point3, Vector3, Vector3)) -> bool,
+    candidates: &'a [ReferencePlaneFrameCandidate],
+    mut include: impl FnMut(&ReferencePlaneFrameCandidate) -> bool,
     operation: &'static str,
 ) -> Result<Option<&'a str>, CodecError> {
     let mut selected = None;
     let mut consistent = true;
-    for (source, index, frame) in ctx.admit_iter(candidates, operation)? {
-        if !include(source, index, frame) {
+    for candidate in ctx.admit_iter(candidates, operation)? {
+        if !include(candidate) {
             continue;
         }
         if let Some(first) = selected {
-            if !ctx.equal(first, source.as_str(), operation)? {
+            if !ctx.equal(first, candidate.source.as_str(), operation)? {
                 consistent = false;
             }
         } else {
-            selected = Some(source.as_str());
+            selected = Some(candidate.source.as_str());
         }
     }
     Ok(if consistent { selected } else { None })
@@ -2590,10 +2608,13 @@ pub(crate) fn enrich_history_reference_axes(
                     crate::history::literals::parse_vector3(feature.properties.get("Direction")?)?,
                 ))
             });
-            let Some((missing, frame)) = complete_reference_axis_triad(ctx, frames)? else {
+            let Some(completion) = complete_reference_axis_triad(ctx, frames)? else {
                 continue;
             };
-            let completion = (indices[missing], frame);
+            let completion = (
+                indices[completion.axis_index],
+                (completion.origin, completion.direction),
+            );
             ctx.reserve_vec(
                 &mut completions,
                 1,
@@ -2622,10 +2643,17 @@ pub(crate) fn enrich_history_reference_axes(
     Ok(())
 }
 
+#[derive(Debug, PartialEq)]
+struct ReferenceAxisCompletion {
+    axis_index: usize,
+    origin: Point3,
+    direction: Vector3,
+}
+
 fn complete_reference_axis_triad(
     ctx: &DecodeContext<'_>,
     frames: [Option<(Point3, Vector3)>; 3],
-) -> Result<Option<(usize, (Point3, Vector3))>, CodecError> {
+) -> Result<Option<ReferenceAxisCompletion>, CodecError> {
     const ANGULAR_TOLERANCE: f64 = 1e-9;
     const POSITION_TOLERANCE_MM: f64 = 1e-8;
 
@@ -2724,7 +2752,11 @@ fn complete_reference_axis_triad(
             2 => directions[1]?.cross(directions[0]?),
             _ => return None,
         };
-        Some((missing, (origin, normalize(direction)?)))
+        Some(ReferenceAxisCompletion {
+            axis_index: missing,
+            origin,
+            direction: normalize(direction)?,
+        })
     })();
     Ok(completed)
 }
