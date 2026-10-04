@@ -643,6 +643,34 @@ fn point_lane_refuses_work_limit() {
     );
 }
 
+#[test]
+fn point_lane_ordinal_text_parsing_propagates_work_refusal() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let container = point_lane_container();
+    let headers = crate::test_support::with_decode_context(|ctx| {
+        feature_point_construction_headers(ctx, &container)
+    })
+    .expect("point construction headers");
+    for operation in [
+        "parse NX point scalar lane section ordinal",
+        "parse NX point scalar lane block ordinal",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            operation,
+            |ctx| feature_point_construction_scalar_lanes(ctx, &container, &headers),
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == operation
+        ));
+    }
+}
+
 fn point_header_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {

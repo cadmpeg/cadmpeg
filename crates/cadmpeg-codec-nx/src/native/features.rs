@@ -7753,7 +7753,7 @@ pub(super) fn feature_sketch_points(
         {
             continue;
         }
-        if parse_sketch_point_name(name.frame.value()).is_none() {
+        if parse_sketch_point_name(ctx, name.frame.value())?.is_none() {
             continue;
         }
         let [first_id, second_id] = record.scalar_fields.as_slice() else {
@@ -7852,7 +7852,7 @@ pub(super) fn feature_sketch_fixed_points(
         {
             continue;
         }
-        if parse_sketch_point_name(name.frame.value()).is_none() {
+        if parse_sketch_point_name(ctx, name.frame.value())?.is_none() {
             continue;
         }
         if pair.operation_label != record.operation_label
@@ -8104,9 +8104,17 @@ pub(super) fn feature_sketch_named_point_block_uses(
 }
 
 /// Split a data-block id into its offset-store id and block ordinal.
-fn block_key(block: &str) -> Option<(&str, u32)> {
-    let (store, ordinal) = block.rsplit_once(":block#")?;
-    Some((store, ordinal.parse().ok()?))
+fn block_key<'block>(
+    ctx: &DecodeContext<'_>,
+    block: &'block str,
+) -> Result<Option<(&'block str, u32)>, CodecError> {
+    let Some((store, ordinal)) = block.rsplit_once(":block#") else {
+        return Ok(None);
+    };
+    let Ok(ordinal) = ctx.parse_text::<u32>(ordinal, "parse NX sketch block ordinal")? else {
+        return Ok(None);
+    };
+    Ok(Some((store, ordinal)))
 }
 
 /// Join one named point to a complete sketch lane through unique consecutive block adjacency.
@@ -8174,7 +8182,7 @@ pub(super) fn feature_sketch_preceding_named_point_uses(
         if !complete_lane {
             continue;
         }
-        let Some((first_store, first_ordinal)) = block_key(first_block) else {
+        let Some((first_store, first_ordinal)) = block_key(ctx, first_block)? else {
             continue;
         };
         let mut candidate = None;
@@ -8186,7 +8194,7 @@ pub(super) fn feature_sketch_preceding_named_point_uses(
             let Some(last_block) = point.data_blocks.last() else {
                 continue;
             };
-            let Some((point_store, point_ordinal)) = block_key(last_block) else {
+            let Some((point_store, point_ordinal)) = block_key(ctx, last_block)? else {
                 continue;
             };
             if point_store == first_store
@@ -8477,13 +8485,12 @@ pub(super) fn feature_sketch_datum_csys_dependencies(
                 continue;
             };
             let construction_first_block = &construction.frame.members()[0].1;
+            let point_block_key = block_key(ctx, point_last_block)?;
+            let construction_block_key = block_key(ctx, construction_first_block)?;
             if let (
                 Some((point_store, point_ordinal)),
                 Some((construction_store, construction_ordinal)),
-            ) = (
-                block_key(point_last_block),
-                block_key(construction_first_block),
-            ) {
+            ) = (point_block_key, construction_block_key) {
                 if point_store == construction_store
                     && point_ordinal.checked_add(1) == Some(construction_ordinal)
                 {
@@ -8595,13 +8602,20 @@ pub(super) fn feature_sketch_datum_csys_dependencies(
     Ok(dependencies)
 }
 
-fn parse_sketch_point_name(value: &str) -> Option<u32> {
-    let suffix = value.strip_prefix("Point")?;
+fn parse_sketch_point_name(
+    ctx: &DecodeContext<'_>,
+    value: &str,
+) -> Result<Option<u32>, CodecError> {
+    let Some(suffix) = value.strip_prefix("Point") else {
+        return Ok(None);
+    };
     if suffix.is_empty() || !suffix.bytes().all(|byte| byte.is_ascii_digit()) {
-        return None;
+        return Ok(None);
     }
-    let ordinal = suffix.parse::<u32>().ok()?;
-    (ordinal != 0).then_some(ordinal)
+    let Ok(ordinal) = ctx.parse_text::<u32>(suffix, "parse NX sketch point ordinal")? else {
+        return Ok(None);
+    };
+    Ok((ordinal != 0).then_some(ordinal))
 }
 
 /// Decode and resolve the ordered counted-reference field in sketch payloads.

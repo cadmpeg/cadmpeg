@@ -1387,6 +1387,35 @@ fn nx_part_attributes_require_typed_atomic_xml() {
     })
     .expect("invalid attribute budget")
     .is_none());
+
+    let root_version = b"version=\"4\"";
+    let root_version_at = xml
+        .windows(root_version.len())
+        .position(|window| window == root_version)
+        .expect("root version");
+    let mut malformed_root_version = xml.to_vec();
+    malformed_root_version[root_version_at..root_version_at + root_version.len()]
+        .copy_from_slice(b"version=\"x\"");
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        super::parse_part_attributes(ctx, &malformed_root_version, 7, "/Root/part/attrs", 100)
+    })
+    .expect("invalid root-version budget")
+    .is_none());
+
+    let attribute_version = b"version=\"3\"";
+    let attribute_version_at = xml
+        .windows(attribute_version.len())
+        .position(|window| window == attribute_version)
+        .expect("attribute version");
+    let mut malformed_attribute_version = xml.to_vec();
+    malformed_attribute_version
+        [attribute_version_at..attribute_version_at + attribute_version.len()]
+        .copy_from_slice(b"version=\"x\"");
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        super::parse_part_attributes(ctx, &malformed_attribute_version, 7, "/Root/part/attrs", 100)
+    })
+    .expect("invalid attribute-version budget")
+    .is_none());
 }
 
 #[test]
@@ -1653,6 +1682,34 @@ fn assert_om_work_refusal(error: cadmpeg_core::CodecError, operation: &str) {
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
                 && limit.operation == operation
     ));
+}
+
+#[test]
+fn nx_part_attribute_version_parses_refuse_named_work() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    const XML: &str = r#"<UgAttributes version="4"><Attribute owner="part" utf8title="Title" utf8value="Value" type="StringAttributeType" pdmBased="false" version="3"/></UgAttributes>"#;
+    for operation in [
+        "parse NX part attribute XML version",
+        "parse NX part attribute version",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            operation,
+            |ctx| {
+                super::parse_part_attributes(
+                    ctx,
+                    XML.as_bytes(),
+                    7,
+                    "/Root/part/attrs",
+                    100,
+                )
+                .map(|_| ())
+            },
+        );
+        assert_om_work_refusal(error, operation);
+    }
 }
 
 #[test]

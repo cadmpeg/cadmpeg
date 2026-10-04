@@ -94,6 +94,52 @@ fn native_expression_route_refuses_work_limit() {
 }
 
 #[test]
+fn native_expression_record_directory_ordinal_parse_refuses_named_work() {
+    let file = prt_with_indexed_om_section();
+    let container = crate::test_support::with_decode_context(|ctx| {
+        container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("indexed expression container");
+    let declarations = crate::test_support::with_decode_context(|ctx| {
+        super::super::expression_declarations(ctx, &container)
+    })
+    .expect("expression declarations");
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "parse NX expression record-directory ordinal",
+        |ctx| super::super::expressions(ctx, &container, &declarations).map(|_| ()),
+    );
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "parse NX expression record-directory ordinal"
+    ));
+}
+
+#[test]
+fn native_expression_malformed_record_directory_ordinal_skips_declaration() {
+    let file = prt_with_indexed_om_section();
+    let container = crate::test_support::with_decode_context(|ctx| {
+        container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("indexed expression container");
+    let mut declarations = crate::test_support::with_decode_context(|ctx| {
+        super::super::expression_declarations(ctx, &container)
+    })
+    .expect("expression declarations");
+    assert_eq!(declarations.len(), 1);
+    declarations[0].record = "nx:om-record-directory-invalid:entry#0".to_owned();
+    let expressions = crate::test_support::with_decode_context(|ctx| {
+        super::super::expressions(ctx, &container, &declarations)
+    })
+    .expect("malformed directory reference remains an unmatched declaration");
+    assert_eq!(expressions.len(), 1);
+    assert!(expressions[0].declaration.is_none());
+}
+
+#[test]
 fn native_expression_unit_property_refuses_retained_limit() {
     crate::test_support::with_decode_context_over(
         &[],

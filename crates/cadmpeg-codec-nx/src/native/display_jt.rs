@@ -35,6 +35,7 @@ use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
 use cadmpeg_ir::units::UnitVector3;
 use cadmpeg_ir::{topology::Color, SourceObjectAssociation};
 
+use std::convert::Infallible;
 use std::num::NonZeroU64;
 
 use crate::jt::QuantizedRange;
@@ -394,7 +395,14 @@ impl TryFrom<DisplayJtDocumentWire> for DisplayJtDocument {
         if wire.byte_order != 0 {
             return Err("DisplayJtDocument.byte_order must be 0");
         }
-        let version = JtVersionField::new(wire.version_field)?;
+        let version = match JtVersionField::new(
+            wire.version_field,
+            |field| Ok::<_, Infallible>(field),
+            |text, _| Ok(text.parse()),
+        ) {
+            Ok(version) => version?,
+            Err(error) => match error {},
+        };
         if wire.format_major != version.major() || wire.format_minor != version.minor() {
             return Err("DisplayJtDocument.format_major/format_minor disagree with version_field");
         }
@@ -3125,11 +3133,11 @@ pub(super) fn display_jt_documents(
         let Some(version_field) = std::str::from_utf8(version_bytes).ok() else {
             return Ok(Vec::new());
         };
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(version_field.len()),
-            "retain DisplayJT version text",
-        )?;
-        let Ok(version) = JtVersionField::new(version_field.to_owned()) else {
+        let Ok(version) = JtVersionField::new(
+            version_field,
+            |field| ctx.copy_retained_text(field, "retain DisplayJT version text"),
+            |text, operation| ctx.parse_text(text, operation),
+        )? else {
             return Ok(Vec::new());
         };
         let Some(&byte_order) = document.get(jt_hdr::BYTE_ORDER) else {
