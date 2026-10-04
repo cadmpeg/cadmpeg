@@ -93,3 +93,37 @@ fn parameter_property_membership_refuses_work() {
         if limit.dimension == ResourceDimension::WorkUnits
         && limit.operation == "NX parameter property membership"));
 }
+
+#[test]
+fn hole_output_relation_membership_refusal_propagates() {
+    use crate::native::attach::feature_projection::hole_operations_by_body;
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::ids::BodyId;
+
+    let operation = "hole-operation-".repeat(512);
+    let body = BodyId::mint("test:model:entity#hole-body").unwrap();
+    let outputs = BTreeMap::from([(operation.clone(), vec![body.clone()])]);
+    let operations = [operation.clone()];
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "NX admitted map membership",
+        |cap| {
+            crate::test_support::with_decode_context_over(
+                &[],
+                |policy| policy.limits.max_work_units = cap,
+                |ctx| {
+                    let result = hole_operations_by_body(ctx, &CadIr::empty(), &operations, &outputs);
+                    if let Err(CodecError::ResourceLimit(limit)) = &result {
+                        assert_eq!(ctx.resource_refusal(), Some(*limit));
+                    }
+                    let groups = result?.unwrap();
+                    assert_eq!(groups, BTreeMap::from([(body.clone(), vec![operation.clone()])]));
+                    Ok(())
+                },
+            )
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+        && limit.operation == "NX admitted map membership"));
+}

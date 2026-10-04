@@ -1100,7 +1100,7 @@ fn resolve_rm_source_color_bindings(
         let Some(source_id) = assignment.target_object_id.as_deref() else {
             continue;
         };
-        if !choices.contains_key(source_id) {
+        if !ctx.contains_key_btree_map(&choices, source_id, "NX admitted map membership")? {
             choices_reservation.with_storage(|| {
                 ctx.admit_btree_entry(&choices, &source_id, "NX RM source color choices")
             })?;
@@ -1624,7 +1624,7 @@ fn attach_active_configuration_parameter_values(
         let Some(value) = parameter.value.as_ref() else {
             return Ok(());
         };
-        if !values.contains_key(&parameter.id) {
+        if !ctx.contains_key_btree_map(&values, &parameter.id, "NX admitted map membership")? {
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
                     ParameterId,
@@ -1728,7 +1728,7 @@ fn attach_active_configuration_feature_states(
             .evaluation
             .definition()
             .try_clone_for_decode(ctx, "NX feature definition copy")?;
-        if !states.contains_key(id) {
+        if !ctx.contains_key_btree_map(&states, id, "NX admitted map membership")? {
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
                     FeatureId,
@@ -5277,9 +5277,7 @@ fn attach_feature_operations(
                             Some(value) => Some(*value),
                             None => ctx.get_btree_map(&hole_packages.chamfers, label.id.as_str(), "NX admitted map lookup")?.copied(),
                         },
-                        grouped_simple_through: hole_packages
-                            .outputs
-                            .contains_key(label.id.as_str()),
+                        grouped_simple_through: ctx.contains_key_btree_map(&hole_packages.outputs, label.id.as_str(), "NX admitted map membership")?,
                     },
                     cadmpeg_core::text::named_entries_for_decode(
                         ctx,
@@ -6112,25 +6110,13 @@ fn attach_sketch_graph(
         }
     }
     ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(
-            groups_by_id
-                .len()
-                .checked_mul(point_uses_by_group.len())
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "NX sketch point-use group check",
-                        0,
-                        cadmpeg_core::decode::u64_from_index(groups_by_id.len()),
-                    )
-                })?,
-        ),
-        "NX sketch point-use group check",
+        cadmpeg_core::decode::u64_from_index(point_uses_by_group.len()),
+        "NX sketch point-use group scan",
     )?;
-    if point_uses_by_group
-        .keys()
-        .any(|group| !groups_by_id.contains_key(group))
-    {
-        return Ok(None);
+    for group in point_uses_by_group.keys() {
+        if !ctx.contains_key_btree_map(&groups_by_id, group, "NX admitted map membership")? {
+            return Ok(None);
+        }
     }
     let mut points_by_id = BTreeMap::<&str, &crate::native::features::FeatureSketchPoint>::new();
     for point in sources.points {
@@ -6571,7 +6557,7 @@ fn segment_binding_body_indexes<'a, 'ctx>(
             }
         }
         ctx.charge_work(1, "NX segment binding identity index")?;
-        if !by_binding.contains_key(binding.id.as_str()) {
+        if !ctx.contains_key_btree_map(&by_binding, binding.id.as_str(), "NX admitted map membership")? {
             reservation.with_storage(|| {
                 ctx.admit_btree_entry(
                     &by_binding,
