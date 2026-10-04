@@ -292,6 +292,20 @@ fn topology_bound_plane_refuses_face_point_vector() {
     assert_eq!(points, [[2.0, 3.0, 4.0]]);
 }
 
+#[test]
+fn topology_bound_face_point_lookup_refuses_work() {
+    let solved_vertices = BTreeMap::from([(1, [2.0, 3.0, 4.0])]);
+    let vertex_faces = BTreeMap::from([(
+        std::num::NonZeroU32::new(1).expect("one-based vertex fixture"),
+        BTreeSet::from([5]),
+    )]);
+    let points = crate::test_support::assert_work_boundaries(
+        &["creo topology-bound vertex face lookup"],
+        |ctx| topology_bound_face_points(ctx, &solved_vertices, &vertex_faces, 5),
+    );
+    assert_eq!(points, [[2.0, 3.0, 4.0]]);
+}
+
 fn topology_plane() -> PlaneEquation {
     PlaneEquation {
         origin: [0.0, 0.0, 4.0],
