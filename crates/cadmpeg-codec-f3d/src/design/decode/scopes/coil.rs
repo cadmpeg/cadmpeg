@@ -124,7 +124,7 @@ pub(super) fn exact_coil_placement(
                 if scope.class_tag.as_str() == "393"
                     && scope.paired_class_tag.as_str() == "258"
                     && transform_class_tag == "395"
-                    && transform_paired_class_tag == "258"
+                    && transform_paired_class_tag == b"258"
                     && exact_coil_legacy_identity_frame(
                         bytes,
                         transform_start,
@@ -138,7 +138,7 @@ pub(super) fn exact_coil_placement(
             }
             coil_modern_matrix::LEN
                 if transform_class_tag == "450"
-                    && transform_paired_class_tag == "259"
+                    && transform_paired_class_tag == b"259"
                     && exact_coil_modern_placement_matrix_frame(
                         bytes,
                         transform_start,

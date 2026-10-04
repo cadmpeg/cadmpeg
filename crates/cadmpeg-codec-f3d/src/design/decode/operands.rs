@@ -2219,18 +2219,18 @@ fn parse_loft_legacy_body_carrier(
                 let long_paired_offset = start.checked_add(legacy_loft_322_tail::LEN)?;
                 let pair_matches = |at: usize| {
                     indexed_record_header_at(bytes, at).is_some_and(|paired| {
-                        paired.record_index == header.record_index && paired.class_tag == "262"
+                        paired.record_index == header.record_index && paired.class_tag == b"262"
                     })
                 };
                 if pair_matches(short_paired_offset) {
-                    ("262", legacy_loft_322::LEN, false)
+                    (b"262", legacy_loft_322::LEN, false)
                 } else if pair_matches(long_paired_offset) {
-                    ("262", legacy_loft_322_tail::LEN, true)
+                    (b"262", legacy_loft_322_tail::LEN, true)
                 } else {
                     return None;
                 }
             }
-            "411" => ("266", legacy_loft_411::LEN, true),
+            "411" => (b"266", legacy_loft_411::LEN, true),
             _ => return None,
         };
         let parsed_header = indexed_record_header_at(bytes, start)?;

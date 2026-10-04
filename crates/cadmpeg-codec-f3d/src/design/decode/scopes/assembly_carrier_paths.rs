@@ -11,6 +11,7 @@ use super::shared_frames::exact_indexed_header_at;
 use super::shared_frames::exact_same_segment_record_reference;
 use super::shared_frames::marked_record_reference;
 use super::shared_frames::rigid_transform_at;
+use crate::design::decode::reference_runs::reference_position;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::{fixed_guid_end, fixed_relaxed_guid_text, fixed_utf16_ascii_eq};
 use crate::layout::assembly_class_363_264_frame_360_child as class_363_child;
@@ -61,7 +62,7 @@ fn exact_class_363_operand_path(
             bytes,
             records,
             frame.reference_record_index,
-            "363",
+            b"363",
             class_363_carrier::LEN,
         ) {
             Ok(Some(value)) => value,
@@ -87,7 +88,7 @@ fn exact_class_363_operand_path(
             bytes,
             records,
             terminal_record_index,
-            "386",
+            b"386",
             class_363_terminal::LEN,
         ) {
             Ok(Some(value)) => value,
@@ -169,16 +170,15 @@ fn exact_class_363_operand_path(
                         .checked_add(ordinal * ASSEMBLY_MARKED_REFERENCE_LEN)?,
                 )?,
             )?;
-            let contains_owner = match super::parameter_scope::reference_members(
+            match reference_position(
                 ctx,
                 scope.reference_members(),
-                "scan F3D carrier placement owners",
+                |value| Ok(*value == owner_record_index),
+                "find F3D carrier placement owner",
             ) {
-                Ok(mut members) => members.any(|value| value == owner_record_index),
+                Ok(Some(_)) => {}
+                Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
-            };
-            if !contains_owner {
-                return None;
             }
         }
         let (occurrence_guid, identity_guid, occurrence_guid_offset, identity_guid_offset) =
@@ -253,7 +253,7 @@ fn exact_class_307_joint_origin(
             bytes,
             records,
             frame.reference_record_index,
-            "307",
+            b"307",
             class_307_joint_origin::LEN,
         ) {
             Ok(Some(value)) => value,
@@ -356,7 +356,7 @@ fn exact_class_363_identity_frame(
         ),
     ] {
         if let Some((start, _paired_at)) =
-            exact_class_264_record_frame(ctx, bytes, records, record_index, "388", frame_length)?
+            exact_class_264_record_frame(ctx, bytes, records, record_index, b"388", frame_length)?
         {
             return Ok(Some(CarrierFrame {
                 start,
@@ -369,7 +369,7 @@ fn exact_class_363_identity_frame(
         bytes,
         records,
         record_index,
-        "388",
+        b"388",
         class_363_identity_short::LEN,
     )? {
         return Ok(Some(CarrierFrame {
@@ -382,7 +382,7 @@ fn exact_class_363_identity_frame(
         bytes,
         records,
         record_index,
-        "388",
+        b"388",
         class_363_identity::LEN,
     )? {
         return Ok(Some(CarrierFrame {
@@ -395,7 +395,7 @@ fn exact_class_363_identity_frame(
         bytes,
         records,
         record_index,
-        "388",
+        b"388",
         class_363_identity_extended::LEN,
     )?
     else {
@@ -420,7 +420,7 @@ fn exact_class_363_node_frame(
             bytes,
             records,
             record_index,
-            "360",
+            b"360",
             class_363_leading::LEN,
         ) {
             Ok(frame) => frame,
@@ -437,7 +437,7 @@ fn exact_class_363_node_frame(
             bytes,
             records,
             record_index,
-            "360",
+            b"360",
             class_363_child::LEN,
         ) {
             Ok(Some(frame)) => frame,
@@ -453,7 +453,7 @@ fn exact_class_363_node_frame(
             bytes,
             records,
             leading_record_index,
-            "360",
+            b"360",
             class_363_leading::LEN,
         ) {
             Ok(frame) => frame,
@@ -463,16 +463,15 @@ fn exact_class_363_node_frame(
         if leading_frame.is_none() {
             return None;
         }
-        let contains_leading = match super::parameter_scope::reference_members(
+        match reference_position(
             ctx,
             scope.reference_members(),
-            "scan F3D carrier leading owner references",
+            |value| Ok(*value == leading_record_index),
+            "find F3D carrier leading owner reference",
         ) {
-            Ok(mut members) => members.any(|value| value == leading_record_index),
+            Ok(Some(_)) => {}
+            Ok(None) => return None,
             Err(error) => return Some(Err(error)),
-        };
-        if !contains_leading {
-            return None;
         }
         Some(Ok(CarrierFrame {
             start,
@@ -487,7 +486,7 @@ fn exact_class_264_record_frame(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,
-    class_tag: &str,
+    class_tag: &[u8; 3],
     frame_length: usize,
 ) -> Result<Option<(usize, usize)>, CodecError> {
     let frames = records.frames(ctx, record_index)?;
@@ -500,7 +499,7 @@ fn exact_class_264_record_frame(
             return None;
         }
         let paired_class_tag = exact_indexed_header_at(bytes, paired_at, record_index)?;
-        (paired_class_tag == "264").then_some(Ok((start, paired_at)))
+        (paired_class_tag == b"264").then_some(Ok((start, paired_at)))
     });
     let candidate = match candidates.next() {
         Some(Ok(candidate)) => candidate,
@@ -650,7 +649,7 @@ mod tests {
                 &bytes,
                 &records,
                 record_index,
-                "307",
+                b"307",
                 class_307_joint_origin::LEN,
             )
         })

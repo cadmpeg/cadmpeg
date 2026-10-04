@@ -4,63 +4,37 @@
 use cadmpeg_core::container::ContainerRole;
 
 use crate::container::ContainerScan;
-use crate::design::decode::sketch::native_scope_charged;
-use cadmpeg_core::decode::DecodeContext;
+use crate::design::decode::record_streams::in_stream;
+use crate::design::decode::sketch::{
+    append_percent_encoded, native_scope_charged, percent_encoded_len,
+};
+use crate::design::decode::text::rsplit_once_ascii;
+use cadmpeg_core::decode::{index_from_u32, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{Asset, AssetContent};
-use std::fmt::Write;
 
+/// The neutral asset ID of a Design resource entry: the asset namespace, the
+/// encoded name length, `:` and the percent-encoded name.
 pub(super) fn neutral_asset_id_charged(
     ctx: &DecodeContext<'_>,
     entry_name: &str,
 ) -> Result<cadmpeg_ir::assets::AssetId, CodecError> {
     const PREFIX: &str = "f3d:model:asset#";
-    const HEX: &[u8; 16] = b"0123456789ABCDEF";
-    let mut encoded_len = 0usize;
-    for character in ctx.admit_iter(entry_name, "scan F3D asset identifier characters")? {
-        let bytes = character.len_utf8();
-        let width = if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
-            bytes.checked_mul(3)
-        } else {
-            Some(bytes)
-        }
-        .ok_or_else(|| ctx.refuse_codec_limit("f3d asset identifier length", 0, 1))?;
-        encoded_len = encoded_len
-            .checked_add(width)
-            .ok_or_else(|| ctx.refuse_codec_limit("f3d asset identifier length", 0, 1))?;
-    }
-    let mut digits = 1usize;
-    let mut remaining = encoded_len;
-    while remaining >= 10 {
-        remaining /= 10;
-        digits += 1;
-    }
+    const OPERATION: &str = "f3d asset identifier";
+    let encoded_len = percent_encoded_len(ctx, entry_name, "measure F3D asset identifier")?;
+    let digits = encoded_len
+        .checked_ilog10()
+        .map_or(1, |log| index_from_u32(log) + 1);
     let capacity = PREFIX
         .len()
         .checked_add(digits)
         .and_then(|length| length.checked_add(1))
         .and_then(|length| length.checked_add(encoded_len))
-        .ok_or_else(|| ctx.refuse_codec_limit("f3d asset identifier length", 0, 1))?;
-
-    let mut id = ctx.retained_string(capacity, "f3d asset identifier")?;
-    id.push_str(PREFIX);
-    write!(&mut id, "{encoded_len}:")
-        .map_err(|_| CodecError::malformed("F3D asset identifier formatting failed"))?;
-    for character in ctx.admit_iter(entry_name, "encode F3D asset identifier characters")? {
-        if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
-            let mut bytes = [0u8; 4];
-            for byte in ctx.admit_iter(
-                character.encode_utf8(&mut bytes).as_bytes(),
-                "encode F3D escaped asset identifier bytes",
-            )? {
-                id.push('%');
-                id.push(char::from(HEX[usize::from(byte >> 4)]));
-                id.push(char::from(HEX[usize::from(byte & 0x0f)]));
-            }
-        } else {
-            id.push(character);
-        }
-    }
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, 0, 1))?;
+    let mut id = ctx.retained_string(capacity, OPERATION)?;
+    ctx.append_retained(&mut id, PREFIX, OPERATION)?;
+    ctx.append_formatted_retained(&mut id, format_args!("{encoded_len}:"), OPERATION)?;
+    append_percent_encoded(ctx, entry_name, &mut id, OPERATION)?;
     cadmpeg_ir::assets::AssetId::mint(id)
         .map_err(|error| crate::design::text::malformed_design(ctx, format_args!("{error}")))
 }
@@ -70,32 +44,24 @@ pub(super) fn embedded_image_asset(
     scan: &ContainerScan,
     asset_name: &str,
 ) -> Result<Option<Asset>, CodecError> {
-    let mut entries = scan.entries.iter().filter(|entry| {
-        scan.is_design_asset_entry(entry, ContainerRole::Image)
-            && entry.name.rsplit('/').next() == Some(asset_name)
-    });
-    let (Some(entry), None) = (entries.next(), entries.next()) else {
+    const OPERATION: &str = "find F3D embedded image entry";
+    let mut found = None;
+    for entry in ctx.admit_iter(&scan.entries, OPERATION)? {
+        if !scan.is_design_asset_entry(entry, ContainerRole::Image) {
+            continue;
+        }
+        let file_name = rsplit_once_ascii(ctx, &entry.name, b'/', OPERATION)?
+            .map_or(entry.name.as_str(), |(_, file_name)| file_name);
+        if ctx.equal_bytes(file_name.as_bytes(), asset_name.as_bytes(), OPERATION)?
+            && found.replace(entry).is_some()
+        {
+            return Ok(None);
+        }
+    }
+    let Some(entry) = found else {
         return Ok(None);
     };
-    let media_type = match std::path::Path::new(asset_name).extension() {
-        Some(extension) => match ctx.validate_utf8(
-            extension.as_encoded_bytes(),
-            "validate F3D embedded image extension",
-        )? {
-            Ok(extension) => {
-                if extension.eq_ignore_ascii_case("jpg") || extension.eq_ignore_ascii_case("jpeg") {
-                    Some("image/jpeg")
-                } else if extension.eq_ignore_ascii_case("png") {
-                    Some("image/png")
-                } else {
-                    None
-                }
-            }
-            Err(_) => None,
-        },
-        None => None,
-    }
-    .map(str::to_owned);
+    let media_type = image_media_type(ctx, asset_name)?.map(str::to_owned);
     let data = ctx.copy_retained(scan.entry_bytes(&entry.name)?, "f3d embedded image data")?;
     let name = ctx.copy_retained_text(asset_name, "f3d embedded image name")?;
     let native_ref = native_scope_charged(ctx, &entry.name)?;
@@ -110,6 +76,31 @@ pub(super) fn embedded_image_asset(
         },
         Some(native_ref),
     )?))
+}
+
+/// The media type a file name's extension states. A name that starts with its
+/// only `.` has no extension.
+fn image_media_type(
+    ctx: &DecodeContext<'_>,
+    file_name: &str,
+) -> Result<Option<&'static str>, CodecError> {
+    const OPERATION: &str = "classify F3D embedded image extension";
+    let Some((stem, extension)) = rsplit_once_ascii(ctx, file_name, b'.', OPERATION)? else {
+        return Ok(None);
+    };
+    if stem.is_empty() {
+        return Ok(None);
+    }
+    for (candidate, media_type) in [
+        ("jpg", "image/jpeg"),
+        ("jpeg", "image/jpeg"),
+        ("png", "image/png"),
+    ] {
+        if ctx.eq_ignore_ascii_case(extension, candidate, OPERATION)? {
+            return Ok(Some(media_type));
+        }
+    }
+    Ok(None)
 }
 
 /// Decode image scopes in their owning streams, ordered by native identity.
@@ -133,13 +124,15 @@ pub(super) fn decode_scoped_images<T>(
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let stream = native_scope_charged(ctx, &entry.name)?;
-        for scope in ctx
-            .admit_iter(scopes, "scan F3D image owner scopes")?
-            .filter(|scope| {
-                scope.kind().as_str() == kind.as_str()
-                    && crate::ids::native_stream(&scope.id) == Some(stream.as_str())
-            })
-        {
+        for scope in ctx.admit_iter(scopes, "scan F3D image owner scopes")? {
+            if !ctx.equal_bytes(
+                scope.kind_name().as_bytes(),
+                kind.as_str().as_bytes(),
+                "match F3D image owner scope kind",
+            )? || !in_stream(ctx, &scope.id, &stream)?
+            {
+                continue;
+            }
             if let Some(image) = parse(ctx, bytes, &entry.name, scope)? {
                 ctx.reserve_vec(&mut images, 1, "f3d scoped image records")?;
                 images.push(image);
@@ -202,7 +195,7 @@ mod tests {
             }
             let extension_error = crate::test_support::resource_refusal_at(
                 ResourceDimension::WorkUnits,
-                "validate F3D embedded image extension",
+                "classify F3D embedded image extension",
                 0,
                 |ctx| super::embedded_image_asset(ctx, scan, NAME).map(|_| ()),
             );
@@ -210,8 +203,9 @@ mod tests {
                 extension_error,
                 cadmpeg_core::CodecError::ResourceLimit(limit)
                     if limit.dimension == ResourceDimension::WorkUnits
-                        && limit.operation == "validate F3D embedded image extension"
-                        && limit.additional == 3
+                        && limit.operation == "classify F3D embedded image extension"
+                        // The reverse search admits the name and the pattern.
+                        && limit.additional == u64_from_index(NAME.len() + 1)
             ));
             crate::design::test_support::with_test_decode_context(|ctx| {
                 assert!(super::embedded_image_asset(ctx, scan, NAME)

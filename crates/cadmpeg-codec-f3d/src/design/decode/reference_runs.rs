@@ -17,3 +17,18 @@ pub(in crate::design::decode) fn admit_reference_values<'run, T, O>(
     let located = ctx.admit_iter(run.located_rows().unwrap_or(&[]), operation)?;
     Ok(unlocated.chain(located.map(|row| &row.value)))
 }
+
+/// The position of the first value of `run` that `predicate` selects. Each
+/// visited value is admitted before its test; the search stops at the match.
+pub(in crate::design::decode) fn reference_position<T, O>(
+    ctx: &DecodeContext<'_>,
+    run: &ReferenceRun<T, O>,
+    mut predicate: impl FnMut(&T) -> Result<bool, CodecError>,
+    operation: &'static str,
+) -> Result<Option<usize>, CodecError> {
+    match (run.unlocated_values(), run.located_rows()) {
+        (Some(values), _) => ctx.position_by(values, predicate, operation),
+        (None, Some(rows)) => ctx.position_by(rows, |row| predicate(&row.value), operation),
+        (None, None) => Ok(None),
+    }
+}
