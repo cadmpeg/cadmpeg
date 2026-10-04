@@ -160,7 +160,9 @@ fn directed_cycle_detection_handles_long_branching_graphs_iteratively() {
         // The unchanged graph supplies the input-dependent byte envelope for its node storage.
         let input = serde_json::to_vec(&graph).unwrap();
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        // The graph traversal assertion admits all complete-key and node-movement work.
+        policy.limits.max_work_units = u64::MAX;
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&input, &arena, &policy).unwrap();
         let decode_ctx = &ctx;

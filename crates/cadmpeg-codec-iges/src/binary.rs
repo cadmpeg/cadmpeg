@@ -1495,7 +1495,8 @@ mod tests {
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
                     && limit.used == 3
-                    && limit.additional == 3
+                    // Three copied digits precede growth from three bytes to the eight-byte minimum.
+                    && limit.additional == 8 - 3
                     && limit.operation == "iges binary parameter text"
         ));
 

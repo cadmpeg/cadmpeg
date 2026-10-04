@@ -1528,3 +1528,5 @@ impl From<DesignDimensionLocusGroup> for DesignDimensionLocusGroupWire {
 
 #[cfg(test)]
 mod tests;
+
+mod identity_rewrite;

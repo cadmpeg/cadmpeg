@@ -6,7 +6,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Identity form of a drawing or semantic-annotation reference.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(from = "ReferenceTargetWire", into = "ReferenceTargetWire")]
 #[serde(deny_unknown_fields)]
@@ -96,16 +96,6 @@ impl From<ReferenceTargetWire> for ReferenceTarget {
     }
 }
 
-impl From<ReferenceTarget> for ReferenceTargetWire {
-    fn from(target: ReferenceTarget) -> Self {
-        match target {
-            ReferenceTarget::Null => Self::Null {},
-            ReferenceTarget::Local(target) => Self::Local { target },
-            ReferenceTarget::External { document, object } => Self::External { document, object },
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::{ReferenceSelection, ReferenceTarget};
@@ -188,3 +178,7 @@ mod tests {
         assert!(error.contains("zz_bogus"), "{error}");
     }
 }
+
+mod identity_rewrite;
+
+mod serialization;

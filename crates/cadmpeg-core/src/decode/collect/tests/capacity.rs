@@ -7,15 +7,23 @@ use std::collections::HashSet;
 #[test]
 fn linear_growth_rejects_full_capacity_above_the_address_limit() {
     use crate::decode::collect::LinearGrowth;
-    for growth in [LinearGrowth::Exact, LinearGrowth::Amortized, LinearGrowth::PrechargedBytes] {
+    for growth in [
+        LinearGrowth::Exact,
+        LinearGrowth::Amortized,
+        LinearGrowth::PrechargedBytes,
+    ] {
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("context");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
         let capacity = usize::try_from(isize::MAX).expect("address limit") / 2;
-        let error = ctx.linear_growth::<u16>(capacity, capacity, 1, growth, "addressable growth")
-            .err().expect("full capacity exceeds the address limit");
+        let error = ctx
+            .linear_growth::<u16>(capacity, capacity, 1, growth, "addressable growth")
+            .expect_err("full capacity exceeds the address limit");
         assert_eq!(error.dimension, ResourceDimension::RetainedBytes);
-        assert_eq!(error.reason, crate::decode::ResourceFailure::AllocationFailed);
+        assert_eq!(
+            error.reason,
+            crate::decode::ResourceFailure::AllocationFailed
+        );
         assert_eq!(error.used, 0);
         assert!(error.additional > u64::try_from(isize::MAX).expect("address limit"));
         assert_eq!(ctx.resource_refusal(), Some(error));
@@ -149,17 +157,24 @@ fn retained_reallocation_admits_old_buffer_before_growth_and_releases_it() {
         values.extend([1, 2, 3, 4]);
         let growth = ctx.reserve_capacity(&mut values, 1, "grow");
         if limit == 31 {
-            let CodecError::ResourceLimit(first) = growth.expect_err("old buffer refuses") else { panic!("refusal") };
+            let CodecError::ResourceLimit(first) = growth.expect_err("old buffer refuses") else {
+                panic!("refusal")
+            };
             assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
             assert_eq!((first.used, first.additional), (0, 32));
             assert_eq!(values.capacity(), 4);
             assert_eq!(values, [1, 2, 3, 4]);
-            let CodecError::ResourceLimit(second) = ctx.charge_work(1, "later").expect_err("fused") else { panic!("refusal") };
+            let CodecError::ResourceLimit(second) = ctx.charge_work(1, "later").expect_err("fused")
+            else {
+                panic!("refusal")
+            };
             assert_eq!(first, second);
         } else {
             growth.expect("both allocations admitted");
             assert_eq!(values.capacity(), 8);
-            let _probe = ctx.reserve_scoped(32, "released overlap").expect("old reservation released");
+            let _probe = ctx
+                .reserve_scoped(32, "released overlap")
+                .expect("old reservation released");
         }
     }
 }
@@ -177,7 +192,9 @@ fn scoped_reallocation_admits_old_and_new_buffers_together() {
         values.extend([1, 2, 3, 4]);
         let growth = storage.with_storage(|| ctx.reserve_capacity(&mut values, 1, "grow"));
         if limit == 95 {
-            let CodecError::ResourceLimit(first) = growth.expect_err("overlap refuses") else { panic!("refusal") };
+            let CodecError::ResourceLimit(first) = growth.expect_err("overlap refuses") else {
+                panic!("refusal")
+            };
             assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
             assert_eq!((first.used, first.additional), (64, 32));
             assert_eq!(values.capacity(), 4);
@@ -185,11 +202,15 @@ fn scoped_reallocation_admits_old_and_new_buffers_together() {
         } else {
             growth.expect("both allocations admitted");
             assert_eq!(values.capacity(), 8);
-            let probe = ctx.reserve_scoped(32, "released overlap").expect("only new buffer remains");
+            let probe = ctx
+                .reserve_scoped(32, "released overlap")
+                .expect("only new buffer remains");
             drop(probe);
             drop(values);
             drop(storage);
-            let _probe = ctx.reserve_scoped(96, "all buffers released").expect("storage released");
+            let _probe = ctx
+                .reserve_scoped(96, "all buffers released")
+                .expect("storage released");
         }
     }
 }
@@ -202,7 +223,8 @@ fn hash_reallocation_admits_both_bucket_allocations_before_growth() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         // Both bucket arrays include alignment padding and control bytes.
-        policy.limits.max_materialized_bytes = u64::try_from(old + grown - usize::from(!fits)).expect("bound");
+        policy.limits.max_materialized_bytes =
+            u64::try_from(old + grown - usize::from(!fits)).expect("bound");
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let (mut values, mut storage) = ctx.temporary_set::<u64>(3, "initial").expect("initial");
@@ -212,11 +234,21 @@ fn hash_reallocation_admits_both_bucket_allocations_before_growth() {
         if fits {
             growth.expect("both tables admitted");
             assert!(values.capacity() > capacity);
-            let _probe = ctx.reserve_scoped(u64::try_from(old).expect("bound"), "released overlap").expect("old table released");
+            let _probe = ctx
+                .reserve_scoped(u64::try_from(old).expect("bound"), "released overlap")
+                .expect("old table released");
         } else {
-            let CodecError::ResourceLimit(first) = growth.expect_err("overlap refuses") else { panic!("refusal") };
+            let CodecError::ResourceLimit(first) = growth.expect_err("overlap refuses") else {
+                panic!("refusal")
+            };
             assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
-            assert_eq!((first.used, first.additional), (u64::try_from(grown).expect("bound"), u64::try_from(old).expect("bound")));
+            assert_eq!(
+                (first.used, first.additional),
+                (
+                    u64::try_from(grown).expect("bound"),
+                    u64::try_from(old).expect("bound")
+                )
+            );
             assert_eq!(values.capacity(), capacity);
             assert_eq!(values, HashSet::from([1, 2, 3]));
         }
@@ -233,7 +265,12 @@ fn text_reallocation_refuses_before_old_buffer_overlap() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     let mut text = String::with_capacity(4);
     text.push_str("abcd");
-    let CodecError::ResourceLimit(first) = ctx.try_reserve_retained_text(&mut text, 2, "grow").expect_err("overlap refuses") else { panic!("refusal") };
+    let CodecError::ResourceLimit(first) = ctx
+        .try_reserve_retained_text(&mut text, 2, "grow")
+        .expect_err("overlap refuses")
+    else {
+        panic!("refusal")
+    };
     assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
     assert_eq!((first.used, first.additional), (0, 4));
     assert_eq!(text.capacity(), 4);

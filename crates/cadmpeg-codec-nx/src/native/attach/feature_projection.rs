@@ -311,7 +311,8 @@ pub(super) fn insert_parameter_property(
     value: String,
 ) -> Result<(), CodecError> {
     let key = ctx.format_retained(key, "NX feature projection text")?;
-    let key = cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")?.ok_or_else(|| {
+    let key = cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")?
+        .ok_or_else(|| {
         cadmpeg_core::CodecError::malformed(format_args!("NX parameter property key is blank"))
     })?;
     if !properties.contains_key(&key) {
@@ -466,8 +467,8 @@ pub(super) fn blend_feature_definition(
     }
     ctx.stable_sort_by(
         &mut surfaces,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "NX blend result sort",
     )?;
     let radius = if constant_radii {
@@ -506,7 +507,7 @@ pub(super) fn blend_feature_definition(
             let (second_faces, _) = support_face_projection(ctx, ir, &sides.second, second_native)?;
             match (&first_faces, &second_faces) {
                 (FaceSelection::Resolved { .. }, FaceSelection::Resolved { .. }) => {
-                    cadmpeg_ir::features::FaceBlendOperands::new(first_faces, second_faces)
+                    cadmpeg_ir::features::FaceBlendOperands::new(first_faces, second_faces, ctx)?
                         .ok()
                         .map(|operands| {
                             radius
@@ -531,7 +532,8 @@ pub(super) fn blend_feature_definition(
     let Some(unresolved_operands) = cadmpeg_ir::features::FaceBlendOperands::new(
         FaceSelection::Unresolved,
         FaceSelection::Unresolved,
-    )
+        ctx,
+    )?
     .ok() else {
         return Ok(None);
     };
@@ -751,8 +753,8 @@ pub(super) fn unique_carrier_supports(
     }
     ctx.stable_sort_by(
         &mut supports,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "NX offset support sort",
     )?;
     Ok(supports)
@@ -1018,8 +1020,8 @@ pub(in crate::native) fn feature_source_content(
     }
     ctx.stable_sort_by(
         &mut sorted,
-            |value| &value.source_offset,
-            Ord::cmp,
+        |value| &value.source_offset,
+        Ord::cmp,
         "NX feature source text sort",
     )?;
     let mut content = Vec::new();
@@ -1034,12 +1036,8 @@ pub(in crate::native) fn feature_source_content(
         ctx.reserve_capacity(&mut content, 1, "NX feature source text")?;
         content.push(FeatureSourceContent::Text(owned));
     }
-    cadmpeg_ir::features::FeatureContent::try_from_for_decode(
-        content,
-        ctx,
-        "NX feature source content validation",
-    )
-    .map_err(CodecError::from)
+    cadmpeg_ir::features::FeatureContent::new(content, ctx, "NX feature source content validation")
+        .map_err(CodecError::from)
 }
 
 pub(super) fn simple_hole_native_properties(
@@ -1137,12 +1135,21 @@ pub(super) fn block_placement(
         maximum: f64,
     }
 
-impl cadmpeg_core::decode::cost::DecodeCost for PlaneExtent {
-    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
-    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    impl cadmpeg_core::decode::cost::DecodeCost for PlaneExtent {
+        const FIXED_BYTES: Option<u64> =
+            Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                Self,
+            >()));
+        fn decode_cost(
+            &self,
+            _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+            _operation: &'static str,
+        ) -> Result<u64, cadmpeg_core::CodecError> {
+            Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                Self,
+            >()))
+        }
     }
-}
 
     fn canonical_normal(
         normal: cadmpeg_ir::units::UnitVector3,
@@ -1303,8 +1310,8 @@ impl cadmpeg_core::decode::cost::DecodeCost for PlaneExtent {
     let mut extents = [first, second, third];
     ctx.stable_sort_by(
         &mut extents,
-            |value| value,
-            |left, right| {
+        |value| value,
+        |left, right| {
             right
                 .normal
                 .x
@@ -1502,16 +1509,29 @@ pub(super) fn new_body_boolean_op(evidence: &NewBodyEvidence<'_>) -> BooleanOp {
 }
 
 pub(super) fn body_writing_unresolved_feature_definition(
+    ctx: &DecodeContext<'_>,
     kind: &str,
     source_properties: &BTreeMap<String, String>,
-) -> Option<FeatureDefinition> {
-    if !source_properties
-        .keys()
-        .any(|key| key.starts_with("body_write."))
-    {
-        return None;
+) -> Result<Option<FeatureDefinition>, CodecError> {
+    let mut body_write = false;
+    for key in source_properties.keys() {
+        ctx.charge_work(1, "NX body-writing property visit")?;
+        if key.len() < "body_write.".len() {
+            continue;
+        }
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index("body_write.".len()),
+            "NX body-writing property prefix",
+        )?;
+        if key.starts_with("body_write.") {
+            body_write = true;
+            break;
+        }
     }
-    match kind {
+    if !body_write {
+        return Ok(None);
+    }
+    Ok(match kind {
         "BREP" => Some(FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::Brep,
         })),
@@ -1534,8 +1554,9 @@ pub(super) fn body_writing_unresolved_feature_definition(
             operands: cadmpeg_ir::features::FaceBlendOperands::new(
                 FaceSelection::Unresolved,
                 FaceSelection::Unresolved,
-            )
-            .ok()?,
+                ctx,
+            )?
+            .map_err(CodecError::malformed)?,
 
             radius: RadiusSpec::Unresolved { form: None },
         })),
@@ -1560,7 +1581,7 @@ pub(super) fn body_writing_unresolved_feature_definition(
             family: UnresolvedFamily::DetailedThread,
         })),
         _ => None,
-    }
+    })
 }
 
 #[cfg(test)]
@@ -1572,6 +1593,7 @@ pub(super) fn non_boolean_feature_definition(
     hole_diameter: Option<Length>,
 ) -> FeatureDefinition {
     non_boolean_feature_definition_with_parameters(
+        &cadmpeg_test_support::service_decode_context(),
         kind,
         payload_strings,
         block_dimensions,
@@ -1637,6 +1659,7 @@ pub(super) struct CounterboreDimensions {
 }
 
 pub(super) fn non_boolean_feature_definition_with_parameters(
+    ctx: &DecodeContext<'_>,
     kind: &str,
     payload_strings: &[&str],
     block_dimensions: Option<[f64; 3]>,
@@ -1671,7 +1694,8 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Unresolved,
                 BodySelection::Unresolved,
-            )
+                ctx,
+            )?
             .map_err(cadmpeg_core::CodecError::malformed)?,
 
             op,
@@ -1948,7 +1972,8 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
             operands: cadmpeg_ir::features::FaceBlendOperands::new(
                 FaceSelection::Unresolved,
                 FaceSelection::Unresolved,
-            )
+                ctx,
+            )?
             .map_err(cadmpeg_core::CodecError::malformed)?,
 
             radius: RadiusSpec::Unresolved { form: None },
@@ -1963,7 +1988,8 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::Unresolved,
                 BodySelection::Unresolved,
-            )
+                ctx,
+            )?
             .map_err(cadmpeg_core::CodecError::malformed)?,
 
             keep: BodyTrimSide::Unresolved,
@@ -1992,7 +2018,8 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
                 operands: cadmpeg_ir::features::SectionOperands::new(
                     BodySelection::Unresolved,
                     BodySelection::Unresolved,
-                )
+                    ctx,
+                )?
                 .map_err(cadmpeg_core::CodecError::malformed)?,
 
                 approximate: None,
@@ -2178,8 +2205,14 @@ pub(super) fn simple_hole_operations(
     }
     ctx.stable_sort_by_key(
         &mut ordered_templates,
-            |value| { let record = *value; (operation_positions.get(record.operation_label.as_str()), record.operation_label.as_str()) },
-            Ord::cmp,
+        |value| {
+            let record = *value;
+            (
+                operation_positions.get(record.operation_label.as_str()),
+                record.operation_label.as_str(),
+            )
+        },
+        Ord::cmp,
         "sort NX simple hole templates",
     )?;
     let mut selected_group = None;
@@ -2295,8 +2328,8 @@ pub(super) fn selected_hole_operations(
     }
     ctx.stable_sort_by(
         &mut operations,
-            |value| value,
-            |first, second| {
+        |value| value,
+        |first, second| {
             operation_positions
                 .get(first.as_str())
                 .cmp(&operation_positions.get(second.as_str()))
@@ -2981,8 +3014,8 @@ pub(super) fn hole_axis_placements_for_body(
     }
     ctx.stable_sort_by_key(
         &mut placements,
-            |value| hole_placement_key(value),
-            Ord::cmp,
+        hole_placement_key,
+        Ord::cmp,
         "sort NX hole axis placements",
     )?;
     Ok(placements)
@@ -3473,7 +3506,11 @@ pub(super) fn counterbore_cylinders(
         cadmpeg_core::decode::u64_from_index(pair_work),
         "NX counterbore pair scan",
     )?;
-    let mut candidates = ctx.collect_indexed_vec(cylinders.len(), "nx counterbore cylinder candidates", |_| Ok(Vec::<(usize, CounterboreCylinderWitness)>::new()))?;
+    let mut candidates = ctx.collect_indexed_vec(
+        cylinders.len(),
+        "nx counterbore cylinder candidates",
+        |_| Ok(Vec::<(usize, CounterboreCylinderWitness)>::new()),
+    )?;
     for (first_index, first) in cylinders.iter().enumerate() {
         for (second_index, second) in cylinders.iter().enumerate().skip(first_index + 1) {
             let (small, large) = if first.radius < second.radius {
@@ -3843,8 +3880,8 @@ pub(super) fn simple_hole_chamfers(
     }
     ctx.stable_sort_by(
         &mut operations,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "sort NX chamfer selected operations",
     )?;
     let Some(operations_by_body) = hole_operations_by_body(ctx, ir, &operations, outputs)? else {

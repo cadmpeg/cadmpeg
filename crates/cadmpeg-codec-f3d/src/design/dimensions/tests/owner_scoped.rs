@@ -506,7 +506,11 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
     )
     .unwrap()
     .expect("angular parameter")
-    .into_record(&cadmpeg_test_support::service_decode_context(), "Design/BulkStream.dat", 100)
+    .into_record(
+        &cadmpeg_test_support::service_decode_context(),
+        "Design/BulkStream.dat",
+        100,
+    )
     .unwrap()
     .expect("located parameter");
     let parameter_id =

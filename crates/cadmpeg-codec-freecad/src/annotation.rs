@@ -53,8 +53,8 @@ pub(crate) fn transfer(
             owned.extend_from_slice(source);
             ctx.stable_sort_by_key(
                 &mut owned,
-            |value| (value.xml.start(),value.xml.end()),
-            Ord::cmp,
+                |value| (value.xml.start(), value.xml.end()),
+                Ord::cmp,
                 "fcstd annotation selected properties sort",
             )?;
             let mut references = BTreeMap::new();

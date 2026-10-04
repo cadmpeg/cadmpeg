@@ -245,8 +245,8 @@ pub(crate) fn decode_edge_operands(
     }
     ctx.stable_sort_by(
         &mut out[..],
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d design operands 1",
     )?;
     Ok(out)
@@ -346,8 +346,8 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
     }
     ctx.stable_sort_by(
         &mut out[..],
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d design operands 2",
     )?;
     Ok(out)
@@ -833,8 +833,8 @@ pub(crate) fn decode_edge_identity_operands(
     }
     ctx.stable_sort_by(
         &mut out[..],
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d design operands 3",
     )?;
     Ok(out)
@@ -1121,8 +1121,8 @@ pub(crate) fn decode_face_operands(
     }
     ctx.stable_sort_by(
         &mut out[..],
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d design operands 4",
     )?;
     Ok(out)
@@ -1285,8 +1285,8 @@ pub(crate) fn decode_face_source_groups(
     }
     ctx.stable_sort_by(
         &mut out[..],
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d design operands 5",
     )?;
     Ok(out)
@@ -1620,8 +1620,8 @@ pub(crate) fn edge_operand_candidate_faces(
         .collect::<Vec<_>>();
     ctx.stable_sort_by(
         &mut faces,
-            |value| value.as_str(),
-            Ord::cmp,
+        |value| value.as_str(),
+        Ord::cmp,
         "f3d edge operand candidate faces sort",
     )?;
     faces.dedup();
@@ -1738,8 +1738,8 @@ pub(crate) fn decode_extrude_selection_groups(
     }
     ctx.stable_sort_by(
         &mut out[..],
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d design operands 9",
     )?;
     Ok(out)
@@ -1866,8 +1866,8 @@ pub(crate) fn decode_construction_operand_groups(
     }
     ctx.stable_sort_by(
         &mut out[..],
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d design operands 10",
     )?;
     Ok(out)
@@ -1936,8 +1936,8 @@ pub(crate) fn decode_loft_legacy_body_carriers(
     }
     ctx.stable_sort_by(
         &mut out[..],
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d design operands 11",
     )?;
     out.dedup_by(|left, right| left.id == right.id);
@@ -2200,11 +2200,11 @@ pub(crate) fn decode_fillet_radius_groups(
         ctx.stable_sort_by_key(
             &mut scope_groups[..],
             |value| {
-                    let group = value;
-                    {
-                        group.scope_reference_ordinal
-                    }
-                },
+                let group = value;
+                {
+                    group.scope_reference_ordinal
+                }
+            },
             Ord::cmp,
             "sort f3d design operands 12",
         )?;
@@ -2226,9 +2226,9 @@ pub(crate) fn decode_fillet_radius_groups(
         ctx.stable_sort_by_key(
             &mut owned_parameters[..],
             |value| {
-                    let (ordinal, _) = value;
-                    *ordinal
-                },
+                let (ordinal, _) = value;
+                *ordinal
+            },
             Ord::cmp,
             "sort f3d design operands 13",
         )?;
@@ -2383,8 +2383,8 @@ pub(crate) fn decode_fillet_radius_groups(
     }
     ctx.stable_sort_by(
         &mut out[..],
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d design operands 14",
     )?;
     Ok(out)
@@ -3240,8 +3240,8 @@ pub(crate) fn decode_construction_operand_identities(
     }
     ctx.stable_sort_by(
         &mut out[..],
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d design operands 15",
     )?;
     out.dedup_by(|left, right| left.id == right.id);
@@ -3264,11 +3264,11 @@ fn collect_stream_lost_edges<'a>(
     }
     ctx.stable_sort_by_key(
         &mut edges[..],
-            |value| {
-                let edge = value;
-                edge.record_byte_offset()
-            },
-            Ord::cmp,
+        |value| {
+            let edge = value;
+            edge.record_byte_offset()
+        },
+        Ord::cmp,
         "sort f3d design operands 16",
     )?;
     Ok(edges)
@@ -3757,8 +3757,8 @@ pub(crate) fn decode_extrude_selection_members(
     }
     ctx.stable_sort_by(
         &mut out[..],
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d design operands 17",
     )?;
     Ok(out)
@@ -3812,8 +3812,8 @@ pub(crate) fn decode_entity_selection_operands(
     }
     ctx.stable_sort_by(
         &mut out[..],
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d design operands 18",
     )?;
     Ok(out)
@@ -4262,11 +4262,11 @@ pub(crate) fn decode_body_recipe_operands(
         ctx.stable_sort_by_key(
             &mut stream_recipes[..],
             |value| {
-                    let recipe = value;
-                    {
-                        recipe.byte_offset
-                    }
-                },
+                let recipe = value;
+                {
+                    recipe.byte_offset
+                }
+            },
             Ord::cmp,
             "sort f3d design operands 19",
         )?;
@@ -4395,8 +4395,8 @@ pub(crate) fn decode_body_recipe_operands(
     }
     ctx.stable_sort_by(
         &mut out[..],
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d design operands 20",
     )?;
     let mut owner_counts = HashMap::<String, u32>::new();
@@ -4764,8 +4764,8 @@ pub(crate) fn bind_body_recipe_operand_candidates(
             }
             ctx.stable_sort_by(
                 &mut reference.candidate_faces[..],
-            |value| value.as_str(),
-            Ord::cmp,
+                |value| value.as_str(),
+                Ord::cmp,
                 "sort f3d design operands 21",
             )?;
             reference.candidate_faces.dedup();
@@ -4875,14 +4875,14 @@ pub(crate) fn bind_extrude_selection_identities(
         ctx.stable_sort_by_key(
             &mut matches[..],
             |value| {
-                    let identity = value;
-                    {
-                        identity
-                            .wrappers()
-                            .first()
-                            .map(|wrapper| wrapper.byte_offset)
-                    }
-                },
+                let identity = value;
+                {
+                    identity
+                        .wrappers()
+                        .first()
+                        .map(|wrapper| wrapper.byte_offset)
+                }
+            },
             Ord::cmp,
             "sort f3d design operands 22",
         )?;

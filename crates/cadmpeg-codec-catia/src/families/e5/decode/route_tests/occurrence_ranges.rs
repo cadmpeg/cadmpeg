@@ -6,7 +6,7 @@ use crate::families::e5::decode::{
     parameter_range_agreement_tolerance, E5OccurrenceIntersectionSide,
     EPS_E5_DECODE_EXACT_GEOMETRY,
 };
-use cadmpeg_ir::eval::pcurve_uv;
+
 use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve, pcurve::PcurveGeometry, CurveGeometry, SolvedCurveGeometry,
 };
@@ -47,12 +47,14 @@ fn occurrence_context_refuses_before_retained_surface_copy() {
 fn e5_boundary_nurbs_cache_refuses_before_copy() {
     let curve = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
         )
+        .expect("fixture constructor admission")
         .expect("valid linear NURBS"),
     ));
     let refused = crate::test_support::with_collection_limit(0, |ctx| {
@@ -234,12 +236,14 @@ fn occurrence_intersection_cache_requires_one_admitted_exact_carrier() {
     ));
     let nurbs = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
         )
+        .expect("fixture constructor admission")
         .expect("valid linear NURBS"),
     ));
     let mut sides = vec![
@@ -348,7 +352,12 @@ fn quintic_jet_reproduces_endpoint_second_order_data() {
     .expect("service resource budget")
     .expect("linear quintic segment");
     for parameter in [0.0, 0.5, 1.0, 2.0] {
-        let point = pcurve_uv(&curve, parameter).expect("jet evaluation");
+        let point = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &curve,
+            parameter,
+        )
+        .expect("jet evaluation");
         assert!((point.u - parameter).abs() < EPS_E5_DECODE_EXACT_GEOMETRY);
         assert!(point.v.abs() < EPS_E5_DECODE_EXACT_GEOMETRY);
     }
@@ -359,12 +368,14 @@ fn reversing_nurbs_preserves_tiny_knot_domain() {
     let tiny = 1e-200;
     let curve = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![tiny, tiny, 2.0 * tiny, 2.0 * tiny],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
         )
+        .expect("fixture constructor admission")
         .expect("valid tiny-domain NURBS"),
     ));
     let (reversed, range) = crate::test_support::with_service_context(|ctx| {

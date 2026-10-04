@@ -28,6 +28,7 @@ pub(crate) enum Work {
     Argument(usize),
     Arguments(&'static [usize]),
     Iterator,
+    TextCharacter,
     Comparison,
     Format,
     Repeat,
@@ -43,14 +44,28 @@ pub(crate) struct Summary {
 }
 
 fn borrowed_byte_cursor(tcx: TyCtxt<'_>, archive: Ty<'_>) -> bool {
-    let ty::Adt(_, archive_args) = archive.peel_refs().kind() else { return false; };
-    let Some(reader) = archive_args.types().next() else { return false; };
-    let ty::Adt(cursor, cursor_args) = reader.peel_refs().kind() else { return false; };
-    if !types::standard(tcx, cursor.did()) || tcx.item_name(cursor.did()).as_str() != "Cursor" { return false; }
-    let Some(bytes) = cursor_args.types().next() else { return false; };
-    let ty::Ref(_, bytes, _) = bytes.kind() else { return false; };
+    let ty::Adt(_, archive_args) = archive.peel_refs().kind() else {
+        return false;
+    };
+    let Some(reader) = archive_args.types().next() else {
+        return false;
+    };
+    let ty::Adt(cursor, cursor_args) = reader.peel_refs().kind() else {
+        return false;
+    };
+    if !types::standard(tcx, cursor.did()) || tcx.item_name(cursor.did()).as_str() != "Cursor" {
+        return false;
+    }
+    let Some(bytes) = cursor_args.types().next() else {
+        return false;
+    };
+    let ty::Ref(_, bytes, _) = bytes.kind() else {
+        return false;
+    };
     match bytes.kind() {
-        ty::Slice(element) | ty::Array(element, _) => matches!(element.kind(), ty::Uint(ty::UintTy::U8)),
+        ty::Slice(element) | ty::Array(element, _) => {
+            matches!(element.kind(), ty::Uint(ty::UintTy::U8))
+        }
         _ => false,
     }
 }
@@ -64,6 +79,7 @@ pub(crate) fn summary(
     let name = tcx.opt_item_name(definition)?;
     let path = tcx.def_path_str(definition);
     let value = receiver.map(|value| value.peel_refs());
+    let standard_string = receiver.is_some_and(|value| types::standard_string(tcx, value));
     let owner = value.and_then(|value| match value.kind() {
         ty::Adt(owner, _) => Some(tcx.item_name(owner.did())),
         _ => None,
@@ -226,7 +242,11 @@ pub(crate) fn summary(
             }
             ("zip", "by_index") => (Allocation::Input(0), Work::Receiver),
             // zip 8.6 borrows indexed metadata and reads only the fixed local header.
-            ("zip", "by_index_raw") if value.is_some_and(|value| borrowed_byte_cursor(tcx, value)) => (Allocation::None, Work::Fixed),
+            ("zip", "by_index_raw")
+                if value.is_some_and(|value| borrowed_byte_cursor(tcx, value)) =>
+            {
+                (Allocation::None, Work::Fixed)
+            }
             ("zip", "name_for_index") => (Allocation::None, Work::Fixed),
             ("zip", "start_file") => (Allocation::Input(1), Work::Argument(1)),
             ("zip", "finish") => (Allocation::Input(0), Work::Receiver),
@@ -299,6 +319,17 @@ pub(crate) fn summary(
             }
         }
         "from_str_radix" if path.contains("num::") => (Allocation::None, Work::Argument(0)),
+        // Keep the fixed summary scoped to the standard range receiver; a
+        // custom method named `end` may allocate or inspect input.
+        "end"
+            if path.contains("RangeInclusive")
+                && owner.is_some_and(|owner| owner.as_str() == "RangeInclusive")
+                && value.is_some_and(|value| {
+                    matches!(value.kind(), ty::Adt(range, _) if types::standard(tcx, range.did()))
+                }) =>
+        {
+            (Allocation::None, Work::Fixed)
+        }
         _ if (path.contains("num::<impl ")
             || path.contains("f32::<impl f32>")
             || path.contains("f64::<impl f64>")
@@ -471,6 +502,7 @@ pub(crate) fn summary(
         "pad" if path.contains("fmt::") => (Allocation::None, Work::Argument(1)),
         "write_fmt" => (Allocation::None, Work::Argument(1)),
         "write" if path.contains("fmt::") => (Allocation::None, Work::Argument(1)),
+        "write_char" if standard_string => (Allocation::Growth, Work::TextCharacter),
         "write_char" if path.contains("fmt::") => (Allocation::None, Work::Fixed),
         "first" | "last" if keyed => (Allocation::None, Work::Fixed),
         "first"
@@ -588,6 +620,7 @@ pub(crate) fn summary(
             (Allocation::None, Work::Comparison)
         }
         "finish" if path.contains("hash::") => (Allocation::None, Work::Fixed),
+        "write_str" if standard_string => (Allocation::Growth, Work::Argument(1)),
         "write_str" if path.contains("fmt::") => (Allocation::None, Work::Argument(1)),
         "debug_struct_field1_finish" if path.contains("fmt::") => {
             (Allocation::None, Work::Argument(3))
@@ -607,12 +640,15 @@ pub(crate) fn summary(
         "from_elem" | "repeat" => (Allocation::Repeat, Work::Repeat),
         "with_capacity" | "with_capacity_in" => (Allocation::Capacity, Work::Fixed),
         "into_boxed_slice" => (Allocation::Reallocate, Work::Receiver),
+        "push" if standard_string => (Allocation::Growth, Work::TextCharacter),
         "push" | "push_back" | "push_front" | "reserve" | "reserve_exact" | "try_reserve"
         | "try_reserve_exact" => (Allocation::Growth, Work::Fixed),
         "push_str" | "extend" | "extend_from_slice" | "append" => {
             (Allocation::Growth, Work::Argument(1))
         }
-        "retain" if owner.is_some_and(|owner| matches!(owner.as_str(), "HashMap" | "HashSet")) => (Allocation::None, Work::Capacity),
+        "retain" if owner.is_some_and(|owner| matches!(owner.as_str(), "HashMap" | "HashSet")) => {
+            (Allocation::None, Work::Capacity)
+        }
         "insert" if keyed => (Allocation::Growth, Work::Argument(1)),
         "insert" | "resize" | "resize_with" => (Allocation::Growth, Work::Receiver),
         "contains_key" | "get" | "get_mut" | "contains" | "remove" if keyed => {
@@ -767,7 +803,7 @@ pub(crate) fn summary(
         _ => None,
     };
     let empty_operand = match name.as_str() {
-        "push_str" | "extend" | "extend_from_slice" => Some(1),
+        "push_str" | "write_str" | "extend" | "extend_from_slice" => Some(1),
         _ => None,
     };
     Some(Summary {

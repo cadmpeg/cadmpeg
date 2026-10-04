@@ -468,7 +468,8 @@ mod tests {
     fn expansion_owns_one_payload_buffer() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = 3;
+        // The output owns three bytes; prefix and suffix vectors own 2+1 bytes per dictionary slot.
+        policy.limits.max_retained_bytes = 3 + (1 << 16) * (2 + 1);
         let stream = [0x1f, 0x9d, 0x10, 0x41, 0x84, 0x0c, 0x01];
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&stream, &arena, &policy)

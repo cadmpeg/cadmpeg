@@ -204,7 +204,8 @@ impl TryFrom<CatiaOwnerChartBridgeReferenceWire> for CatiaOwnerChartBridgeRefere
                 return Err("owner-chart canonical_surface_tag requires alias_row".to_owned());
             }
             (Some(row), canonical_tag) => {
-                let row = NonBlankString::try_from(row).ok()
+                let row = NonBlankString::try_from(row)
+                    .ok()
                     .ok_or_else(|| "owner-chart alias_row must not be empty".to_owned())?;
                 Some(CatiaOwnerChartAliasBinding::new(row, canonical_tag))
             }
@@ -613,7 +614,8 @@ mod tests {
             panic!("supported surface bridge")
         };
         let alias = CatiaOwnerChartAliasBinding::new(
-            cadmpeg_core::text::NonBlankString::try_from("catia:test:alias#0").expect("nonblank alias"),
+            cadmpeg_core::text::NonBlankString::try_from("catia:test:alias#0")
+                .expect("nonblank alias"),
             Some(5),
         );
         let bound = CatiaOwnerChartBridgeReference {

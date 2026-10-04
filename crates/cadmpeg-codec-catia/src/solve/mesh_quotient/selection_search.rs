@@ -326,8 +326,8 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
             domain.extend(quotient.domains[root].iter().copied());
             self.ctx.sort_unstable_by(
                 &mut domain,
-            |value| value,
-            Ord::cmp,
+                |value| value,
+                Ord::cmp,
                 "catia_face_projection_domain_points_sort",
             )?;
             signature.push((
@@ -1751,8 +1751,8 @@ pub(super) fn singleton_mesh_boundary_directions(
     }
     ctx.sort_unstable_by(
         &mut solutions,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "catia_singleton_direction_solutions_sort",
     )?;
     solutions.dedup();
@@ -1845,8 +1845,8 @@ pub(super) fn canonical_singleton_coordinate_cycles(
     }
     ctx.sort_unstable_by(
         &mut cycles,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "catia_singleton_cycle_rows_sort",
     )?;
     Ok(Some(cycles))

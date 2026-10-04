@@ -2,7 +2,7 @@
 //! curve bindings tests.
 
 use super::{
-    build_standard_edge_curve, circle_parameter_range_from_surface_branch, curve_point,
+    build_standard_edge_curve, circle_parameter_range_from_surface_branch,
     ensure_native_edge_support_surface, standard_analytic_curve_parameter_range,
     standard_endpoint_pair_supports_topology, standard_oriented_analytic_curve_parameter_range,
     standard_pcurve_geometry, unit_square_surface, witness_arc_end, AnnotationBuilder, CadIr,
@@ -626,9 +626,24 @@ fn generated_analytic_curve_ranges_use_angular_parameters() {
         )
         .expect("valid EllipseCurve fixture"),
     ));
-    let start = curve_point(&geometry, 0.0).expect("ellipse start");
-    let end = curve_point(&geometry, std::f64::consts::FRAC_PI_2).expect("ellipse end");
-    let witness = curve_point(&geometry, 0.75 * std::f64::consts::PI).expect("ellipse witness");
+    let start = cadmpeg_ir::eval::decode::curve_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &geometry,
+        0.0,
+    )
+    .expect("ellipse start");
+    let end = cadmpeg_ir::eval::decode::curve_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &geometry,
+        std::f64::consts::FRAC_PI_2,
+    )
+    .expect("ellipse end");
+    let witness = cadmpeg_ir::eval::decode::curve_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &geometry,
+        0.75 * std::f64::consts::PI,
+    )
+    .expect("ellipse witness");
     let short = standard_analytic_curve_parameter_range(&geometry, start.get(), end.get(), None)
         .expect("short angular range");
     let mut oriented = geometry.clone();
@@ -659,9 +674,8 @@ fn native_edge_support_match_refuses_work_limit() {
         source_object: Some(source),
     });
     let carrier = crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry);
-    let refused = crate::test_support::with_work_limit(
-        cadmpeg_core::decode::u64_from_index(2 * "cgm-surface:00002a".len()),
-        |ctx| {
+    let refused =
+        crate::test_support::with_work_refusal("catia_native_edge_support_source_scan", |ctx| {
             let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
             ensure_native_edge_support_surface(
                 &mut ir,
@@ -670,8 +684,7 @@ fn native_edge_support_match_refuses_work_limit() {
                 &carrier,
                 &mut admission,
             )
-        },
-    );
+        });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_native_edge_support_source_scan")

@@ -41,7 +41,12 @@ fn sketch_coordinate_pairs_are_retained_as_native_entities_without_roles() {
     let coordinate_pairs = [&pair];
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
-    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
+    let stream = StreamHandle::new(
+        &cadmpeg_test_support::service_decode_context(),
+        cadmpeg_ir::stream_name!("nx:container"),
+        "fixture stream handle",
+    )
+    .unwrap();
 
     crate::test_support::with_decode_context(|ctx| {
         let sketch = super::super::attach_sketch_graph(
@@ -108,7 +113,12 @@ fn sketch_fixed_points_are_retained_as_native_entities_without_roles() {
     let fixed_points = [&point];
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
-    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
+    let stream = StreamHandle::new(
+        &cadmpeg_test_support::service_decode_context(),
+        cadmpeg_ir::stream_name!("nx:container"),
+        "fixture stream handle",
+    )
+    .unwrap();
 
     crate::test_support::with_decode_context(|ctx| {
         let sketch = super::super::attach_sketch_graph(
@@ -179,7 +189,12 @@ fn fixed_point_sketch_with_limit(
         |ctx| {
             let mut ir = CadIr::empty();
             let mut annotations = AnnotationBuilder::new();
-            let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
+            let stream = StreamHandle::new(
+                &cadmpeg_test_support::service_decode_context(),
+                cadmpeg_ir::stream_name!("nx:container"),
+                "fixture stream handle",
+            )
+            .unwrap();
             super::super::attach_sketch_graph(
                 ctx,
                 &mut ir,

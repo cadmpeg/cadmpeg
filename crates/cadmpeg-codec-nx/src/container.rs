@@ -742,7 +742,9 @@ impl<'a> Container<'a> {
         })() else {
             return Ok(None);
         };
-        let Some(registry_offset) = ctx.find_bytes(bytes, REGISTRY_MARKER, "find NX FastLoad registry marker")? else {
+        let Some(registry_offset) =
+            ctx.find_bytes(bytes, REGISTRY_MARKER, "find NX FastLoad registry marker")?
+        else {
             return Ok(None);
         };
         let search_start = registry_offset + REGISTRY_MARKER.len();

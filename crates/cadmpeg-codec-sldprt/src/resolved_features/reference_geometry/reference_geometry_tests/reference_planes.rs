@@ -105,9 +105,16 @@ fn reference_plane_enrichment_refuses_retained_limit() {
 
 #[test]
 fn reference_plane_enrichment_refuses_work_limit() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let error = reference_plane_error(policy);
+    // Admit source indexes before refusing feature traversal.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "scan SLDPRT reference plane features",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            Err::<(), CodecError>(reference_plane_error(policy))
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "scan SLDPRT reference plane features"));

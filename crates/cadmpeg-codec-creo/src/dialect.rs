@@ -152,7 +152,11 @@ pub(crate) fn classify(
     scan: &ContainerScan,
 ) -> Result<DialectClassification, cadmpeg_core::CodecError> {
     let declared_key = |name: &'static str| {
-        cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.copy_retained_text(name, "creo declared dialect key")?, "validate nonblank text")?
+        cadmpeg_core::text::NonBlankString::for_decode(
+            ctx,
+            ctx.copy_retained_text(name, "creo declared dialect key")?,
+            "validate nonblank text",
+        )?
         .ok_or_else(|| cadmpeg_core::CodecError::malformed("declared dialect key is blank"))
     };
     let layout = &scan.framing.layout;

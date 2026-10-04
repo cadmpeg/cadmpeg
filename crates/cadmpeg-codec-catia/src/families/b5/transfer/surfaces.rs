@@ -228,12 +228,8 @@ pub(in crate::families) fn copy_rolling_ball_definition(
     };
     let stations = ctx.copy_slice(jet.stations(), "catia_b5_rolling_ball_jet_stations")?;
     Ok(ProceduralSurfaceDefinition::RollingBallJet(
-        cadmpeg_ir::geometry::RollingBallJetStations::from_parts_for_decode(
-            jet.degree(),
-            stations,
-            ctx,
-        )?
-        .map_err(CodecError::malformed)?,
+        cadmpeg_ir::geometry::RollingBallJetStations::from_parts(jet.degree(), stations, ctx)?
+            .map_err(CodecError::malformed)?,
     ))
 }
 
@@ -248,11 +244,13 @@ mod carrier_resource_tests {
     fn nurbs_surface_carrier_refuses_collection_limit_below_copy_need() {
         let surface = B5Surface::Nurbs(
             NurbsSurface::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
                 NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
                 NurbsSurfaceLanes::new(vec![vec![Point3::new(0.0, 0.0, 0.0); 2]; 2], None),
                 false,
             )
+            .expect("fixture constructor admission")
             .expect("valid bilinear surface"),
         );
         let refused =
@@ -335,7 +333,7 @@ fn profile_nurbs(
             point, direction, ..
         } => crate::nurbs::note_refusal(
             ctx,
-            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
                 ctx,
                 1,
                 ctx.collect_vec(
@@ -471,7 +469,7 @@ pub(super) fn rational_arc(
     }
     crate::nurbs::note_refusal(
         ctx,
-        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(
+        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
             ctx,
             2,
             knots,
@@ -635,7 +633,7 @@ pub(super) fn revolve_nurbs(
         };
         let surface = match crate::nurbs::note_refusal(
             ctx,
-            match cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes_for_decode(
+            match cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
                 ctx,
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     profile.degree(),
@@ -724,7 +722,7 @@ fn rotate_vector(value: [f64; 3], axis: [f64; 3], angle: f64) -> [f64; 3] {
 /// [`SurfaceId`]. Consumes the planned surfaces out of the transfer plan.
 pub(super) fn emit_surfaces(
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     graph: &B5Graph,
     plan: &mut TransferPlan,
     admission: &mut crate::families::FamilyEntityAdmission<'_, '_>,
@@ -879,7 +877,7 @@ pub(super) fn emit_surfaces(
                     Exactness::Derived,
                 )?;
                 admission.charge()?;
-                let _attached = ir.model.add_procedural_surface_for_decode(
+                let _attached = ir.model.add_procedural_surface(
                     admission.context(),
                     &id,
                     cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
@@ -928,7 +926,7 @@ pub(super) fn emit_surfaces(
                     Exactness::ByteExact,
                 )?;
                 admission.charge()?;
-                let _attached = ir.model.add_procedural_surface_for_decode(
+                let _attached = ir.model.add_procedural_surface(
                     admission.context(),
                     &id,
                     ProceduralSurface::new(procedural_id, *definition, None),
@@ -967,7 +965,7 @@ pub(super) fn emit_surfaces(
         )?;
         let record_bounds = super::parameter_record_bounds(offset.parameter_bounds);
         admission.charge()?;
-        let _attached = ir.model.add_procedural_surface_for_decode(
+        let _attached = ir.model.add_procedural_surface(
             admission.context(),
             &surface.try_clone_for_decode(admission.context(), "catia_b5_offset_surface_id")?,
             ProceduralSurface::new(
@@ -995,7 +993,7 @@ pub(super) fn emit_surfaces(
 
 fn emit_extrusion_procedure(
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     surface_ids: &HashMap<u32, SurfaceId>,
     surface_id: &SurfaceId,
     surface_object_id: u32,
@@ -1082,7 +1080,7 @@ fn emit_extrusion_procedure(
             );
 
             admission.charge()?;
-            let _attached = ir.model.add_procedural_curve_for_decode(
+            let _attached = ir.model.add_procedural_curve(
                 admission.context(),
                 &directrix_id.try_clone_for_decode(
                     admission.context(),
@@ -1183,7 +1181,7 @@ fn emit_extrusion_procedure(
                 Exactness::ByteExact,
             )?;
             admission.charge()?;
-            let _attached = ir.model.add_procedural_curve_for_decode(admission.context(),
+            let _attached = ir.model.add_procedural_curve(admission.context(),
                 &directrix_id.try_clone_for_decode(admission.context(), "catia_b5_extrusion_procedure_owner_id")?,
                 ProceduralCurve::new(
                     procedure_id,
@@ -1217,7 +1215,7 @@ fn emit_extrusion_procedure(
     )?;
     let record_bounds = super::parameter_record_bounds(extrusion.parameter_bounds);
     admission.charge()?;
-    let _attached = ir.model.add_procedural_surface_for_decode(
+    let _attached = ir.model.add_procedural_surface(
         admission.context(),
         surface_id,
         ProceduralSurface::new(
@@ -1267,12 +1265,14 @@ mod tests {
         use cadmpeg_ir::math::Point3;
 
         let profile = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 0.0, 1.0)],
             None,
             false,
         )
+        .expect("fixture constructor admission")
         .expect("valid revolution profile");
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -1301,12 +1301,14 @@ mod tests {
         use cadmpeg_ir::math::Point3;
 
         let profile = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 0.0, 1.0)],
             None,
             false,
         )
+        .expect("fixture constructor admission")
         .expect("valid revolution profile");
         let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
             revolve_nurbs(
@@ -1367,12 +1369,14 @@ mod tests {
         ]);
         let pcurve = |x| PcurveGeometry::Nurbs {
             nurbs: PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point2::new(x, 0.0), Point2::new(x, 1.0)],
                 None,
                 false,
             )
+            .expect("fixture pcurve construction admission")
             .expect("valid support pcurve"),
         };
         let extrusion = ResolvedExtrusionSurface {

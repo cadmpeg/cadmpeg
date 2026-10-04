@@ -223,8 +223,8 @@ pub(crate) fn object_pairs(
     }
     ctx.stable_sort_by_key(
         &mut pairs,
-            |value| value.offset(),
-            Ord::cmp,
+        Binary64Pair::offset,
+        Ord::cmp,
         "sort NX object pairs",
     )?;
     Ok(pairs)
@@ -267,8 +267,8 @@ pub(crate) fn sketch_pairs(
     }
     ctx.stable_sort_by_key(
         &mut pairs,
-            |value| value.offset(),
-            Ord::cmp,
+        Binary64Pair::offset,
+        Ord::cmp,
         "sort NX sketch pairs",
     )?;
     Ok(pairs)

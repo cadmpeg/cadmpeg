@@ -708,7 +708,7 @@ fn revolution_nurbs(
     let profile_knots = ctx
         .copy_slice(profile.knots(), "Rhino revolution profile knots")
         .map_err(crate::curves::GeometryError::from)?;
-    let mut result = cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes_for_decode(
+    let mut result = cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
         ctx,
         NurbsSurfaceAxis::new(2, knots, false),
         NurbsSurfaceAxis::new(profile.degree(), profile_knots, profile.periodic()),
@@ -718,7 +718,7 @@ fn revolution_nurbs(
     .map_err(GeometryError::from)?
     .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
     if transposed {
-        result.transpose_parameter_axes();
+        result.transpose_parameter_axes(ctx)?;
     }
     Ok(result)
 }
@@ -826,13 +826,13 @@ fn sum_nurbs(
         .knots()
         .try_clone_for_decode(ctx, "Rhino sum surface V knots")
         .map_err(crate::curves::GeometryError::from)?;
-    admit_nurbs_pole_conversion(ctx, product_count, rational)?;
     NurbsSurface::from_checked_lanes(
+        ctx,
         NurbsSurfaceAxis::new(first.degree(), u_knots, first.periodic()),
         NurbsSurfaceAxis::new(second.degree(), v_knots, second.periodic()),
         NurbsSurfaceLanes::new(point_rows, weight_rows),
         false,
-    )
+    )?
     .map_err(|error| GeometryError::malformed(offset, error.to_string()))
 }
 
@@ -866,39 +866,6 @@ fn copy_rows<T: Copy>(
     }
     let rows = ctx.copy_rows(values, row_len, operation, operation)?;
     Ok(rows)
-}
-
-fn admit_nurbs_pole_conversion(
-    ctx: &DecodeContext<'_>,
-    pole_count: usize,
-    rational: bool,
-) -> Result<(), GeometryError> {
-    let count = cadmpeg_core::decode::u64_from_index(pole_count);
-    let item_count = if rational {
-        count.checked_mul(2)
-    } else {
-        Some(count)
-    }
-    .ok_or_else(|| {
-        GeometryError::not_implemented("Rhino surface pole count exceeds address space")
-    })?;
-    let bytes_per_pole = std::mem::size_of::<FinitePoint3>()
-        .checked_add(if rational {
-            std::mem::size_of::<NonZeroReal>()
-        } else {
-            0
-        })
-        .ok_or_else(|| {
-            GeometryError::not_implemented("Rhino surface pole bytes exceed address space")
-        })?;
-    let bytes = count
-        .checked_mul(cadmpeg_core::decode::u64_from_index(bytes_per_pole))
-        .ok_or_else(|| {
-            GeometryError::not_implemented("Rhino surface pole bytes exceed address space")
-        })?;
-    ctx.charge_collection_items(item_count, "Rhino surface admitted poles")?;
-    ctx.charge_retained(bytes, "Rhino surface admitted poles")?;
-    Ok(())
 }
 
 /// Constructs the exact degree-one tensor interpolation between two profile curves.
@@ -947,17 +914,18 @@ pub(crate) fn extrusion_nurbs(
         .try_clone_for_decode(ctx, "Rhino extrusion surface knots")?;
     let [path_start, path_end] = path_domain.finite_components();
     let path_knots =
-        KnotVector::from_finite_lanes(vec![path_start, path_start, path_end, path_end])
+        KnotVector::from_finite_lanes(ctx, vec![path_start, path_start, path_end, path_end])?
             .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
-    let mut surface = NurbsSurface::from_admitted_grid(
+    let mut surface = NurbsSurface::new(
+        ctx,
         NurbsSurfaceAxis::new(start.degree(), u_knots, start.periodic()),
         NurbsSurfaceAxis::new(1, path_knots, false),
         poles,
         false,
-    )
+    )?
     .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
     if transposed {
-        surface.transpose_parameter_axes();
+        surface.transpose_parameter_axes(ctx)?;
     }
     Ok(surface)
 }
@@ -1082,19 +1050,18 @@ fn read_nurbs_curve_inner(
     if minor >= 1 {
         reader.bool()?;
     }
-    let periodic = periodic_knots_checked(&knots, order, cv_count);
-    admit_reconstructed_knots(ctx, stored_knot_count)?;
-    let full_knots = reconstruct_checked_knots(&knots, order, cv_count)?;
+    let periodic = periodic_knots_checked(ctx, &knots, order, cv_count)?;
+    let full_knots = reconstruct_checked_knots(ctx, &knots, order, cv_count)?;
     reader.skip_remaining()?;
-    admit_nurbs_pole_conversion(ctx, stored_cv_count, rational != 0)?;
-    let poles = NurbsPoles3::from_checked_lanes(control_points, weights)
+    let poles = NurbsPoles3::from_checked_lanes(ctx, control_points, weights)?
         .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))?;
     NurbsCurve::new(
+        ctx,
         u32::try_from(order - 1).map_err(|_| error(reader.position(), "NURBS order overflow"))?,
         full_knots,
         poles,
         periodic,
-    )
+    )?
     .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))
 }
 
@@ -1158,8 +1125,8 @@ pub(crate) fn read_nurbs_surface_prefix(
     }
     let v_knots = read_knots(ctx, reader, v_knot_count)?;
     validate_stored_domain(&v_knots, v_order, v_count, reader.position())?;
-    let u_periodic = periodic_knots_checked(&u_knots, u_order, u_count);
-    let v_periodic = periodic_knots_checked(&v_knots, v_order, v_count);
+    let u_periodic = periodic_knots_checked(ctx, &u_knots, u_order, u_count)?;
+    let v_periodic = periodic_knots_checked(ctx, &v_knots, v_order, v_count)?;
     let stored_cv_count = crate::wire::element_count(
         reader,
         usize::try_from(dimension + rational)
@@ -1180,10 +1147,8 @@ pub(crate) fn read_nurbs_surface_prefix(
         dimension,
         scale,
     )?;
-    admit_reconstructed_knots(ctx, u_knot_count)?;
-    let u_knots = reconstruct_checked_knots(&u_knots, u_order, u_count)?;
-    admit_reconstructed_knots(ctx, v_knot_count)?;
-    let v_knots = reconstruct_checked_knots(&v_knots, v_order, v_count)?;
+    let u_knots = reconstruct_checked_knots(ctx, &u_knots, u_order, u_count)?;
+    let v_knots = reconstruct_checked_knots(ctx, &v_knots, v_order, v_count)?;
     let row_len = v_count;
     let point_rows = copy_rows(
         ctx,
@@ -1195,10 +1160,10 @@ pub(crate) fn read_nurbs_surface_prefix(
         .as_deref()
         .map(|values| copy_rows(ctx, values, row_len, "Rhino NURBS surface weight grid"))
         .transpose()?;
-    admit_nurbs_pole_conversion(ctx, stored_cv_count, rational != 0)?;
-    let poles = NurbsPoleGrid::from_checked_lanes(point_rows, weight_rows)
+    let poles = NurbsPoleGrid::from_checked_lanes(ctx, point_rows, weight_rows)?
         .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))?;
     NurbsSurface::new(
+        ctx,
         NurbsSurfaceAxis::new(
             u32::try_from(u_order - 1)
                 .map_err(|_| error(reader.position(), "surface U order overflow"))?,
@@ -1213,7 +1178,7 @@ pub(crate) fn read_nurbs_surface_prefix(
         ),
         poles,
         false,
-    )
+    )?
     .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))
 }
 
@@ -1313,22 +1278,6 @@ fn read_knots(
     Ok(knots)
 }
 
-fn admit_reconstructed_knots(
-    ctx: &DecodeContext<'_>,
-    stored_count: usize,
-) -> Result<(), GeometryError> {
-    let count = stored_count.checked_add(2).ok_or_else(|| {
-        GeometryError::not_implemented("NURBS reconstructed knot count exceeds address space")
-    })?;
-    let count = cadmpeg_core::decode::u64_from_index(count);
-    let bytes = count.checked_mul(8).ok_or_else(|| {
-        GeometryError::not_implemented("NURBS reconstructed knot bytes exceed address space")
-    })?;
-    ctx.charge_collection_items(count, "Rhino NURBS reconstructed knots")?;
-    ctx.charge_retained(bytes, "Rhino NURBS reconstructed knots")?;
-    Ok(())
-}
-
 fn read_poles(
     ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
@@ -1379,44 +1328,50 @@ fn read_poles(
 
 /// Reconstruct the omitted endpoints. The indexes below are zero-based.
 pub(crate) fn reconstruct_knots(
+    ctx: &DecodeContext<'_>,
     knots: &[f64],
     order: usize,
     cv_count: usize,
 ) -> Result<Vec<f64>, GeometryError> {
-    let ([start, end], capacity, _) =
+    let ([start, end], capacity) =
         reconstructed_endpoints(knots.len(), order, cv_count, |index| knots[index])?;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )?;
     let mut result = ctx.collection_vec(capacity, "Rhino NURBS reconstructed knots")?;
-    result.push(start.get());
-    result.extend_from_slice(knots);
-    result.push(end.get());
+    fill_reconstructed_knots(ctx, &mut result, knots, [start.get(), end.get()], capacity)?;
     Ok(result)
 }
 
 fn reconstruct_checked_knots(
+    ctx: &DecodeContext<'_>,
     knots: &[FiniteReal],
     order: usize,
     cv_count: usize,
 ) -> Result<KnotVector, GeometryError> {
-    let ([start, end], capacity, _) =
+    let ([start, end], capacity) =
         reconstructed_endpoints(knots.len(), order, cv_count, |index| knots[index].get())?;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )?;
-    let mut result = ctx.collection_vec(capacity, "Rhino NURBS reconstructed knots")?;
-    result.push(start);
-    result.extend_from_slice(knots);
-    result.push(end);
-    KnotVector::from_finite_lanes(result)
+    let mut result = Vec::new();
+    let _storage = ctx
+        .reserve_temporary_vec(&mut result, capacity, "Rhino NURBS reconstructed knots")
+        .map_err(CodecError::from)?;
+    fill_reconstructed_knots(ctx, &mut result, knots, [start, end], capacity)?;
+    KnotVector::from_finite_lanes(ctx, result)?
         .map_err(|_| GeometryError::unpositioned("NURBS reconstructed knots are invalid"))
+}
+
+fn fill_reconstructed_knots<T: Copy>(
+    ctx: &DecodeContext<'_>,
+    output: &mut Vec<T>,
+    knots: &[T],
+    [start, end]: [T; 2],
+    count: usize,
+) -> Result<(), CodecError> {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(count),
+        "Rhino NURBS reconstructed knots",
+    )?;
+    output.push(start);
+    output.extend_from_slice(knots);
+    output.push(end);
+    Ok(())
 }
 
 fn reconstructed_endpoints(
@@ -1424,7 +1379,7 @@ fn reconstructed_endpoints(
     order: usize,
     cv_count: usize,
     knot: impl Fn(usize) -> f64,
-) -> Result<([FiniteReal; 2], usize, u64), GeometryError> {
+) -> Result<([FiniteReal; 2], usize), GeometryError> {
     let m = order
         .checked_add(cv_count)
         .and_then(|value| value.checked_sub(2))
@@ -1455,45 +1410,57 @@ fn reconstructed_endpoints(
     let capacity = order.checked_add(cv_count).ok_or_else(|| {
         GeometryError::not_implemented("NURBS reconstructed knot count exceeds address space")
     })?;
-    let allocation_bytes = capacity
-        .checked_mul(8)
-        .map(cadmpeg_core::decode::u64_from_index)
-        .ok_or_else(|| {
-            GeometryError::not_implemented("NURBS reconstructed knot bytes exceed address space")
-        })?;
-    Ok(([start, end], capacity, allocation_bytes))
+    Ok(([start, end], capacity))
 }
 
-pub(crate) fn periodic_knots(knots: &[f64], order: usize, cv_count: usize) -> bool {
-    periodic_knots_by(knots, order, cv_count, |value| *value, true)
+pub(crate) fn periodic_knots(
+    ctx: &DecodeContext<'_>,
+    knots: &[f64],
+    order: usize,
+    cv_count: usize,
+) -> Result<bool, CodecError> {
+    periodic_knots_by(ctx, knots, order, cv_count, |value| *value, true)
 }
 
-fn periodic_knots_checked(knots: &[FiniteReal], order: usize, cv_count: usize) -> bool {
-    periodic_knots_by(knots, order, cv_count, |value| value.get(), false)
+fn periodic_knots_checked(
+    ctx: &DecodeContext<'_>,
+    knots: &[FiniteReal],
+    order: usize,
+    cv_count: usize,
+) -> Result<bool, CodecError> {
+    periodic_knots_by(ctx, knots, order, cv_count, |value| value.get(), false)
 }
 
 fn periodic_knots_by<T>(
+    ctx: &DecodeContext<'_>,
     knots: &[T],
     order: usize,
     cv_count: usize,
     value: impl Fn(&T) -> f64,
     require_source_finite: bool,
-) -> bool {
+) -> Result<bool, CodecError> {
     // This is ON_IsKnotVectorPeriodic over the stored, zero-based knot array.
     if order < 3 || cv_count < order || (order <= 4 && cv_count < order + 2) {
-        return false;
+        return Ok(false);
     }
     if order > 4 && cv_count < 2 * order - 2 {
-        return false;
+        return Ok(false);
     }
-    let scale = knots
-        .iter()
-        .fold(0.0_f64, |scale, knot| scale.max(value(knot).abs()));
-    if scale == 0.0
-        || !scale.is_finite()
-        || require_source_finite && knots.iter().any(|knot| !value(knot).is_finite())
-    {
-        return false;
+    let mut scale = 0.0_f64;
+    for knot in knots {
+        ctx.charge_work(1, "Rhino periodic knot scale")?;
+        scale = scale.max(value(knot).abs());
+    }
+    if scale == 0.0 || !scale.is_finite() {
+        return Ok(false);
+    }
+    if require_source_finite {
+        for knot in knots {
+            ctx.charge_work(1, "Rhino periodic knot finiteness")?;
+            if !value(knot).is_finite() {
+                return Ok(false);
+            }
+        }
     }
     let knot = |index: usize| value(&knots[index]) / scale;
     let mut tolerance = (knot(order - 1) - knot(order - 3)).abs() * f64::EPSILON.sqrt();
@@ -1502,14 +1469,15 @@ fn periodic_knots_by<T>(
     let mut index = 0;
     let mut other = cv_count - order + 1;
     while paired > 0 {
+        ctx.charge_work(1, "Rhino periodic knot comparison")?;
         if ((knot(index + 1) - knot(index)) + (knot(other) - knot(other + 1))).abs() > tolerance {
-            return false;
+            return Ok(false);
         }
         index += 1;
         other += 1;
         paired -= 1;
     }
-    true
+    Ok(true)
 }
 
 fn validate_stored_domain(

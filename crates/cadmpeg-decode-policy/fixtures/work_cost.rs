@@ -1,14 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 pub struct DecodeContext;
 impl DecodeContext {
-    pub fn cost_sum(&self, left: u64, right: u64, _operation: &str) -> Result<u64, ()> { left.checked_add(right).ok_or(()) }
-    pub fn cost_product(&self, left: u64, right: u64, _operation: &str) -> Result<u64, ()> { left.checked_mul(right).ok_or(()) }
-    pub fn charge_work(&self, _amount: u64, _operation: &str) -> Result<(), ()> { Ok(()) }
+    pub fn cost_sum(&self, left: u64, right: u64, _operation: &str) -> Result<u64, ()> {
+        left.checked_add(right).ok_or(())
+    }
+    pub fn cost_product(&self, left: u64, right: u64, _operation: &str) -> Result<u64, ()> {
+        left.checked_mul(right).ok_or(())
+    }
+    pub fn charge_work(&self, _amount: u64, _operation: &str) -> Result<(), ()> {
+        Ok(())
+    }
 }
 pub fn admitted(ctx: &DecodeContext, text: &str, pattern: &str) -> Result<(), ()> {
     let positions = ctx.cost_sum(text.len() as u64, 1, "search")?;
     let comparisons = ctx.cost_sum(pattern.len() as u64, 1, "search")?;
-    ctx.charge_work(ctx.cost_product(positions, comparisons, "search")?, "search")?;
+    ctx.charge_work(
+        ctx.cost_product(positions, comparisons, "search")?,
+        "search",
+    )?;
     let _result = text.find(pattern);
     Ok(())
 }

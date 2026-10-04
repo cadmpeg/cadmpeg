@@ -107,8 +107,8 @@ fn finalize_relations(
 ) -> Result<Vec<RmCreationDisplayDataRelation>, CodecError> {
     ctx.stable_sort_by_key(
         &mut relations,
-            |value| value.encoding.offset(),
-            Ord::cmp,
+        |value| value.encoding.offset(),
+        Ord::cmp,
         "sort NX creation display relations",
     )?;
     for (ordinal, relation) in relations.iter_mut().enumerate() {

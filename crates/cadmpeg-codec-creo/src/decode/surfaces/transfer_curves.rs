@@ -190,10 +190,14 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
                 geometry,
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.format_retained(
-                        format_args!("VisibGeom:{}", row.id),
-                        "creo carrier intersection source object ID",
-                    )?, "validate nonblank text")?
+                    object_id: cadmpeg_core::text::NonBlankString::for_decode(
+                        ctx,
+                        ctx.format_retained(
+                            format_args!("VisibGeom:{}", row.id),
+                            "creo carrier intersection source object ID",
+                        )?,
+                        "validate nonblank text",
+                    )?
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
@@ -443,10 +447,14 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                 geometry,
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.format_retained(
-                        format_args!("VisibGeom:{}", row.id),
-                        "creo NURBS boundary source object ID",
-                    )?, "validate nonblank text")?
+                    object_id: cadmpeg_core::text::NonBlankString::for_decode(
+                        ctx,
+                        ctx.format_retained(
+                            format_args!("VisibGeom:{}", row.id),
+                            "creo NURBS boundary source object ID",
+                        )?,
+                        "validate nonblank text",
+                    )?
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
@@ -896,6 +904,7 @@ mod tests {
             id: SurfaceId::mint("creo:visibgeom:surface#1".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 NurbsSurface::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                         1,
                         vec![0.0, 0.0, 1.0, 1.0],
@@ -915,6 +924,7 @@ mod tests {
                     ),
                     false,
                 )
+                .expect("fixture constructor admission")
                 .expect("valid test surface"),
             )),
             source_object: None,

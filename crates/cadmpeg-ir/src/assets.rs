@@ -97,7 +97,8 @@ pub struct Asset {
 fn deserialize_uri<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<NonBlankString, D::Error> {
-    NonBlankString::try_from(String::deserialize(deserializer)?).ok()
+    NonBlankString::try_from(String::deserialize(deserializer)?)
+        .ok()
         .ok_or_else(|| serde::de::Error::custom("asset uri must not be empty"))
 }
 
@@ -134,13 +135,17 @@ impl Asset {
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let name = name
             .map(|name| {
-                NonBlankString::for_decode(ctx, name, "validate asset name")?.ok_or_else(|| cadmpeg_core::CodecError::malformed("asset name must not be empty"))
+                NonBlankString::for_decode(ctx, name, "validate asset name")?.ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("asset name must not be empty")
+                })
             })
             .transpose()?;
         let media_type = media_type
             .map(|media_type| {
                 NonBlankString::for_decode(ctx, media_type, "validate asset media type")?
-                    .ok_or_else(|| cadmpeg_core::CodecError::malformed("asset media_type must not be empty"))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("asset media_type must not be empty")
+                    })
             })
             .transpose()?;
         Ok(Self {
@@ -159,8 +164,19 @@ impl TryFrom<AssetWire> for Asset {
     fn try_from(wire: AssetWire) -> Result<Self, Self::Error> {
         Ok(Self {
             id: wire.id,
-            name: wire.name.map(|value| NonBlankString::try_from(value).map_err(|_| "asset name must not be empty")).transpose()?,
-            media_type: wire.media_type.map(|value| NonBlankString::try_from(value).map_err(|_| "asset media_type must not be empty")).transpose()?,
+            name: wire
+                .name
+                .map(|value| {
+                    NonBlankString::try_from(value).map_err(|_| "asset name must not be empty")
+                })
+                .transpose()?,
+            media_type: wire
+                .media_type
+                .map(|value| {
+                    NonBlankString::try_from(value)
+                        .map_err(|_| "asset media_type must not be empty")
+                })
+                .transpose()?,
             content: wire.content,
             native_ref: wire.native_ref,
         })
@@ -231,7 +247,8 @@ mod tests {
         let content = AssetContent::Embedded {
             data: AssetData::new(vec![0]).expect("nonempty data"),
         };
-        assert!(Asset::try_new(&cadmpeg_test_support::service_decode_context(), 
+        assert!(Asset::try_new(
+            &cadmpeg_test_support::service_decode_context(),
             AssetId::mint("synthetic:test:asset#asset").expect("id"),
             Some(String::new()),
             None,
@@ -239,7 +256,8 @@ mod tests {
             None
         )
         .is_err());
-        assert!(Asset::try_new(&cadmpeg_test_support::service_decode_context(), 
+        assert!(Asset::try_new(
+            &cadmpeg_test_support::service_decode_context(),
             AssetId::mint("synthetic:test:asset#asset").expect("id"),
             None,
             Some(String::new()),
@@ -262,3 +280,5 @@ mod tests {
 cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
 cadmpeg_core::named_optional_field!(deserialize_asset_wire_name, String, "name");
 cadmpeg_core::named_optional_field!(deserialize_asset_wire_media_type, String, "media_type");
+
+mod identity_rewrite;

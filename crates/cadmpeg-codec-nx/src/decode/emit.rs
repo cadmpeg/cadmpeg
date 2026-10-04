@@ -22,7 +22,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::eval::{curve_point_with_budget, finite_or_refusal};
+use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveMetadata};
 use cadmpeg_ir::geometry::{
@@ -207,14 +207,14 @@ pub(super) fn emit_topology(
                 .shell_fields()
                 .is_some_and(|fields| fields.body.map(u32::from) == Some(body_xmt))
         }) {
-            annotations.note_for_decode(
+            annotations.note(
                 ctx,
                 id.as_str(),
                 source_stream,
                 cadmpeg_core::decode::u64_from_index(shell.pos()),
                 Some("UNRESOLVED_BODY_REFERENCE"),
             )?;
-            annotations.exactness_for_decode(ctx, id.as_str(), Exactness::Unknown)?;
+            annotations.exactness(ctx, id.as_str(), Exactness::Unknown)?;
         }
         ctx.insert_btree_map(
             &mut bodies,
@@ -268,16 +268,16 @@ pub(super) fn emit_topology(
                     "REGION",
                 )?;
             } else {
-                annotations.note_for_decode(
+                annotations.note(
                     ctx,
                     region.as_str(),
                     source_stream,
                     cadmpeg_core::decode::u64_from_index(node.pos()),
                     Some("UNRESOLVED_REGION_REFERENCE"),
                 )?;
-                annotations.exactness_for_decode(ctx, region.as_str(), Exactness::Unknown)?;
+                annotations.exactness(ctx, region.as_str(), Exactness::Unknown)?;
             }
-            annotations.derived_for_decode(ctx, region.as_str(), "body")?;
+            annotations.derived(ctx, region.as_str(), "body")?;
             ctx.reserve_vec(&mut ir.model.regions, 1, "nx emitted regions")?;
             ir.model.regions.push(Region {
                 id: region.try_clone_for_decode(ctx, "nx region identity copy")?,
@@ -406,7 +406,7 @@ pub(super) fn emit_topology(
         )?;
         if tolerance.is_some() {
             annotations
-                .derived_for_decode(ctx, &vertex, "tolerance")
+                .derived(ctx, &vertex, "tolerance")
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
         ctx.reserve_vec(&mut ir.model.vertices, 1, "nx emitted vertices")?;
@@ -538,14 +538,14 @@ pub(super) fn emit_topology(
                     &cadmpeg_ir::identity_component!("edge-parametric-construction"),
                     node.xmt(),
                 )?;
-                annotations.note_for_decode(
+                annotations.note(
                     ctx,
                     carrier.as_str(),
                     source_stream,
                     cadmpeg_core::decode::u64_from_index(node.pos()),
                     Some("PARAMETRIC_SURFACE_CURVE"),
                 )?;
-                annotations.derived_for_decode(ctx, carrier.as_str(), "geometry")?;
+                annotations.derived(ctx, carrier.as_str(), "geometry")?;
                 ctx.reserve_vec(&mut ir.model.curves, 1, "nx parametric edge curves")?;
                 ir.model.curves.push(Curve {
                     id: carrier.try_clone_for_decode(ctx, "nx parametric edge carrier")?,
@@ -557,7 +557,7 @@ pub(super) fn emit_topology(
                     source_object: None,
                 });
 
-                let _attached = ir.model.add_procedural_curve_for_decode(
+                let _attached = ir.model.add_procedural_curve(
                     ctx,
                     &carrier.try_clone_for_decode(ctx, "nx parametric construction owner")?,
                     ProceduralCurve::new(
@@ -661,7 +661,7 @@ pub(super) fn emit_topology(
         annotate_node(ctx, annotations, id.as_str(), source_stream, node, "EDGE")?;
         if decoded_tolerance(fields.tolerance()).is_some() {
             annotations
-                .derived_for_decode(ctx, &id, "tolerance")
+                .derived(ctx, &id, "tolerance")
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
         if let (Some(carrier), Some(range)) = (&curve, param_range) {
@@ -757,7 +757,7 @@ pub(super) fn emit_topology(
         annotate_node(ctx, annotations, id.as_str(), source_stream, node, "FACE")?;
         if decoded_tolerance(fields.tolerance()).is_some() {
             annotations
-                .derived_for_decode(ctx, &id, "tolerance")
+                .derived(ctx, &id, "tolerance")
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
         ctx.reserve_vec(&mut pending_faces, 1, "nx pending faces")?;
@@ -871,7 +871,7 @@ pub(super) fn emit_topology(
         }
     }
     let (valid_pcurve_fins, fallback_pcurves) = {
-        let index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx)?;
+        let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
         let valid_pcurve_fins = fin_ids
             .keys()
             .map(|fin_xmt| -> Result<Option<u32>, CodecError> {
@@ -889,25 +889,27 @@ pub(super) fn emit_topology(
                             face.surface
                                 .and_then(|target| surfaces.get(&u32::from(target)))
                         })?;
-                    let carrier = fields
+                    let carrier_id = fields
                         .curve_xmt
-                        .and_then(|target| pcurves.get(&u32::from(target)))
-                        .and_then(|id| index.pcurves(id.as_str()))?;
+                        .and_then(|target| pcurves.get(&u32::from(target)))?;
                     let use_range = fields
                         .curve_xmt
                         .and_then(|target| trim_ranges.get(&u32::from(target)))
                         .copied()
                         .and_then(ordered_parameter_range);
-                    let parameter_range = use_range
-                        .or(carrier
-                            .parameter_range()
-                            .map(cadmpeg_ir::units::FiniteVector::get))
-                        .or_else(|| pcurve_parameter_range(&carrier.geometry));
-                    Some((edge, support, carrier, parameter_range))
+                    Some((edge, support, carrier_id, use_range))
                 })();
-                let Some((edge, support, carrier, parameter_range)) = candidate else {
+                let Some((edge, support, carrier_id, use_range)) = candidate else {
                     return Ok(None);
                 };
+                let Some(carrier) = index.pcurves(carrier_id.as_str(), ctx)? else {
+                    return Ok(None);
+                };
+                let parameter_range = use_range
+                    .or(carrier
+                        .parameter_range()
+                        .map(cadmpeg_ir::units::FiniteVector::get))
+                    .or_else(|| pcurve_parameter_range(&carrier.geometry));
                 let Some(endpoints) = pcurve_endpoint_witness_with_index_and_budget(
                     &index,
                     edge,
@@ -922,7 +924,10 @@ pub(super) fn emit_topology(
                 else {
                     return Ok(None);
                 };
-                let Some(curve) = index.edges(edge.as_str()).and_then(|edge| edge.curve()) else {
+                let Some(curve) = index
+                    .edges(edge.as_str(), ctx)?
+                    .and_then(|edge| edge.curve())
+                else {
                     return Ok(None);
                 };
                 let Some(parameter_range) = parameter_range else {
@@ -1134,17 +1139,17 @@ pub(super) fn emit_topology(
                     &cadmpeg_ir::identity_component!("intersection-pcurve"),
                     fin_xmt,
                 )?;
-                annotations.note_for_decode(
+                annotations.note(
                     ctx,
                     pcurve_id.as_str(),
                     source_stream,
                     cadmpeg_core::decode::u64_from_index(node.pos()),
                     Some("INTERSECTION_PCURVE"),
                 )?;
-                annotations.derived_for_decode(ctx, pcurve_id.as_str(), "geometry")?;
-                annotations.derived_for_decode(ctx, pcurve_id.as_str(), "parameter_range")?;
+                annotations.derived(ctx, pcurve_id.as_str(), "geometry")?;
+                annotations.derived(ctx, pcurve_id.as_str(), "parameter_range")?;
                 if fit_tolerance.is_some() {
-                    annotations.derived_for_decode(ctx, pcurve_id.as_str(), "fit_tolerance")?;
+                    annotations.derived(ctx, pcurve_id.as_str(), "fit_tolerance")?;
                 }
                 ctx.reserve_vec(&mut ir.model.pcurves, 1, "nx fallback pcurves")?;
                 ir.model.pcurves.push(Pcurve {
@@ -1203,7 +1208,7 @@ pub(super) fn emit_topology(
                 coedges.push(fin_id.try_clone_for_decode(ctx, "nx loop coedge identity")?);
             }
             let ring = if all_resolved {
-                cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedges, Vec::new())
+                cadmpeg_ir::topology::LoopRing::new(ctx, coedges, Vec::new())
                     .map_err(cadmpeg_core::CodecError::from)?
                     .ok()
             } else {
@@ -1374,14 +1379,14 @@ pub(super) fn retain_unresolved_topology_carriers(
             &cadmpeg_ir::identity_component!("surface"),
             format_args!("unknown-{surface_xmt}"),
         )?;
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             id.as_str(),
             source_stream,
             cadmpeg_core::decode::u64_from_index(face.pos()),
             Some("UNRESOLVED_SURFACE_REFERENCE"),
         )?;
-        annotations.exactness_for_decode(ctx, id.as_str(), Exactness::Unknown)?;
+        annotations.exactness(ctx, id.as_str(), Exactness::Unknown)?;
         ctx.reserve_vec(&mut ir.model.surfaces, 1, "nx unresolved surfaces")?;
         ir.model.surfaces.push(Surface {
             id: id.try_clone_for_decode(ctx, "nx unresolved surface identity")?,
@@ -1408,14 +1413,14 @@ pub(super) fn retain_unresolved_topology_carriers(
             &cadmpeg_ir::identity_component!("curve"),
             format_args!("unknown-{curve_xmt}"),
         )?;
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             id.as_str(),
             source_stream,
             cadmpeg_core::decode::u64_from_index(edge.pos()),
             Some("UNRESOLVED_CURVE_REFERENCE"),
         )?;
-        annotations.exactness_for_decode(ctx, id.as_str(), Exactness::Unknown)?;
+        annotations.exactness(ctx, id.as_str(), Exactness::Unknown)?;
         ctx.reserve_vec(&mut ir.model.curves, 1, "nx unresolved curves")?;
         ir.model.curves.push(Curve {
             id: id.try_clone_for_decode(ctx, "nx unresolved curve identity")?,
@@ -1437,7 +1442,7 @@ pub(super) fn annotate_node(
     node: &Node,
     tag: &str,
 ) -> Result<(), CodecError> {
-    annotations.note_for_decode(
+    annotations.note(
         ctx,
         id,
         stream,
@@ -1539,22 +1544,22 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
         &cadmpeg_ir::identity_component!("vertex"),
         format_args!("closed-edge-{}", edge.xmt()),
     )?;
-    annotations.note_for_decode(
+    annotations.note(
         ctx,
         point.as_str(),
         source_stream,
         cadmpeg_core::decode::u64_from_index(edge.pos()),
         Some("CLOSED_EDGE_POINT"),
     )?;
-    annotations.exactness_for_decode(ctx, point.as_str(), Exactness::Inferred)?;
-    annotations.note_for_decode(
+    annotations.exactness(ctx, point.as_str(), Exactness::Inferred)?;
+    annotations.note(
         ctx,
         vertex.as_str(),
         source_stream,
         cadmpeg_core::decode::u64_from_index(edge.pos()),
         Some("CLOSED_EDGE_VERTEX"),
     )?;
-    annotations.exactness_for_decode(ctx, vertex.as_str(), Exactness::Inferred)?;
+    annotations.exactness(ctx, vertex.as_str(), Exactness::Inferred)?;
     ctx.reserve_vec(&mut ir.model.points, 1, "nx closed edge points")?;
     ir.model.points.push(Point::new(
         point.try_clone_for_decode(ctx, "nx closed edge point identity")?,
@@ -1702,11 +1707,12 @@ impl CurvePointCache {
         if let Some(point) = self.entries.get(curve).and_then(|values| values.get(&bits)) {
             return Ok(*point);
         }
-        let point = finite_or_refusal(curve_point_with_budget(
-            geometry,
-            parameter,
-            geometry_budget,
-        ))?;
+        let point = finite_or_refusal(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
+                .within_work_slice(geometry_budget, |admission| {
+                    cadmpeg_ir::eval::decode::curve_point(admission, geometry, parameter)
+                }),
+        )?;
         if self.len < MAX_CURVE_POINT_CACHE_ENTRIES {
             if !self.entries.contains_key(curve) {
                 ctx.insert_btree_map(
@@ -2413,12 +2419,14 @@ mod tests {
                 CurveId::mint("test:model:entity#synthetic:curve").expect("identity grammar");
             let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(1.0, 2.0, 3.0), Point3::new(5.0, 7.0, 9.0)],
                     None,
                     false,
                 )
+                .expect("fixture constructor admission")
                 .expect("valid test curve"),
             ));
             let geometry_budget = GeometryWorkBudget::from_context(

@@ -605,8 +605,8 @@ fn array_spans(
     }
     ctx.stable_sort_by_key(
         &mut spans,
-            |value| (value.start,value.count),
-            Ord::cmp,
+        |value| (value.start, value.count),
+        Ord::cmp,
         "sldprt parasolid array spans sort",
     )?;
     ctx.charge_work(
@@ -752,8 +752,15 @@ fn unique_surface_knot_span(
     }
     ctx.stable_sort_by_key(
         &mut pairs,
-            |value| { let (left_knots, left_multiplicities) = value; (left_knots.start,left_knots.count,left_multiplicities.start,) },
-            Ord::cmp,
+        |value| {
+            let (left_knots, left_multiplicities) = value;
+            (
+                left_knots.start,
+                left_knots.count,
+                left_multiplicities.start,
+            )
+        },
+        Ord::cmp,
         "sldprt parasolid surface knot span pairs sort",
     )?;
     ctx.charge_work(
@@ -1113,7 +1120,10 @@ pub(crate) fn scan_curve_carriers(
         if control.len() != expected_control_values {
             continue;
         }
-        if !unique_knots.iter().all(|value| value.is_finite()) || !knots_nondecreasing(unique_knots)
+        if !unique_knots.iter().all(|value| value.is_finite())
+            || !knots_nondecreasing(unique_knots, |count| {
+                ctx.charge_work(count, "IR NURBS knot order")
+            })?
         {
             continue;
         }
@@ -1157,7 +1167,7 @@ pub(crate) fn scan_curve_carriers(
         if knots.len() != expected {
             continue;
         }
-        let nurbs = match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(
+        let nurbs = match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
             ctx,
             descriptor.degree,
             knots,
@@ -1425,8 +1435,12 @@ pub(crate) fn scan_surface_carriers(
         }
         if !u_unique.iter().all(|value| value.is_finite())
             || !v_unique.iter().all(|value| value.is_finite())
-            || !knots_nondecreasing(&u_unique)
-            || !knots_nondecreasing(&v_unique)
+            || !knots_nondecreasing(&u_unique, |count| {
+                ctx.charge_work(count, "IR NURBS knot order")
+            })?
+            || !knots_nondecreasing(&v_unique, |count| {
+                ctx.charge_work(count, "IR NURBS knot order")
+            })?
         {
             continue;
         }
@@ -1515,7 +1529,7 @@ pub(crate) fn scan_surface_carriers(
         } else {
             None
         };
-        let nurbs = match cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes_for_decode(
+        let nurbs = match cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
             ctx,
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 descriptor.u_degree,

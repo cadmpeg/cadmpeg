@@ -1687,11 +1687,12 @@ fn compound_loft_scale(
 
 /// Exact rational quadratic NURBS of a full native ellipse.
 pub(super) fn ellipse_to_nurbs(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     center: [f64; 3],
     normal: [f64; 3],
     major: [f64; 3],
     ratio: f64,
-) -> Option<NurbsCurve> {
+) -> Option<Result<NurbsCurve, cadmpeg_core::CodecError>> {
     let length = major[0].hypot(major[1]).hypot(major[2]);
     (length.is_finite() && length > 0.0).then_some(())?;
     let minor_direction = [
@@ -1721,11 +1722,10 @@ pub(super) fn ellipse_to_nurbs(
     let corner = cadmpeg_ir::scalar::NonZeroReal::FRAC_1_SQRT_2;
     let full = cadmpeg_ir::scalar::NonZeroReal::ONE;
     let pole = |point, weight| cadmpeg_ir::geometry::nurbs::WeightedPole3 { point, weight };
-    NurbsCurve::new(
+    propagate_resource!(NurbsCurve::new(
+        ctx,
         2,
-        vec![
-            0.0, 0.0, 0.0, 0.25, 0.25, 0.5, 0.5, 0.75, 0.75, 1.0, 1.0, 1.0,
-        ],
+        vec![0.0, 0.0, 0.0, 0.25, 0.25, 0.5, 0.5, 0.75, 0.75, 1.0, 1.0, 1.0,],
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational {
             points: vec![
                 pole(at(1.0, 0.0), full),
@@ -1740,8 +1740,9 @@ pub(super) fn ellipse_to_nurbs(
             ],
         },
         false,
-    )
+    ))
     .ok()
+    .map(Ok)
 }
 
 /// The highest stream save format version whose revision-gated loft profile
@@ -2680,9 +2681,10 @@ fn sweep_law_expression(
             .any(|character| !character.is_whitespace())
             .then_some(())?;
         let copied = propagate_resource!(ctx.copy_retained_text(source, "ASM sweep law text"));
-        return Some(Ok(EmbeddedLawExpression::Text(
-            propagate_resource!(cadmpeg_core::text::NonBlankString::for_decode(ctx, copied, "validate nonblank text").map_err(cadmpeg_core::CodecError::from))?,
-        )));
+        return Some(Ok(EmbeddedLawExpression::Text(propagate_resource!(
+            cadmpeg_core::text::NonBlankString::for_decode(ctx, copied, "validate nonblank text")
+                .map_err(cadmpeg_core::CodecError::from)
+        )?)));
     }
     law_expression(ctx, cur, 0)
 }
@@ -2845,7 +2847,12 @@ fn law_formula_resolving(
         )?));
     }
     Some(Ok(EmbeddedLawFormula::Named {
-        name: propagate_resource!(cadmpeg_core::text::NonBlankString::for_decode(ctx, name, "validate nonblank text").map_err(cadmpeg_core::CodecError::from))?,
+        name: propagate_resource!(cadmpeg_core::text::NonBlankString::for_decode(
+            ctx,
+            name,
+            "validate nonblank text"
+        )
+        .map_err(cadmpeg_core::CodecError::from))?,
         variables,
     }))
 }
@@ -4742,7 +4749,9 @@ fn resolve_t_spline_subtransform(
             program,
             separator,
             values,
-        } => match cadmpeg_ir::geometry::InlineTSplineSubtransform::try_new(ctx, program, separator, values) {
+        } => match cadmpeg_ir::geometry::InlineTSplineSubtransform::try_new(
+            ctx, program, separator, values,
+        ) {
             Ok(value) => Some(Ok(value)),
             Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => Some(Err(error)),
             Err(_) => None,
@@ -5369,8 +5378,16 @@ mod ellipse_tests {
     #[test]
     fn numerical_followup_ellipse_accepts_extreme_finite_radii() {
         for radius in [1.0, 1e200, 1e-200] {
-            let curve =
-                super::ellipse_to_nurbs([0.; 3], [0., 0., 1.], [radius, 0., 0.], 0.5).unwrap();
+            let curve = super::ellipse_to_nurbs(
+                &cadmpeg_test_support::service_decode_context(),
+                [0.; 3],
+                [0., 0., 1.],
+                [radius, 0., 0.],
+                0.5,
+            )
+            .transpose()
+            .expect("ellipse admission")
+            .unwrap();
             let poles = curve.control_points();
             assert_eq!(poles[0].x, radius * super::LEN_TO_MM);
             assert_eq!(poles[2].y, 0.5 * radius * super::LEN_TO_MM);

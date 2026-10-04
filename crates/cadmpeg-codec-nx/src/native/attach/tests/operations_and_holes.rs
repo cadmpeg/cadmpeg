@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::native::attach::feature_projection::block_placement;
-use crate::native::attach::feature_projection::new_body_boolean_op;
 use crate::native::attach::feature_projection::non_boolean_feature_definition;
 use crate::native::attach::feature_projection::non_modeling_history_definition;
 use crate::native::attach::feature_projection::sphere_body_projection;
-use crate::native::attach::feature_projection::NewBodyEvidence;
 use crate::native::attach::projects_neutral_feature;
 use crate::native::attach::text_semantic_annotation;
 use crate::native::attach::BodyId;
@@ -13,10 +11,8 @@ use crate::native::attach::BooleanOp;
 use crate::native::attach::CadIr;
 use crate::native::attach::DeleteBodyField;
 use crate::native::attach::FeatureDefinition;
-use crate::native::attach::FeatureId;
 use crate::native::attach::FeatureOperation;
 use crate::native::attach::FeatureTreeNodeRole;
-use crate::native::history::BodyWriterHistory;
 use crate::native::segments::BooleanOffsetStoreResolution;
 use cadmpeg_ir::features::UnresolvedFamily;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
@@ -139,8 +135,10 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
         FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Native("nx:om-object-index#94".to_string()),
-                BodySelection::Native("nx:om-object-indices#122".to_string())
+                BodySelection::Native("nx:om-object-indices#122".to_string()),
+                &cadmpeg_test_support::service_decode_context(),
             )
+            .expect("operand admission")
             .unwrap(),
 
             op: BooleanKind::Cut,
@@ -161,8 +159,10 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
         FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Native("nx:om-object-index#94".to_string()),
-                BodySelection::Native("nx:om-object-indices#122".to_string())
+                BodySelection::Native("nx:om-object-indices#122".to_string()),
+                &cadmpeg_test_support::service_decode_context(),
             )
+            .expect("operand admission")
             .unwrap(),
 
             op: BooleanKind::Cut,
@@ -189,15 +189,21 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::local(
                     vec!["nx:om-data-blocks-3:block#94".to_string()],
-                    "nx:om-object-index#94".to_string()
+                    "nx:om-object-index#94".to_string(),
+                    &cadmpeg_test_support::service_decode_context(),
                 )
+                .expect("body selection admission")
                 .unwrap(),
                 BodySelection::local(
                     vec!["nx:om-data-blocks-3:block#122".to_string()],
-                    "nx:om-object-indices#122".to_string()
+                    "nx:om-object-indices#122".to_string(),
+                    &cadmpeg_test_support::service_decode_context(),
                 )
-                .unwrap()
+                .expect("body selection admission")
+                .unwrap(),
+                &cadmpeg_test_support::service_decode_context(),
             )
+            .expect("operand admission")
             .unwrap(),
 
             op: BooleanKind::Cut,
@@ -232,8 +238,10 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
         FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Native("nx:om-object-index#401".to_string()),
-                BodySelection::Native("nx:om-object-indices#402,403".to_string())
+                BodySelection::Native("nx:om-object-indices#402,403".to_string()),
+                &cadmpeg_test_support::service_decode_context(),
             )
+            .expect("operand admission")
             .unwrap(),
 
             op: BooleanKind::Join,
@@ -278,8 +286,10 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
                     "nx:om-body-object#20".to_string(),
                     "nx:om-body-object#30".to_string(),
                 ],
-                "nx:om-object-indices#10,20,30".to_string()
+                "nx:om-object-indices#10,20,30".to_string(),
+                &cadmpeg_test_support::service_decode_context(),
             )
+            .expect("body selection admission")
             .unwrap())
             .try_into()
             .unwrap(),
@@ -322,14 +332,17 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
         sew_body_feature_definition(Some(10), &[], &references, &roots, &resolved,),
         Some(FeatureDefinition::Operation(FeatureOperation::SewBodies {
             bodies: (BodySelection::Resolved {
-                bodies: vec![
-                    BodyId::mint("test:model:entity#target".to_string()).expect("identity grammar"),
-                    BodyId::mint("test:model:entity#first-tool".to_string())
-                        .expect("identity grammar"),
-                    BodyId::mint("test:model:entity#second-tool".to_string())
-                        .expect("identity grammar"),
-                ]
-                .try_into()
+                bodies: cadmpeg_ir::features::DistinctMembers::try_from(
+                    vec![
+                        BodyId::mint("test:model:entity#target".to_string())
+                            .expect("identity grammar"),
+                        BodyId::mint("test:model:entity#first-tool".to_string())
+                            .expect("identity grammar"),
+                        BodyId::mint("test:model:entity#second-tool".to_string())
+                            .expect("identity grammar"),
+                    ],
+                    &cadmpeg_test_support::service_decode_context()
+                )
                 .expect("distinct bodies"),
                 native: "nx:om-object-indices#10,20,30".to_string(),
             })
@@ -352,8 +365,10 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
                     "nx:om-body-object#10".to_string(),
                     "nx:om-body-object#20".to_string(),
                 ],
-                "nx:om-object-indices#10,20,30".to_string()
+                "nx:om-object-indices#10,20,30".to_string(),
+                &cadmpeg_test_support::service_decode_context(),
             )
+            .expect("body selection admission")
             .unwrap())
             .try_into()
             .unwrap(),
@@ -400,8 +415,10 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
                     "nx:om-data-blocks-4:block#71".to_string(),
                     "nx:om-data-blocks-4:block#70".to_string(),
                 ],
-                "nx:om-object-indices#72,71,70".to_string()
+                "nx:om-object-indices#72,71,70".to_string(),
+                &cadmpeg_test_support::service_decode_context(),
             )
+            .expect("body selection admission")
             .unwrap())
             .try_into()
             .unwrap(),
@@ -438,8 +455,10 @@ fn nx_delete_body_requires_a_primary_body_field() {
         FeatureDefinition::Operation(FeatureOperation::DeleteBody {
             bodies: BodySelection::local(
                 vec!["nx:om-body-object#20".to_string()],
-                "nx:om-object-index#20".to_string()
+                "nx:om-object-index#20".to_string(),
+                &cadmpeg_test_support::service_decode_context(),
             )
+            .expect("body selection admission")
             .unwrap(),
             mode: BodyRetentionMode::DeleteSelected,
         })
@@ -449,8 +468,10 @@ fn nx_delete_body_requires_a_primary_body_field() {
         FeatureDefinition::Operation(FeatureOperation::DeleteBody {
             bodies: BodySelection::local(
                 vec!["nx:om-body-object#72".to_string()],
-                "nx:om-object-index#72".to_string()
+                "nx:om-object-index#72".to_string(),
+                &cadmpeg_test_support::service_decode_context(),
             )
+            .expect("body selection admission")
             .unwrap(),
             mode: BodyRetentionMode::DeleteSelected,
         })
@@ -467,8 +488,10 @@ fn nx_delete_body_requires_a_primary_body_field() {
         FeatureDefinition::Operation(FeatureOperation::DeleteBody {
             bodies: BodySelection::local(
                 vec!["nx:om-data-blocks-2:block#72".to_string()],
-                "nx:om-object-index#72".to_string()
+                "nx:om-object-index#72".to_string(),
+                &cadmpeg_test_support::service_decode_context(),
             )
+            .expect("body selection admission")
             .unwrap(),
             mode: BodyRetentionMode::DeleteSelected,
         })
@@ -499,15 +522,21 @@ fn nx_trim_body_retains_exact_input_store_target_and_tools() {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::local(
                     vec!["nx:om-data-blocks-2:block#114".to_string()],
-                    "nx:om-object-index#114".to_string()
+                    "nx:om-object-index#114".to_string(),
+                    &cadmpeg_test_support::service_decode_context(),
                 )
+                .expect("body selection admission")
                 .unwrap(),
                 BodySelection::local(
                     vec!["nx:om-data-blocks-2:block#113".to_string()],
-                    "nx:om-object-indices#113".to_string()
+                    "nx:om-object-indices#113".to_string(),
+                    &cadmpeg_test_support::service_decode_context(),
                 )
-                .unwrap()
+                .expect("body selection admission")
+                .unwrap(),
+                &cadmpeg_test_support::service_decode_context(),
             )
+            .expect("operand admission")
             .unwrap(),
 
             keep: BodyTrimSide::Unresolved,
@@ -526,11 +555,15 @@ fn nx_trim_body_retains_exact_input_store_target_and_tools() {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::local(
                     vec!["nx:om-data-blocks-2:block#114".to_string()],
-                    "nx:om-object-index#114".to_string()
+                    "nx:om-object-index#114".to_string(),
+                    &cadmpeg_test_support::service_decode_context(),
                 )
+                .expect("body selection admission")
                 .unwrap(),
-                BodySelection::Unresolved
+                BodySelection::Unresolved,
+                &cadmpeg_test_support::service_decode_context(),
             )
+            .expect("operand admission")
             .unwrap(),
 
             keep: BodyTrimSide::Unresolved,
@@ -566,15 +599,21 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::local(
                     vec!["nx:om-body-object#10".to_string()],
-                    "nx:om-object-index#10".to_string()
+                    "nx:om-object-index#10".to_string(),
+                    &cadmpeg_test_support::service_decode_context(),
                 )
+                .expect("body selection admission")
                 .unwrap(),
                 BodySelection::local(
                     vec!["nx:om-body-object#20".to_string()],
-                    "nx:om-object-indices#20".to_string()
+                    "nx:om-object-indices#20".to_string(),
+                    &cadmpeg_test_support::service_decode_context(),
                 )
-                .unwrap()
+                .expect("body selection admission")
+                .unwrap(),
+                &cadmpeg_test_support::service_decode_context(),
             )
+            .expect("operand admission")
             .unwrap(),
 
             keep: BodyTrimSide::Unresolved,
@@ -595,20 +634,26 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
         FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::Resolved {
-                    bodies: vec![BodyId::mint("test:model:entity#target".to_string())
-                        .expect("identity grammar")]
-                    .try_into()
+                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(
+                        vec![BodyId::mint("test:model:entity#target".to_string())
+                            .expect("identity grammar")],
+                        &cadmpeg_test_support::service_decode_context()
+                    )
                     .expect("distinct bodies"),
                     native: "nx:om-object-index#10".to_string(),
                 },
                 BodySelection::Resolved {
-                    bodies: vec![BodyId::mint("test:model:entity#tool".to_string())
-                        .expect("identity grammar")]
-                    .try_into()
+                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(
+                        vec![BodyId::mint("test:model:entity#tool".to_string())
+                            .expect("identity grammar")],
+                        &cadmpeg_test_support::service_decode_context()
+                    )
                     .expect("distinct bodies"),
                     native: "nx:om-object-indices#20".to_string(),
-                }
+                },
+                &cadmpeg_test_support::service_decode_context(),
             )
+            .expect("operand admission")
             .unwrap(),
 
             keep: BodyTrimSide::Unresolved,
@@ -620,11 +665,15 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::local(
                     vec!["nx:om-body-object#10".to_string()],
-                    "nx:om-object-index#10".to_string()
+                    "nx:om-object-index#10".to_string(),
+                    &cadmpeg_test_support::service_decode_context(),
                 )
+                .expect("body selection admission")
                 .unwrap(),
-                BodySelection::Unresolved
+                BodySelection::Unresolved,
+                &cadmpeg_test_support::service_decode_context(),
             )
+            .expect("operand admission")
             .unwrap(),
 
             keep: BodyTrimSide::Unresolved,
@@ -1042,10 +1091,11 @@ fn nx_extract_body_projects_its_primary_source_namespace() {
         extract_body_feature_definition(Some(20), &[], &roots, &bodies),
         FeatureDefinition::Operation(FeatureOperation::ExtractBody {
             source: BodySelection::Resolved {
-                bodies: vec![
-                    BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")
-                ]
-                .try_into()
+                bodies: cadmpeg_ir::features::DistinctMembers::try_from(
+                    vec![BodyId::mint("test:model:entity#body".to_string())
+                        .expect("identity grammar")],
+                    &cadmpeg_test_support::service_decode_context()
+                )
                 .expect("distinct bodies"),
                 native: "nx:om-object-index#20".to_string(),
             },
@@ -1061,8 +1111,10 @@ fn nx_extract_body_projects_its_primary_source_namespace() {
         FeatureDefinition::Operation(FeatureOperation::ExtractBody {
             source: BodySelection::local(
                 vec!["nx:om-data-blocks-2:block#72".to_string()],
-                "nx:om-object-index#72".to_string()
+                "nx:om-object-index#72".to_string(),
+                &cadmpeg_test_support::service_decode_context(),
             )
+            .expect("body selection admission")
             .unwrap(),
         })
     );
@@ -1100,8 +1152,10 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
             FeatureDefinition::Operation(FeatureOperation::Combine {
                 operands: cadmpeg_ir::features::CombineOperands::new(
                     BodySelection::Unresolved,
-                    BodySelection::Unresolved
+                    BodySelection::Unresolved,
+                    &cadmpeg_test_support::service_decode_context(),
                 )
+                .expect("operand admission")
                 .unwrap(),
 
                 op,
@@ -1239,8 +1293,10 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::Unresolved,
-                BodySelection::Unresolved
+                BodySelection::Unresolved,
+                &cadmpeg_test_support::service_decode_context(),
             )
+            .expect("operand admission")
             .unwrap(),
 
             keep: BodyTrimSide::Unresolved,
@@ -1808,150 +1864,6 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
     });
 }
 
-#[test]
-fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
-    crate::test_support::with_decode_context(|ctx| {
-        let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
-        let provisional =
-            FeatureId::mint("synthetic:test:id#initial-bodies").expect("identity grammar");
-        let mut history = BodyWriterHistory::default();
-        history
-            .record_writer(ctx, None, None, std::slice::from_ref(&body), &provisional)
-            .expect("admitted writer history");
-
-        assert_eq!(
-            new_body_boolean_op(&NewBodyEvidence {
-                has_complete_projection: true,
-                has_complete_primitive_construction: false,
-                outputs: std::slice::from_ref(&body),
-                body_reference_count: 0,
-                provisional_feature: Some(&provisional),
-                native_primary_body: None,
-                offset_store_primary_body: None,
-                history: &history,
-            }),
-            BooleanOp::NewBody
-        );
-
-        let fallback_prior =
-            FeatureId::mint("synthetic:test:id#fallback-prior-feature").expect("identity grammar");
-        let mut fallback_history = BodyWriterHistory::default();
-        fallback_history
-            .record_writer(
-                ctx,
-                None,
-                None,
-                std::slice::from_ref(&body),
-                &fallback_prior,
-            )
-            .expect("admitted writer history");
-        assert_eq!(
-            new_body_boolean_op(&NewBodyEvidence {
-                has_complete_projection: true,
-                has_complete_primitive_construction: false,
-                outputs: std::slice::from_ref(&body),
-                body_reference_count: 0,
-                provisional_feature: Some(&provisional),
-                native_primary_body: None,
-                offset_store_primary_body: None,
-                history: &fallback_history,
-            }),
-            BooleanOp::Unresolved
-        );
-
-        let prior = FeatureId::mint("synthetic:test:id#prior-feature").expect("identity grammar");
-        history
-            .record_writer(ctx, Some(7), None, std::slice::from_ref(&body), &prior)
-            .expect("admitted writer history");
-        assert_eq!(
-            new_body_boolean_op(&NewBodyEvidence {
-                has_complete_projection: true,
-                has_complete_primitive_construction: false,
-                outputs: std::slice::from_ref(&body),
-                body_reference_count: 1,
-                provisional_feature: Some(&provisional),
-                native_primary_body: Some(7),
-                offset_store_primary_body: None,
-                history: &history,
-            }),
-            BooleanOp::Unresolved
-        );
-        assert_eq!(
-            new_body_boolean_op(&NewBodyEvidence {
-                has_complete_projection: false,
-                has_complete_primitive_construction: false,
-                outputs: std::slice::from_ref(&body),
-                body_reference_count: 0,
-                provisional_feature: Some(&provisional),
-                native_primary_body: None,
-                offset_store_primary_body: None,
-                history: &history,
-            }),
-            BooleanOp::Unresolved
-        );
-
-        let offset_prior =
-            FeatureId::mint("synthetic:test:id#offset-prior-feature").expect("identity grammar");
-        let mut offset_history = BodyWriterHistory::default();
-        offset_history
-            .record_writer(ctx, None, Some("store:block#7"), &[], &offset_prior)
-            .expect("admitted writer history");
-        assert_eq!(
-            new_body_boolean_op(&NewBodyEvidence {
-                has_complete_projection: true,
-                has_complete_primitive_construction: false,
-                outputs: std::slice::from_ref(&body),
-                body_reference_count: 1,
-                provisional_feature: Some(&provisional),
-                native_primary_body: None,
-                offset_store_primary_body: Some("store:block#7"),
-                history: &offset_history,
-            }),
-            BooleanOp::Unresolved
-        );
-
-        let offset_without_prior = BodyWriterHistory::default();
-        assert_eq!(
-            new_body_boolean_op(&NewBodyEvidence {
-                has_complete_projection: true,
-                has_complete_primitive_construction: false,
-                outputs: std::slice::from_ref(&body),
-                body_reference_count: 1,
-                provisional_feature: Some(&provisional),
-                native_primary_body: None,
-                offset_store_primary_body: Some("store:block#8"),
-                history: &offset_without_prior,
-            }),
-            BooleanOp::NewBody
-        );
-
-        assert_eq!(
-            new_body_boolean_op(&NewBodyEvidence {
-                has_complete_projection: true,
-                has_complete_primitive_construction: false,
-                outputs: std::slice::from_ref(&body),
-                body_reference_count: 2,
-                provisional_feature: Some(&provisional),
-                native_primary_body: None,
-                offset_store_primary_body: None,
-                history: &offset_without_prior,
-            }),
-            BooleanOp::Unresolved
-        );
-
-        assert_eq!(
-            new_body_boolean_op(&NewBodyEvidence {
-                has_complete_projection: true,
-                has_complete_primitive_construction: true,
-                outputs: std::slice::from_ref(&body),
-                body_reference_count: 2,
-                provisional_feature: Some(&provisional),
-                native_primary_body: None,
-                offset_store_primary_body: None,
-                history: &offset_without_prior,
-            }),
-            BooleanOp::NewBody
-        );
-    });
-}
 mod hole_geometry;
+
+mod provisional_blocks;

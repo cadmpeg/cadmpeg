@@ -11,7 +11,8 @@ use crate::records::{
 };
 use cadmpeg_core::decode::{DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::geometry::pcurve::{PcurveNurbs, PcurveNurbsPoles};
+use cadmpeg_ir::geometry::pcurve::evaluator::PcurveEvaluatorLanes;
+use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::scalar::PositiveLength;
 use std::collections::{HashMap, HashSet};
@@ -405,7 +406,9 @@ fn sketch_arrangement_faces(
             }
         }
     }
-    let mut outgoing = ctx.collect_indexed_vec(nodes.len(), "f3d_arrangement_outgoing", |_| Ok(Vec::<(usize, bool, f64)>::new()))?;
+    let mut outgoing = ctx.collect_indexed_vec(nodes.len(), "f3d_arrangement_outgoing", |_| {
+        Ok(Vec::<(usize, bool, f64)>::new())
+    })?;
     let _outgoing_reservation = Some(
         ({
             let bytes = u64::try_from(edges.len())
@@ -683,7 +686,7 @@ fn arrangement_arc_nurbs_meet_only_at_endpoint(
     let endpoint = if first_shared {
         0
     } else {
-        curve.control_points().len() - 1
+        curve.pole_rows().count() - 1
     };
     let normal = Point2::new(shared.u - center.u, shared.v - center.v);
     let support = |point: Point2| normal.u * (point.u - shared.u) + normal.v * (point.v - shared.v);
@@ -980,12 +983,12 @@ fn arrangement_split_parameters(
     }
     ctx.stable_sort_by_key(
         &mut parameters[..],
-            |value| (value-range[0])/(range[1]-range[0]),
-            f64::total_cmp,
+        |value| (value - range[0]) / (range[1] - range[0]),
+        f64::total_cmp,
         "sort f3d design geometry 2",
     )?;
     let parameter_tolerance =
-        tolerance / geometric!(sketch_geometry_speed_bound(geometry, range)).max(tolerance);
+        tolerance / geometric!(sketch_geometry_speed_bound(ctx, geometry, range)?).max(tolerance);
     parameters.dedup_by(|left, right| (*left - *right).abs() <= parameter_tolerance);
     Ok((parameters.len() >= 2).then_some(parameters))
 }
@@ -1009,8 +1012,8 @@ fn arrangement_circle_angles(
     }
     ctx.stable_sort_by(
         &mut angles[..],
-            |value| value,
-            f64::total_cmp,
+        |value| value,
+        f64::total_cmp,
         "sort f3d arrangement circle angles",
     )?;
     angles.dedup_by(|left, right| (*left - *right).abs() <= tolerance / radius.get());
@@ -1368,7 +1371,7 @@ fn sketch_geometry_parameter_range(
         } => Some([start.get(), end.get()]),
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => Some([
             curve.knots()[index_from_u32(curve.degree())],
-            curve.knots()[curve.control_points().len()],
+            curve.knots()[curve.pole_rows().count()],
         ]),
         _ => None,
     }
@@ -1381,7 +1384,7 @@ fn profile_use_polyline(
     tolerance: f64,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<Point2>>, CodecError> {
-    let travel = geometric!(sketch_geometry_speed_bound(&entity.geometry, range))
+    let travel = geometric!(sketch_geometry_speed_bound(ctx, &entity.geometry, range)?)
         * (range[1] - range[0]).abs();
     let ordinary_midpoint = (range[0] + range[1]) * 0.5;
     let midpoint = if ordinary_midpoint.is_finite() {
@@ -1430,12 +1433,13 @@ fn profile_use_polyline(
 }
 
 fn sketch_geometry_speed_bound(
+    ctx: &DecodeContext<'_>,
     geometry: &cadmpeg_ir::sketches::SketchGeometry,
     range: [f64; 2],
-) -> Option<f64> {
+) -> Result<Option<f64>, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
-    match geometry.definition() {
+    Ok(match geometry.definition() {
         SketchGeometryDefinition::Line { start, end } => {
             Some(point_distance(start.get(), end.get()))
         }
@@ -1444,10 +1448,12 @@ fn sketch_geometry_speed_bound(
         SketchGeometryDefinition::Ellipse { radii, .. } => {
             Some(radii.major().get().max(radii.minor().get()))
         }
-        SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => nurbs_speed_bound(curve),
+        SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
+            nurbs_speed_bound(ctx, curve)?
+        }
         _ if range[0] == range[1] => None,
         _ => None,
-    }
+    })
 }
 
 fn sketch_geometry_point(
@@ -1483,32 +1489,24 @@ fn sketch_geometry_point(
             ))
         }
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
-            let geometry = nurbs_evaluation_geometry(curve, ctx, "f3d nurbs evaluator input")?;
-            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(
-                ctx, &geometry, parameter,
-            )?)?
+            let lanes = PcurveEvaluatorLanes::new(
+                ctx,
+                curve.pole_rows(),
+                "f3d nurbs evaluator poles",
+                "f3d nurbs evaluator weights",
+            )?;
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::nurbs_pcurve_uv(
+                ctx,
+                curve.degree(),
+                curve.knots(),
+                lanes.points(),
+                lanes.weights(),
+                parameter,
+            ))?
             .map(Point2::from)
         }
         _ => None,
     })
-}
-
-pub(super) fn nurbs_pcurve_evaluator_lanes(
-    curve: &PcurveNurbs,
-    ctx: &DecodeContext<'_>,
-) -> Result<(Vec<Point2>, Option<Vec<f64>>), CodecError> {
-    {
-        let count = u64::try_from(curve.pole_rows().count())
-            .map_err(|_| ctx.refuse_codec_limit("f3d nurbs evaluator poles", 0, 1))?;
-        ctx.charge_collection_items(count, "f3d nurbs evaluator poles")?;
-        if matches!(curve.pole_rows(), PcurveNurbsPoles::Rational { .. }) {
-            ctx.charge_collection_items(count, "f3d nurbs evaluator weights")?;
-        }
-    }
-    Ok((
-        curve.pole_rows().try_raw_points()?,
-        curve.pole_rows().try_weights()?,
-    ))
 }
 
 fn point_on_profile_boundary_use(
@@ -1629,7 +1627,7 @@ pub(super) fn region_containing_points(
             let hole = geometric!(u32::try_from(*hole).ok());
             ctx.push_vec(&mut converted_holes, hole, "f3d profile hole index")?;
         }
-        return Ok(SketchProfileRegion::loops_for_decode(
+        return Ok(SketchProfileRegion::loops(
             geometric!(u32::try_from(*outer).ok()),
             converted_holes,
             ctx,
@@ -1667,12 +1665,10 @@ pub(super) fn region_containing_points(
         let hole = geometric!(u32::try_from(hole).ok());
         ctx.push_vec(&mut converted_holes, hole, "f3d profile hole index")?;
     }
-    Ok(SketchProfileRegion::loops_for_decode(
-        geometric!(u32::try_from(outer).ok()),
-        converted_holes,
-        ctx,
-    )?
-    .ok())
+    Ok(
+        SketchProfileRegion::loops(geometric!(u32::try_from(outer).ok()), converted_holes, ctx)?
+            .ok(),
+    )
 }
 
 /// Return true when every selected closed profile bounds a disjoint region.
@@ -2162,32 +2158,21 @@ fn certified_arc_tubes(
     Ok(Some(tubes))
 }
 
-fn nurbs_evaluation_geometry(
-    curve: &PcurveNurbs,
-    ctx: &DecodeContext<'_>,
-    operation: &'static str,
-) -> Result<cadmpeg_ir::geometry::pcurve::PcurveGeometry, CodecError> {
-    let copies = cadmpeg_core::decode::u64_from_index(curve.knots().len())
-        .checked_add(cadmpeg_core::decode::u64_from_index(
-            curve.pole_rows().count(),
-        ))
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-    ctx.charge_work(copies, operation)?;
-    Ok(cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
-        nurbs: curve.try_clone_for_decode(ctx, operation)?,
-    })
-}
-
 fn certified_nurbs_tubes(
     curve: &PcurveNurbs,
     target_error: f64,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<CertifiedCurveTube>>, CodecError> {
-    let speed = geometric!(nurbs_speed_bound(curve));
+    let speed = geometric!(nurbs_speed_bound(ctx, curve)?);
     let degree = index_from_u32(curve.degree());
     let knots = curve.knots();
-    let geometry = nurbs_evaluation_geometry(curve, ctx, "f3d nurbs tube input")?;
-    let count = curve.pole_rows().count();
+    let lanes = PcurveEvaluatorLanes::new(
+        ctx,
+        curve.pole_rows(),
+        "f3d nurbs tube points",
+        "f3d nurbs tube weights",
+    )?;
+    let count = lanes.points().len();
     let mut tubes = Vec::new();
     for span in knots[degree..=count].windows(2) {
         if span[0] == span[1] {
@@ -2215,19 +2200,25 @@ fn certified_nurbs_tubes(
                 }
             };
             let start = *geometric!(cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::decode::pcurve_uv_for_decode(
+                cadmpeg_ir::eval::nurbs_pcurve_uv(
                     ctx,
-                    &geometry,
+                    curve.degree(),
+                    knots,
+                    lanes.points(),
+                    lanes.weights(),
                     geometric!(parameter(index)),
-                )?
+                )
             )?)
             .as_raw();
             let end = *geometric!(cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::decode::pcurve_uv_for_decode(
+                cadmpeg_ir::eval::nurbs_pcurve_uv(
                     ctx,
-                    &geometry,
+                    curve.degree(),
+                    knots,
+                    lanes.points(),
+                    lanes.weights(),
                     geometric!(parameter(index + 1)),
-                )?
+                )
             )?)
             .as_raw();
             {
@@ -2256,8 +2247,12 @@ fn subdivision_count(travel_bound: f64, target_error: f64) -> Option<usize> {
         .flatten()
 }
 
-fn nurbs_speed_bound(curve: &PcurveNurbs) -> Option<f64> {
-    cadmpeg_ir::geometry::nurbs::bounds::speed_bound_by(
+fn nurbs_speed_bound(
+    ctx: &DecodeContext<'_>,
+    curve: &PcurveNurbs,
+) -> Result<Option<f64>, CodecError> {
+    Ok(cadmpeg_ir::geometry::nurbs::bounds::speed_bound_by(
+        ctx,
         curve.degree(),
         curve.knots(),
         curve.pole_rows().count(),
@@ -2269,8 +2264,8 @@ fn nurbs_speed_bound(curve: &PcurveNurbs) -> Option<f64> {
         },
         |index| curve.pole_rows().weight_at(index).unwrap_or(1.0),
         [0.0, 0.0],
-    )
-    .map(cadmpeg_ir::scalar::FiniteReal::get)
+    )?
+    .map(cadmpeg_ir::scalar::FiniteReal::get))
 }
 
 fn circular_arc_profile_segments(
@@ -2944,8 +2939,8 @@ fn historical_owned_faces(
     }
     ctx.sort_unstable_by(
         &mut faces,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "sort F3D historical owned faces",
     )?;
     faces.dedup();
@@ -3017,13 +3012,18 @@ pub(super) fn point_on_sketch_entity(
         if curve.periodic() {
             return Ok(false);
         }
-        let (control_points, weights) =
-            crate::design::geometry::nurbs_pcurve_evaluator_lanes(curve, ctx)?;
+        let lanes = PcurveEvaluatorLanes::new(
+            ctx,
+            curve.pole_rows(),
+            "f3d nurbs evaluator poles",
+            "f3d nurbs evaluator weights",
+        )?;
         return cadmpeg_ir::eval::nurbs_pcurve_contains_point(
+            ctx,
             curve.degree(),
             curve.knots(),
-            &control_points,
-            weights.as_deref(),
+            lanes.points(),
+            lanes.weights(),
             point,
             tolerance,
         )
@@ -3250,8 +3250,8 @@ pub(super) fn closed_sketch_profiles(
     }
     ctx.stable_sort_by_key(
         &mut order[..],
-            |value| edges[*value].0.id(),
-            Ord::cmp,
+        |value| edges[*value].0.id(),
+        Ord::cmp,
         "sort f3d design geometry 6",
     )?;
     for first_edge in order {
@@ -3368,8 +3368,8 @@ pub(super) fn closed_sketch_profiles(
     }
     ctx.stable_sort_by(
         &mut profiles[..],
-            |value| &value[0].entity,
-            Ord::cmp,
+        |value| &value[0].entity,
+        Ord::cmp,
         "sort f3d design geometry 8",
     )?;
     Ok(profiles)
@@ -3466,8 +3466,8 @@ fn branched_line_profiles(
     }
     ctx.stable_sort_by_key(
         &mut starts[..],
-            |value| (edges[*value/2].0.id(),*value%2),
-            Ord::cmp,
+        |value| (edges[*value / 2].0.id(), *value % 2),
+        Ord::cmp,
         "sort f3d design geometry 10",
     )?;
     for start in starts {
@@ -3786,15 +3786,30 @@ pub(super) fn sketch_entity_endpoints(
             Some([point_at(start_angle.get()), point_at(end_angle.get())])
         }
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
-            let geometry = nurbs_evaluation_geometry(curve, ctx, "f3d nurbs evaluator input")?;
+            let lanes = PcurveEvaluatorLanes::new(
+                ctx,
+                curve.pole_rows(),
+                "f3d nurbs evaluator poles",
+                "f3d nurbs evaluator weights",
+            )?;
             let start_parameter = curve.knots()[index_from_u32(curve.degree())];
-            let end_parameter = curve.knots()[curve.pole_rows().count()];
-            let start = cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, &geometry, start_parameter)?,
-            )?;
-            let end = cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, &geometry, end_parameter)?,
-            )?;
+            let end_parameter = curve.knots()[lanes.points().len()];
+            let start = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::nurbs_pcurve_uv(
+                ctx,
+                curve.degree(),
+                curve.knots(),
+                lanes.points(),
+                lanes.weights(),
+                start_parameter,
+            ))?;
+            let end = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::nurbs_pcurve_uv(
+                ctx,
+                curve.degree(),
+                curve.knots(),
+                lanes.points(),
+                lanes.weights(),
+                end_parameter,
+            ))?;
             start
                 .zip(end)
                 .map(|(start, end)| [*start.as_raw(), *end.as_raw()])

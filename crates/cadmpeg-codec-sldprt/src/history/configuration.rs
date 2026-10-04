@@ -1457,7 +1457,7 @@ fn insert_configuration_dependency(
     ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
     if !dependencies.contains(feature) {
         let id = copy_configuration_feature_id(ctx, feature, OPERATION)?;
-        dependencies.insert_for_decode(ctx, id, OPERATION)?;
+        dependencies.insert(ctx, id, OPERATION)?;
     }
     Ok(())
 }
@@ -1582,7 +1582,9 @@ struct ConfigurationIdentitySet<'id, T> {
     match_operation: &'static str,
 }
 
-impl<'id, T: Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost> ConfigurationIdentitySet<'id, T> {
+impl<'id, T: Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost>
+    ConfigurationIdentitySet<'id, T>
+{
     fn new(insert_operation: &'static str, match_operation: &'static str) -> Self {
         Self {
             ids: HashSet::new(),

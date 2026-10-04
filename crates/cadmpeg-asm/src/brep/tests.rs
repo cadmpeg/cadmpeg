@@ -126,6 +126,7 @@ fn exact_circle_directrix() -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
     let center = Point3::new(2.0, 3.0, 4.0);
     let point = |x, y| Point3::new(center.x + x, center.y + y, center.z);
     cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 4.0],
         vec![
@@ -152,6 +153,7 @@ fn exact_circle_directrix() -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
         ]),
         false,
     )
+    .expect("fixture constructor admission")
     .unwrap()
 }
 
@@ -193,17 +195,21 @@ fn exact_circle_extrusion_reduces_to_cylinder_only_along_normal() {
     );
     let mut approximate = exact_circle_directrix();
     approximate
-        .try_map_control_points(|index, point| {
-            let mut point = point.get();
-            if index == 3 {
-                point.x += 1.0e-5;
-            }
-            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                    "control_points contains a non-finite point".into(),
-                )
-            })
-        })
+        .try_map_control_points(
+            |index, point| {
+                let mut point = point.get();
+                if index == 3 {
+                    point.x += 1.0e-5;
+                }
+                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("pole edit admission")
         .unwrap();
     assert!(rational_four_arc_circle(&resource_ctx, &approximate).is_none());
 }
@@ -254,6 +260,7 @@ fn degree_elevated_circle() -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
         })
         .unzip();
     cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         3,
         vec![
             0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0, 4.0, 4.0, 4.0, 4.0,
@@ -262,6 +269,7 @@ fn degree_elevated_circle() -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
         Some(weights),
         false,
     )
+    .expect("fixture constructor admission")
     .unwrap()
 }
 
@@ -283,17 +291,21 @@ fn exact_circle_recognition_is_projective_and_degree_invariant() {
     });
     {
         let replacement = cadmpeg_ir::geometry::nurbs::NurbsPoles3::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             scaled.pole_rows().raw_points(),
             scaled_weights,
         )
+        .expect("fixture pole pairing admission")
         .expect("scaled weights are finite and non-zero");
         edit::replace(&mut scaled, |previous| {
             cadmpeg_ir::geometry::nurbs::NurbsCurve::new(
+                &cadmpeg_test_support::service_decode_context(),
                 previous.degree(),
                 previous.knots().to_vec(),
                 replacement,
                 previous.periodic(),
             )
+            .expect("fixture final NURBS admission")
         })
     }
     .unwrap();
@@ -315,17 +327,21 @@ fn exact_circle_recognition_is_projective_and_degree_invariant() {
         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)))
     ));
     elevated
-        .try_map_control_points(|index, point| {
-            let mut point = point.get();
-            if index == 5 {
-                point.x += 1.0e-5;
-            }
-            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                    "control_points contains a non-finite point".into(),
-                )
-            })
-        })
+        .try_map_control_points(
+            |index, point| {
+                let mut point = point.get();
+                if index == 5 {
+                    point.x += 1.0e-5;
+                }
+                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("pole edit admission")
         .unwrap();
     assert!(rational_four_arc_circle(&resource_ctx, &elevated).is_none());
 }
@@ -350,12 +366,14 @@ fn cylinder(origin: Point3, axis: Vector3, radius: f64) -> SurfaceGeometry {
 
 fn linear_spine(points: Vec<Point3>) -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
     cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         points,
         None,
         false,
     )
+    .expect("fixture constructor admission")
     .unwrap()
 }
 
@@ -409,17 +427,21 @@ fn constant_circular_plane_plane_blend_reduces_to_tangent_cylinder() {
         unreachable!()
     };
     spine
-        .try_map_control_points(|index, point| {
-            let mut point = point.get();
-            if index == 1 {
-                point.x = 2.1;
-            }
-            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                    "control_points contains a non-finite point".into(),
-                )
-            })
-        })
+        .try_map_control_points(
+            |index, point| {
+                let mut point = point.get();
+                if index == 1 {
+                    point.x = 2.1;
+                }
+                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("pole edit admission")
         .unwrap();
     assert!(analytic_procedural_surface(&resource_ctx, &definition).is_none());
 }
@@ -435,17 +457,21 @@ fn constant_circular_plane_cylinder_blend_reduces_to_tangent_torus() {
     .expect("test decode context");
     let mut circle = exact_circle_directrix();
     circle
-        .try_map_control_points(|_, point| {
-            let mut point = point.get();
-            point.x -= 2.0;
-            point.y -= 3.0;
-            point.z -= 3.0;
-            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                    "control_points contains a non-finite point".into(),
-                )
-            })
-        })
+        .try_map_control_points(
+            |_, point| {
+                let mut point = point.get();
+                point.x -= 2.0;
+                point.y -= 3.0;
+                point.z -= 3.0;
+                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("pole edit admission")
         .unwrap();
     let mut definition = nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Blend {
         supports: Box::new([
@@ -973,10 +999,12 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
             face: face_id,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                 cadmpeg_ir::topology::LoopRing::new(
+                    &cadmpeg_test_support::service_decode_context(),
                     vec![cadmpeg_ir::ids::CoedgeId::mint("test:model:coedge#0")
                         .expect("identity grammar")],
                     Vec::new(),
                 )
+                .expect("fixture ring admission")
                 .expect("valid loop ring"),
             ),
         }],
@@ -1300,6 +1328,7 @@ fn reversed_edge_negates_its_pcurve_validation_interval() {
         Some([[-0.55, -0.60], [0.55, 0.60]])
     );
     let candidate = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![
@@ -1309,6 +1338,7 @@ fn reversed_edge_negates_its_pcurve_validation_interval() {
         None,
         false,
     )
+    .expect("fixture pcurve construction admission")
     .unwrap();
     assert_eq!(
         pcurve_ranges_on_domain(&candidate, Some(&edge)),
@@ -1538,6 +1568,7 @@ fn circle_recognition_is_invariant_under_common_weight_scale() {
     for curve in [exact_circle_directrix(), degree_elevated_circle()] {
         for scale in [1e-200, 1.0, 1e200] {
             let rescaled = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 curve.degree(),
                 curve.knots().to_vec(),
                 curve.pole_rows().raw_points(),
@@ -1551,6 +1582,7 @@ fn circle_recognition_is_invariant_under_common_weight_scale() {
                 ),
                 false,
             )
+            .expect("fixture constructor admission")
             .unwrap();
             assert!(rational_four_arc_circle(&resource_ctx, &rescaled).is_some());
         }
@@ -1558,12 +1590,14 @@ fn circle_recognition_is_invariant_under_common_weight_scale() {
     let curve = exact_circle_directrix();
     for scale in [1e-200, 1.0, 1e200] {
         let polynomial = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             curve.degree(),
             curve.knots().to_vec(),
             curve.pole_rows().raw_points(),
             Some(vec![scale; 9]),
             false,
         )
+        .expect("fixture constructor admission")
         .unwrap();
         assert!(rational_four_arc_circle(&resource_ctx, &polynomial).is_none());
     }
@@ -1906,83 +1940,4 @@ fn remap_owned_ids_refuses_collection_limit() {
     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
 }
 
-#[test]
-fn source_attribute_string_refuses_retained_limit() {
-    use super::attributes::source_attribute;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    use cadmpeg_ir::attributes::AttributeTarget;
-
-    let record = Record {
-        index: 1,
-        name: "string-st-attrib".into(),
-        tokens: vec![Token::Str("value".into())].into(),
-        offset: 0,
-        len: 0,
-    };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-        4 * std::mem::size_of::<cadmpeg_ir::attributes::AttributeValue>(),
-    );
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = source_attribute(&ctx, &record, AttributeTarget::Document, FORMAT)
-        .expect_err("one attribute string exceeds zero retained bytes");
-    let CodecError::ResourceLimit(limit) = error else {
-        panic!("expected retained refusal: {error:?}");
-    };
-    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-    assert_eq!(limit.operation, "ASM attribute string");
-}
-
-#[test]
-fn source_attribute_record_name_refuses_retained_limit() {
-    use super::attributes::source_attribute;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    use cadmpeg_ir::attributes::AttributeTarget;
-
-    let record = Record {
-        index: 1,
-        name: "empty-st-attrib".into(),
-        tokens: Vec::new().into(),
-        offset: 0,
-        len: 0,
-    };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = source_attribute(&ctx, &record, AttributeTarget::Document, FORMAT)
-        .expect_err("one attribute name exceeds zero retained bytes");
-    let CodecError::ResourceLimit(limit) = error else {
-        panic!("expected retained refusal: {error:?}");
-    };
-    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-    assert_eq!(limit.operation, "ASM attribute record name");
-}
-
-#[test]
-fn unknown_record_kind_refuses_retained_limit() {
-    use super::attributes::unknown_record_id;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let record = Record {
-        index: 1,
-        name: "unknown".into(),
-        tokens: Vec::new().into(),
-        offset: 0,
-        len: 0,
-    };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = unknown_record_id(&ctx, &record, FORMAT)
-        .expect_err("one unknown kind exceeds zero retained bytes");
-    let CodecError::ResourceLimit(limit) = error else {
-        panic!("expected retained refusal: {error:?}");
-    };
-    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-}
+mod attribute_limits;

@@ -113,8 +113,8 @@ fn finalize_assignments(
 ) -> Result<Vec<RmDisplayColorAssignment>, CodecError> {
     ctx.stable_sort_by_key(
         &mut assignments,
-            |value| value.frame.offset(),
-            Ord::cmp,
+        |value| value.frame.offset(),
+        Ord::cmp,
         "sort NX display color assignments",
     )?;
     for (ordinal, assignment) in assignments.iter_mut().enumerate() {

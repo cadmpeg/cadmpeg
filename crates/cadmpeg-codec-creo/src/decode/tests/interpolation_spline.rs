@@ -100,7 +100,9 @@ fn finite_local_system(values: [f64; 12]) -> cadmpeg_ir::units::FiniteVector<12>
 #[allow(clippy::unwrap_used)]
 fn interpolation_spline_remains_a_closed_extrusion_profile() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // Geometry closure owns this assertion; all sampled-carrier sort work is admitted.
+    policy.limits.max_work_units = u64::MAX;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
     let sketch_id = SketchId::mint("creo:model:sketch#spline".to_string()).unwrap();
@@ -111,6 +113,7 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         SketchEntityId::mint("creo:model:sketch_entity#second-line".to_string()).unwrap();
     let spline = SketchGeometry::nurbs(
         cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             3,
             vec![2.0, 2.0, 2.0, 2.0, 5.0, 5.0, 5.0, 5.0],
             vec![
@@ -122,6 +125,7 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
             Some(vec![1.0, 0.75, 0.75, 1.0]),
             false,
         )
+        .expect("fixture pcurve construction admission")
         .unwrap(),
     );
     let first_line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
@@ -167,7 +171,6 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
             .sketch_entities
             .push(SketchEntity::new(id, sketch_id.clone(), geometry));
     }
-
     let profiles = crate::decode::with_test_decode_ctx(|ctx| {
         resolved_sketch_profiles(
             ctx,
@@ -201,12 +204,14 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         &ctx,
         SketchGeometry::nurbs(
             cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
                 None,
                 false,
             )
+            .expect("fixture pcurve construction admission")
             .unwrap(),
         ),
         false,
@@ -228,7 +233,6 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         profile_segments_intersect(&ctx, &diagonal, &crossing_line, 1.0e-9, [None, None])
             .expect("service intersection resources")
     );
-
     for reversed in [false, true] {
         let start = if reversed { [0.0, 1.0] } else { [1.0, 0.0] };
         let end = if reversed { [1.0, 0.0] } else { [0.0, 1.0] };
@@ -252,8 +256,18 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
             nurbs.pole_rows().weights(),
             Some(vec![1.0, 0.75, 0.75, 1.0])
         );
-        let first = cadmpeg_ir::eval::pcurve_uv(&pcurve, 2.0).expect("spline start");
-        let last = cadmpeg_ir::eval::pcurve_uv(&pcurve, 5.0).expect("spline end");
+        let first = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &pcurve,
+            2.0,
+        )
+        .expect("spline start");
+        let last = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &pcurve,
+            5.0,
+        )
+        .expect("spline end");
         assert!((first.u - start[0]).abs() < 1.0e-12);
         assert!((first.v - start[1]).abs() < 1.0e-12);
         assert!((last.u - end[0]).abs() < 1.0e-12);
@@ -1865,7 +1879,11 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             definition,
-            outputs.try_into().expect("distinct output fixture"),
+            cadmpeg_ir::features::DistinctMembers::try_from(
+                outputs,
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("distinct output fixture"),
         ),
         native_ref: None,
     };
@@ -1885,9 +1903,11 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
     assert!(!preceding_features_establish_body(&ir));
 
     ir.model.features[0].evaluation.set_outputs(
-        (vec![BodyId::mint("creo:model:body#1".to_string()).expect("identity grammar")])
-            .try_into()
-            .expect("distinct output fixture"),
+        cadmpeg_ir::features::DistinctMembers::try_from(
+            vec![BodyId::mint("creo:model:body#1".to_string()).expect("identity grammar")],
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("distinct output fixture"),
     );
     assert!(preceding_features_establish_body(&ir));
 

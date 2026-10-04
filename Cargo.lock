@@ -412,6 +412,7 @@ dependencies = [
  "proptest",
  "schemars",
  "serde",
+ "serde-value",
  "serde_json",
  "sha2",
  "syn 2.0.118",

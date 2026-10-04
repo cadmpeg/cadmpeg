@@ -726,7 +726,10 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     .unwrap(),
                     reversed: false,
                 }],
+                &cadmpeg_test_support::service_decode_context(),
+                "spatial profile uniqueness",
             )
+            .expect("fixture collection admission")
             .unwrap()],
             native_ref: Some(placement.id.clone()),
         };
@@ -1870,10 +1873,22 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
         FeatureDefinition::Operation(FeatureOperation::Loft {
             sections: vec![
                 LoftSection::Profile(
-                    ProfileRef::spatial_sketch_profiles(spatial_sketch.clone(), vec![2]).unwrap(),
+                    ProfileRef::spatial_sketch_profiles(
+                        spatial_sketch.clone(),
+                        vec![2],
+                        &cadmpeg_test_support::service_decode_context(),
+                    )
+                    .expect("profile membership admission")
+                    .unwrap(),
                 ),
                 LoftSection::Profile(
-                    ProfileRef::spatial_sketch_profiles(spatial_sketch.clone(), vec![5]).unwrap(),
+                    ProfileRef::spatial_sketch_profiles(
+                        spatial_sketch.clone(),
+                        vec![5],
+                        &cadmpeg_test_support::service_decode_context(),
+                    )
+                    .expect("profile membership admission")
+                    .unwrap(),
                 ),
             ],
             guidance: cadmpeg_ir::features::LoftGuidance::Centerline(PathRef::Sketch(

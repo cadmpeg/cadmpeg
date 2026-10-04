@@ -173,8 +173,14 @@ fn card_summary_refuses_entry_attribute_and_text_limits_before_allocation() {
     let (parse_ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let (global, _) = crate::global::parse(&scan, &parse_ctx).unwrap();
-    let primary =
-        || crate::dialect::classify(&cadmpeg_test_support::service_decode_context(), crate::representation::Representation::FixedAscii, &global).unwrap();
+    let primary = || {
+        crate::dialect::classify(
+            &cadmpeg_test_support::service_decode_context(),
+            crate::representation::Representation::FixedAscii,
+            &global,
+        )
+        .unwrap()
+    };
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();

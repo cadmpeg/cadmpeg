@@ -547,6 +547,8 @@ fn transform_cycle_detection_does_not_rewalk_a_long_acyclic_prefix() {
     let input = serde_json::to_vec(&edges).unwrap();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // The graph traversal assertion admits all complete-key and node-movement work.
+    policy.limits.max_work_units = u64::MAX;
     let node_bytes = 11 * (std::mem::size_of::<u32>() + std::mem::size_of::<usize>())
         + 16 * std::mem::size_of::<usize>()
         + 2 * std::mem::align_of::<usize>();

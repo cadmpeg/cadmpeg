@@ -2333,7 +2333,9 @@ mod tests {
             crate::dialect::KernelHeaderRef::TextAsm(&header),
             crate::dialect::KernelHeaderRef::TextAcis(&header),
         ] {
-            let classified = crate::dialect::classify(&cadmpeg_test_support::service_decode_context(), family).unwrap();
+            let classified =
+                crate::dialect::classify(&cadmpeg_test_support::service_decode_context(), family)
+                    .unwrap();
             assert!(!classified
                 .declared()
                 .contains_key(crate::dialect::DECLARED_REFERENCE_WIDTH));

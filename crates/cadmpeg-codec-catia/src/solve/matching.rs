@@ -298,8 +298,14 @@ pub(crate) fn retain_distinct_matching_supports(
     let Some(node_count) = domains.len().checked_add(point_count) else {
         return Ok(None);
     };
-    let mut graph = ctx.collect_indexed_vec(node_count, "catia_match_support_graph", |_| Ok(Vec::new()))?;
-    let mut reverse = ctx.collect_indexed_vec(node_count, "catia_match_support_reverse", |_| Ok(Vec::new()))?;
+    let mut graph =
+        ctx.collect_indexed_vec(node_count, "catia_match_support_graph", |_| Ok(Vec::new()))?;
+    let mut reverse =
+        ctx.collect_indexed_vec(
+            node_count,
+            "catia_match_support_reverse",
+            |_| Ok(Vec::new()),
+        )?;
     let mut matched_points = ctx.alloc_filled(point_count, false, "catia_match_support_points")?;
     for (domain, values) in domains.iter().enumerate() {
         if !values.contains(&matching[domain]) || matched_points[matching[domain]] {
@@ -439,9 +445,12 @@ pub(crate) fn unique_coordinate_bijection(
             };
             order.push((count, vertex));
         }
-        ctx.sort_unstable_by(&mut order,
+        ctx.sort_unstable_by(
+            &mut order,
             |value| value,
-            Ord::cmp, "catia_bijection_order_sort")?;
+            Ord::cmp,
+            "catia_bijection_order_sort",
+        )?;
         let mut seen_vertices =
             ctx.alloc_filled(domains.len(), 0usize, "catia_bijection_seen_vertices")?;
         let mut seen_slots =
@@ -603,8 +612,11 @@ pub(crate) fn unique_coordinate_bijection(
         capacities[*class] += 1;
     }
     let mut slot_classes = Vec::new();
-    let mut slots_by_class =
-        ctx.collect_indexed_vec(capacities.len(), "catia_bijection_slots", |_| Ok(Vec::new()))?;
+    let mut slots_by_class = ctx.collect_indexed_vec(
+        capacities.len(),
+        "catia_bijection_slots",
+        |_| Ok(Vec::new()),
+    )?;
     for (class, capacity) in capacities.into_iter().enumerate() {
         for _ in 0..capacity {
             let slot = slot_classes.len();
@@ -636,7 +648,10 @@ pub(crate) fn unique_coordinate_bijection(
             }
         }
     }
-    let mut available = ctx.collect_indexed_vec(representatives.len(), "catia_bijection_available", |_| Ok(Vec::new()))?;
+    let mut available =
+        ctx.collect_indexed_vec(representatives.len(), "catia_bijection_available", |_| {
+            Ok(Vec::new())
+        })?;
     for (point, class) in point_classes.into_iter().enumerate() {
         ctx.push_vec(
             &mut available[class],
@@ -689,9 +704,9 @@ mod tests {
     #[test]
     fn coordinate_bijection_refuses_unadmitted_sort_key_scan() {
         let domains = [HashSet::from([0_usize])];
-        // One-element domain admission, projection, sort, and dedup precede the key scan.
+        // Validation, projection, two sort-measuring visits, dedup and four factory visits precede keys.
         let before_keys =
-            5 + 16 * u64::try_from(std::mem::size_of::<usize>()).expect("index bytes");
+            9 + 48 * u64::try_from(std::mem::size_of::<usize>()).expect("index bytes");
         crate::test_support::with_work_limit(before_keys, |ctx| {
             let cadmpeg_core::CodecError::ResourceLimit(limit) =
                 super::unique_coordinate_bijection(ctx, &domains, &[[0.0; 3]])
@@ -707,7 +722,10 @@ mod tests {
     #[test]
     fn coordinate_bijection_refuses_unadmitted_matching_visits() {
         let domains = [HashSet::from([0_usize])];
-        crate::test_support::with_work_limit(391, |ctx| {
+        // Domain and order sorts include both key operands; four initialized matching vectors precede visits.
+        let index_bytes = u64::try_from(std::mem::size_of::<usize>()).expect("index bytes");
+        let before_visits = 9 + 48 * index_bytes + 7 + 96 * index_bytes;
+        crate::test_support::with_work_limit(before_visits, |ctx| {
             let cadmpeg_core::CodecError::ResourceLimit(limit) =
                 super::unique_coordinate_bijection(ctx, &domains, &[[0.0; 3]])
                     .expect_err("matching visit must be admitted")

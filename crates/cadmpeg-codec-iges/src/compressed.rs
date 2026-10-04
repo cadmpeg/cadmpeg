@@ -718,7 +718,10 @@ fn parse_data_entity(
             u64_from_index(headers),
             "iges_compressed_parameter_line_headers",
         )?;
-        parameter_lines = ctx.collect_indexed_vec(line_count, "iges_compressed_parameter_lines", |_| Ok(Vec::<u8>::new()))?;
+        parameter_lines =
+            ctx.collect_indexed_vec(line_count, "iges_compressed_parameter_lines", |_| {
+                Ok(Vec::<u8>::new())
+            })?;
         let mut state = ParameterLexState::default();
         let mut terminated = false;
         for (index, line) in source_lines.iter().enumerate() {

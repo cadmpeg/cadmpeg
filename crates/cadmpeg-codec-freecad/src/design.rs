@@ -498,15 +498,7 @@ pub(crate) fn transfer(
             dependencies.len(),
             "fcstd distinct feature dependencies",
         )?;
-        dependency_members.extend_for_decode(
-            ctx,
-            dependencies,
-            "fcstd distinct feature dependencies",
-        )?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(outputs.len()),
-            "fcstd distinct feature outputs",
-        )?;
+        dependency_members.append(ctx, dependencies, "fcstd distinct feature dependencies")?;
         ctx.reserve_vec(&mut ir.model.features, 1, "fcstd neutral features")?;
         ir.model.features.push(Feature {
             id,
@@ -522,9 +514,8 @@ pub(crate) fn transfer(
             source_content: FeatureContent::default(),
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                 definition,
-                outputs
-                    .try_into()
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                cadmpeg_ir::features::DistinctMembers::try_from(outputs, ctx)
+                    .map_err(cadmpeg_core::CodecError::from)?,
             ),
             native_ref: Some(
                 ctx.copy_retained_text(object.id(), "fcstd feature native reference")?,
@@ -621,7 +612,7 @@ fn body_definition(
         BodyTipResolution::Invalid => return Ok(None),
     };
     Ok(
-        match cadmpeg_ir::features::TreeChildren::new_for_decode(children, active_child, ctx) {
+        match cadmpeg_ir::features::TreeChildren::new(children, active_child, ctx) {
             Ok(children) => Some(children),
             Err(cadmpeg_ir::features::FeatureCollectionError::Resource(limit)) => {
                 return Err(limit.into())
@@ -709,8 +700,8 @@ fn feature_ordinals<'a>(
     }
     ctx.sort_unstable_by(
         &mut source_ordinals,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "fcstd design source ordinals sort",
     )?;
     let mut emitted = BTreeSet::new();
@@ -1920,7 +1911,11 @@ fn parse_sketch(
                                 ctx.copy_retained_text(name, "fcstd sketch external document")
                             })
                             .transpose()?,
-                        object: cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.copy_retained_text(target_object, "fcstd sketch external object")?, "validate nonblank text")?
+                        object: cadmpeg_core::text::NonBlankString::for_decode(
+                            ctx,
+                            ctx.copy_retained_text(target_object, "fcstd sketch external object")?,
+                            "validate nonblank text",
+                        )?
                         .ok_or_else(|| {
                             cadmpeg_core::CodecError::malformed("object must not be empty")
                         })?,
@@ -2107,20 +2102,15 @@ fn sketch_nurbs(
     let Some(lanes) = sketch_nurbs_lanes(ctx, kind, node)? else {
         return Ok(None);
     };
-    if lanes.weights.is_some() {
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(lanes.control_points.len()),
-            "fcstd sketch NURBS weighted pole pairs",
-        )?;
-    }
     Ok(Some(SketchGeometry::nurbs(
         cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
+            ctx,
             lanes.degree,
             lanes.knots,
             lanes.control_points,
             lanes.weights,
             lanes.periodic,
-        )?,
+        )??,
     )))
 }
 
@@ -2252,11 +2242,7 @@ fn sketch_nurbs_lanes(
     } else {
         None
     };
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(expanded_count),
-        "fcstd sketch NURBS knot conversion",
-    )?;
-    let Some(knots) = KnotVector::from_finite_lanes(full_knots).ok() else {
+    let Some(knots) = KnotVector::from_finite_lanes(ctx, full_knots)?.ok() else {
         return Ok(None);
     };
     Ok(Some(SketchNurbsLanes {
@@ -2786,17 +2772,25 @@ fn parse_constraints(
                 _ => Ok(None),
             }
         };
-        let native_kind = cadmpeg_core::text::NonBlankString::for_decode(ctx, native_kind, "validate nonblank text")?
-            .ok_or_else(|| CodecError::malformed("empty native constraint kind"))?;
+        let native_kind = cadmpeg_core::text::NonBlankString::for_decode(
+            ctx,
+            native_kind,
+            "validate nonblank text",
+        )?
+        .ok_or_else(|| CodecError::malformed("empty native constraint kind"))?;
         let mut native_operands = Vec::new();
         for (entity, position) in &operands {
             if *entity >= 0 && resolve(*entity, *position)?.is_some() {
                 continue;
             }
-            let native_kind = cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.format_retained(
-                format_args!("position:{position}"),
-                "fcstd native operand position kind",
-            )?, "validate nonblank text")?
+            let native_kind = cadmpeg_core::text::NonBlankString::for_decode(
+                ctx,
+                ctx.format_retained(
+                    format_args!("position:{position}"),
+                    "fcstd native operand position kind",
+                )?,
+                "validate nonblank text",
+            )?
             .ok_or_else(|| {
                 malformed_design(
                     ctx,
@@ -3141,7 +3135,7 @@ fn bind_parameter_dependencies(
             let mut members =
                 ctx.collection_vec(dependencies.len(), "fcstd parameter dependency members")?;
             members.extend(dependencies);
-            DistinctMembers::try_from_for_decode(members, ctx).map_err(CodecError::from)?
+            DistinctMembers::try_from(members, ctx).map_err(CodecError::from)?
         };
     }
     let mut owner_ordinals = HashMap::<Option<FeatureId>, Vec<u32>>::new();
@@ -3159,9 +3153,12 @@ fn bind_parameter_dependencies(
         ordinals.push(parameter.ordinal);
     }
     for ordinals in owner_ordinals.values_mut() {
-        ctx.sort_unstable_by(ordinals,
+        ctx.sort_unstable_by(
+            ordinals,
             |value| value,
-            Ord::cmp, "fcstd owner ordinals sort")?;
+            Ord::cmp,
+            "fcstd owner ordinals sort",
+        )?;
     }
     let parameter_cycle_features = order_parameters_by_dependencies(ctx, parameters)?;
     for parameter in parameters.iter_mut() {
@@ -3866,7 +3863,11 @@ fn sketch_geometry(
     }
     let number = |name: &str| attributes.get(name).and_then(|value| value.parse().ok());
     let native = || -> Result<SketchGeometry, CodecError> {
-        let native_kind = cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.copy_retained_text(kind, "fcstd native sketch geometry kind")?, "validate nonblank text")?
+        let native_kind = cadmpeg_core::text::NonBlankString::for_decode(
+            ctx,
+            ctx.copy_retained_text(kind, "fcstd native sketch geometry kind")?,
+            "validate nonblank text",
+        )?
         .ok_or_else(|| CodecError::malformed("native_kind must not be empty"))?;
         Ok(SketchGeometry::native(native_kind))
     };
@@ -4240,9 +4241,18 @@ struct EndpointLocus {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for EndpointLocus {
-    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
-    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
     }
 }
 
@@ -4288,8 +4298,8 @@ impl EndpointIndex {
         for bucket in by_scale.values_mut() {
             ctx.stable_sort_by(
                 bucket,
-            |value| &value.point.u,
-            f64::total_cmp,
+                |value| &value.point.u,
+                f64::total_cmp,
                 "FCStd profile index sort",
             )?;
         }
@@ -4361,8 +4371,8 @@ fn endpoint_candidates(
     }
     ctx.sort_unstable_by(
         &mut matches,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "FCStd profile candidate order",
     )?;
     Ok(matches)
@@ -6045,7 +6055,7 @@ fn section_shape_definition(
         BodySelection::Native(ctx.copy_retained_text(&base.id, "fcstd section base identity")?);
     let tool =
         BodySelection::Native(ctx.copy_retained_text(&tool.id, "fcstd section tool identity")?);
-    cadmpeg_ir::features::SectionOperands::new(base, tool)
+    cadmpeg_ir::features::SectionOperands::new(base, tool, ctx)?
         .ok()
         .map(|operands| -> Result<_, CodecError> {
             Ok(FeatureDefinition::Operation(
@@ -6482,7 +6492,12 @@ fn native_parameters(
         else {
             continue;
         };
-        let Some(name) = NonBlankString::for_decode(ctx, ctx.copy_retained_text(&property.name, "fcstd native parameter name")?, "validate nonblank text")? else {
+        let Some(name) = NonBlankString::for_decode(
+            ctx,
+            ctx.copy_retained_text(&property.name, "fcstd native parameter name")?,
+            "validate nonblank text",
+        )?
+        else {
             continue;
         };
         let value = value?;
@@ -6729,7 +6744,8 @@ fn boolean_definition(
             )?),
         )
     };
-    let Some(operands) = cadmpeg_ir::features::CombineOperands::new(target, tools).ok() else {
+    let Some(operands) = cadmpeg_ir::features::CombineOperands::new(target, tools, ctx)?.ok()
+    else {
         return Ok(None);
     };
     Ok(Some(FeatureDefinition::Operation(
@@ -7184,9 +7200,11 @@ fn hole_definition(
         None
     } else {
         let threaded = required!(bool_selector(ctx, properties, "Threaded", false)?);
-        let standard = required!(cadmpeg_core::text::NonBlankString::for_decode(ctx, required!(
-            thread_standard(thread_type)
-        ), "validate nonblank text")?);
+        let standard = required!(cadmpeg_core::text::NonBlankString::for_decode(
+            ctx,
+            required!(thread_standard(thread_type)),
+            "validate nonblank text"
+        )?);
         let designation = designation_label;
         let modeled = if property(properties, "ModelThread").is_some() {
             required!(bool_selector(ctx, properties, "ModelThread", false)?)
@@ -7434,7 +7452,12 @@ fn binder_definition(
         let mut subelements =
             ctx.collection_vec(link_selectors(link).count(), "fcstd binder subelements")?;
         for selector in link_selectors(link) {
-            let Some(selector) = cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.copy_retained_text(selector, "fcstd binder subelement selector")?, "validate nonblank text")? else {
+            let Some(selector) = cadmpeg_core::text::NonBlankString::for_decode(
+                ctx,
+                ctx.copy_retained_text(selector, "fcstd binder subelement selector")?,
+                "validate nonblank text",
+            )?
+            else {
                 return Ok(None);
             };
             subelements.push(selector);
@@ -7589,10 +7612,20 @@ fn binder_target(
         return Ok(None);
     };
     if let Some(document) = link.document() {
-        let Some(document) = cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.copy_retained_text(document.as_str(), "fcstd external binder document")?, "validate nonblank text")? else {
+        let Some(document) = cadmpeg_core::text::NonBlankString::for_decode(
+            ctx,
+            ctx.copy_retained_text(document.as_str(), "fcstd external binder document")?,
+            "validate nonblank text",
+        )?
+        else {
             return Ok(None);
         };
-        let Some(object) = cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.copy_retained_text(object, "fcstd external binder object")?, "validate nonblank text")? else {
+        let Some(object) = cadmpeg_core::text::NonBlankString::for_decode(
+            ctx,
+            ctx.copy_retained_text(object, "fcstd external binder object")?,
+            "validate nonblank text",
+        )?
+        else {
             return Ok(None);
         };
         return Ok(Some(BinderTarget::External { document, object }));
@@ -7602,7 +7635,11 @@ fn binder_target(
             feature: feature.try_clone_for_decode(ctx, "fcstd binder feature target")?,
         },
         None => BinderTarget::Native {
-            reference: match cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.copy_retained_text(object, "fcstd binder native target")?, "validate nonblank text")? {
+            reference: match cadmpeg_core::text::NonBlankString::for_decode(
+                ctx,
+                ctx.copy_retained_text(object, "fcstd binder native target")?,
+                "validate nonblank text",
+            )? {
                 Some(reference) => reference,
                 None => return Ok(None),
             },
@@ -8940,8 +8977,8 @@ pub(crate) fn census(
     }
     ctx.stable_sort_by(
         &mut census,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "FreeCAD design census sort",
     )?;
     Ok(census)

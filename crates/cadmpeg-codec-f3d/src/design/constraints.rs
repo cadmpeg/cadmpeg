@@ -261,8 +261,11 @@ pub(crate) fn project_sketch_constraints(
             let definition = if let Some(definition) = definition {
                 definition
             } else {
-                let Some(native_kind) =
-                    cadmpeg_core::text::NonBlankString::for_decode(ctx, relation_kind_name(relation, ctx)?, "validate nonblank text")?
+                let Some(native_kind) = cadmpeg_core::text::NonBlankString::for_decode(
+                    ctx,
+                    relation_kind_name(relation, ctx)?,
+                    "validate nonblank text",
+                )?
                 else {
                     return Ok(None);
                 };
@@ -376,8 +379,8 @@ pub(crate) fn project_sketch_constraints(
     }
     ctx.stable_sort_by(
         &mut constraints[..],
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d design constraints 1",
     )?;
     Ok(constraints)

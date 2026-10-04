@@ -2,16 +2,15 @@
 //! Caller-admitted raw NURBS construction.
 
 use super::{
-    KnotVector, NurbsCurve, NurbsError, NurbsPoleGrid, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis,
-    NurbsSurfaceLanes, PoleValue, WeightedPole3,
+    NurbsCurve, NurbsError, NurbsPoleGrid, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis,
+    NurbsSurfaceLanes, PoleValue,
 };
 use crate::features::FinitePoint3;
-use crate::scalar::NonZeroReal;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 // Resource refusals stay outside the geometry refusal result.
-pub(super) enum ConstructionError {
+pub(crate) enum ConstructionError {
     Resource(CodecError),
     Geometry(NurbsError),
 }
@@ -27,7 +26,9 @@ impl From<NurbsError> for ConstructionError {
     }
 }
 
-fn finish<T>(result: Result<T, ConstructionError>) -> Result<Result<T, NurbsError>, CodecError> {
+pub(in crate::geometry) fn finish<T>(
+    result: Result<T, ConstructionError>,
+) -> Result<Result<T, NurbsError>, CodecError> {
     match result {
         Ok(value) => Ok(Ok(value)),
         Err(ConstructionError::Geometry(NurbsError::ResourceLimit(limit))) => Err(limit.into()),
@@ -43,255 +44,53 @@ fn structure(
     Ok(NurbsError::Structure(ctx.format_retained(message, "IR NURBS refusal text")?).into())
 }
 
-fn weight_lane(
-    ctx: &DecodeContext<'_>,
-    field: &str,
-    poles: usize,
-    weights: usize,
-) -> Result<(), ConstructionError> {
-    if poles != weights {
-        return Err(NurbsError::WeightLaneLength {
-            field: ctx.copy_retained_text(field, "IR NURBS refusal field")?,
-            poles,
-            weights,
+impl super::NurbsAdmission for DecodeContext<'_> {
+    type Error = ConstructionError;
+
+    fn collect<I, T>(
+        &self,
+        values: Vec<I>,
+        operation: &'static str,
+        convert: impl FnMut(I) -> Result<T, Self::Error>,
+    ) -> Result<Vec<T>, Self::Error> {
+        self.try_collect_retained_with(values, operation, convert)
+    }
+
+    fn reserve<T>(
+        &self,
+        values: &mut Vec<T>,
+        storage: &mut Option<cadmpeg_core::decode::ScopedReservation<'_>>,
+        operation: &'static str,
+    ) -> Result<(), Self::Error> {
+        if let Some(storage) = storage {
+            self.reserve_scoped_vec(storage, values, 1, operation)
+                .map_err(Into::into)
+        } else {
+            self.reserve_vec(values, 1, operation).map_err(Into::into)
         }
-        .into());
     }
-    Ok(())
-}
 
-fn admitted_weight(
-    ctx: &DecodeContext<'_>,
-    field: &str,
-    index: usize,
-    weight: f64,
-) -> Result<NonZeroReal, ConstructionError> {
-    if let Some(weight) = NonZeroReal::new(weight) {
-        return Ok(weight);
+    fn copy_field(&self, field: &str) -> Result<String, Self::Error> {
+        self.copy_retained_text(field, "IR NURBS refusal field")
+            .map_err(Into::into)
     }
-    Err(NurbsError::UnusableWeight {
-        field: ctx.copy_retained_text(field, "IR NURBS refusal field")?,
-        index,
-        weight,
-    }
-    .into())
-}
 
-fn finite_point<P: PoleValue<T>, T>(
-    ctx: &DecodeContext<'_>,
-    point: P,
-) -> Result<T, ConstructionError> {
-    if let Some(point) = point.admit() {
-        return Ok(point);
+    fn work(&self, count: u64, operation: &'static str) -> Result<(), Self::Error> {
+        self.charge_work(count, operation).map_err(Into::into)
     }
-    Err(structure(
-        ctx,
-        format_args!("control_points contains a non-finite point"),
-    )?)
-}
 
-fn length(
-    ctx: &DecodeContext<'_>,
-    field: &str,
-    actual: usize,
-    expected: usize,
-) -> Result<(), ConstructionError> {
-    if actual != expected {
-        return Err(structure(
-            ctx,
-            format_args!("{field} must contain {expected} values, found {actual}"),
-        )?);
+    fn structure(&self, message: std::fmt::Arguments<'_>) -> Result<Self::Error, Self::Error> {
+        structure(self, message).map_err(Into::into)
     }
-    Ok(())
-}
-
-fn knot_count(
-    ctx: &DecodeContext<'_>,
-    field: &str,
-    poles: usize,
-    degree: u32,
-) -> Result<usize, ConstructionError> {
-    let Ok(degree) = usize::try_from(degree) else {
-        return Err(structure(
-            ctx,
-            format_args!("{field} knot count overflows usize"),
-        )?);
-    };
-    match poles
-        .checked_add(degree)
-        .and_then(|count| count.checked_add(1))
-    {
-        Some(count) => Ok(count),
-        None => Err(structure(
-            ctx,
-            format_args!("{field} knot count overflows usize"),
-        )?),
-    }
-}
-
-fn curve_cardinality(
-    ctx: &DecodeContext<'_>,
-    degree: u32,
-    knots: usize,
-    poles: usize,
-) -> Result<(), ConstructionError> {
-    if u64::try_from(poles).is_ok_and(|count| count <= u64::from(degree)) {
-        return Err(structure(
-            ctx,
-            format_args!(
-                "control_points must contain more than degree {degree} poles, found {poles}"
-            ),
-        )?);
-    }
-    length(
-        ctx,
-        "knots",
-        knots,
-        knot_count(ctx, "curve", poles, degree)?,
-    )
-}
-
-fn surface_structure<P>(
-    ctx: &DecodeContext<'_>,
-    u: &NurbsSurfaceAxis,
-    v: &NurbsSurfaceAxis,
-    poles: &NurbsPoleGrid<P>,
-) -> Result<(), ConstructionError> {
-    let u_count = poles.u_count();
-    let v_count = poles.v_count();
-    if u64::try_from(u_count).is_ok_and(|count| count <= u64::from(u.degree)) {
-        return Err(structure(
-            ctx,
-            format_args!("u_count must exceed u_degree {}, found {u_count}", u.degree),
-        )?);
-    }
-    if u64::try_from(v_count).is_ok_and(|count| count <= u64::from(v.degree)) {
-        return Err(structure(
-            ctx,
-            format_args!("v_count must exceed v_degree {}, found {v_count}", v.degree),
-        )?);
-    }
-    length(
-        ctx,
-        "u_knots",
-        u.knots.len(),
-        knot_count(ctx, "u", u_count, u.degree)?,
-    )?;
-    length(
-        ctx,
-        "v_knots",
-        v.knots.len(),
-        knot_count(ctx, "v", v_count, v.degree)?,
-    )?;
-    let width = poles.v_count();
-    let wrong = match poles {
-        NurbsPoleGrid::Polynomial { rows } => {
-            rows.iter().find(|row| row.len() != width).map(Vec::len)
-        }
-        NurbsPoleGrid::Rational { rows } => {
-            rows.iter().find(|row| row.len() != width).map(Vec::len)
-        }
-    };
-    if let Some(actual) = wrong {
-        return Err(structure(
-            ctx,
-            format_args!("control_points row must contain {width} values, found {actual}"),
-        )?);
-    }
-    Ok(())
-}
-
-fn admitted_knots(
-    ctx: &DecodeContext<'_>,
-    knots: Vec<f64>,
-    prefix: &str,
-) -> Result<KnotVector, ConstructionError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(knots.len()),
-        "IR NURBS knot finiteness",
-    )?;
-    if !knots.iter().all(|value| value.is_finite()) {
-        return Err(structure(
-            ctx,
-            format_args!("{prefix}knots contains a non-finite value"),
-        )?);
-    }
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(knots.len()),
-        "IR NURBS knot order",
-    )?;
-    if !super::knots_nondecreasing(&knots) {
-        return Err(structure(
-            ctx,
-            format_args!("{prefix}knots must be non-decreasing"),
-        )?);
-    }
-    Ok(KnotVector(knots))
-}
-
-fn collect<T, I>(
-    ctx: &DecodeContext<'_>,
-    values: I,
-    operation: &'static str,
-) -> Result<Vec<T>, ConstructionError>
-where
-    I: IntoIterator<Item = Result<T, ConstructionError>>,
-{
-    ctx.try_collect_retained_with(values, operation, |value| value)
-}
-
-fn pair<P>(
-    ctx: &DecodeContext<'_>,
-    points: Vec<P>,
-    weights: Vec<f64>,
-    field: &str,
-    storage: &mut Option<cadmpeg_core::decode::ScopedReservation<'_>>,
-) -> Result<Vec<WeightedPole3<P>>, ConstructionError> {
-    weight_lane(ctx, field, points.len(), weights.len())?;
-    super::weighted_poles_for_decode(
-        ctx,
-        points,
-        weights,
-        storage,
-        "IR NURBS paired poles",
-        |index, weight| admitted_weight(ctx, field, index, weight),
-    )
-}
-
-pub(super) fn admit<P: PoleValue<T>, T>(
-    ctx: &DecodeContext<'_>,
-    poles: NurbsPoles3<P>,
-) -> Result<NurbsPoles3<T>, ConstructionError> {
-    Ok(match poles {
-        NurbsPoles3::Polynomial { points } => NurbsPoles3::Polynomial {
-            points: collect(
-                ctx,
-                points.into_iter().map(|point| finite_point(ctx, point)),
-                "IR NURBS admitted poles",
-            )?,
-        },
-        NurbsPoles3::Rational { points } => NurbsPoles3::Rational {
-            points: collect(
-                ctx,
-                points.into_iter().map(|pole| {
-                    Ok(WeightedPole3 {
-                        point: finite_point(ctx, pole.point)?,
-                        weight: pole.weight,
-                    })
-                }),
-                "IR NURBS admitted poles",
-            )?,
-        },
-    })
 }
 
 impl NurbsCurve {
     /// Construct raw lanes with caller admission before pole pairing and conversion.
     /// Resource refusal is separate from the geometry refusal, whose order is unchanged.
-    pub fn from_lanes_for_decode<P: PoleValue<FinitePoint3>>(
+    pub fn from_lanes<P: PoleValue<FinitePoint3>, K: super::KnotValue>(
         ctx: &DecodeContext<'_>,
         degree: u32,
-        knots: Vec<f64>,
+        knots: K,
         control_points: Vec<P>,
         weights: Option<Vec<f64>>,
         periodic: bool,
@@ -302,23 +101,14 @@ impl NurbsCurve {
             } else {
                 None
             };
-            let poles = match weights {
-                Some(weights) => NurbsPoles3::Rational {
-                    points: pair(ctx, control_points, weights, "poles", &mut pair_storage)?,
-                },
-                None => NurbsPoles3::Polynomial {
-                    points: control_points,
-                },
-            };
-            curve_cardinality(ctx, degree, knots.len(), poles.count())?;
-            let poles = P::admit_curve_poles_for_decode(ctx, poles)?;
-            let knots = admitted_knots(ctx, knots, "")?;
-            Ok(Self {
-                degree,
-                knots,
-                poles,
-                periodic,
-            })
+            let poles = super::pair_curve_lanes(
+                ctx,
+                control_points,
+                weights,
+                &mut pair_storage,
+                |index, weight| super::admit_weight(ctx, "poles", index, weight),
+            )?;
+            super::build_curve(ctx, degree, knots, poles, periodic)
         })())
     }
 }
@@ -336,10 +126,10 @@ impl super::BsplineSurface {
 impl NurbsSurface {
     /// Construct raw grids with caller admission before every outer and inner allocation.
     /// Resource refusal is separate from the geometry refusal, whose order is unchanged.
-    pub fn from_lanes_for_decode<P: PoleValue<FinitePoint3>>(
+    pub fn from_lanes<P: PoleValue<FinitePoint3>, U: super::KnotValue, V: super::KnotValue>(
         ctx: &DecodeContext<'_>,
-        u: NurbsSurfaceAxis,
-        v: NurbsSurfaceAxis,
+        u: NurbsSurfaceAxis<U>,
+        v: NurbsSurfaceAxis<V>,
         lanes: NurbsSurfaceLanes<P>,
         normal_reversed: bool,
     ) -> Result<Result<Self, NurbsError>, CodecError> {
@@ -353,45 +143,14 @@ impl NurbsSurface {
             } else {
                 None
             };
-            let poles = if let Some(weights) = weights {
-                weight_lane(ctx, "pole grid", control_points.len(), weights.len())?;
-                let mut rows = Vec::new();
-                for (points, weights) in control_points.into_iter().zip(weights) {
-                    super::reserve_pole_storage(
-                        ctx,
-                        &mut rows,
-                        &mut pair_storage,
-                        "IR NURBS paired grid rows",
-                    )?;
-                    rows.push(pair(
-                        ctx,
-                        points,
-                        weights,
-                        "pole grid row",
-                        &mut pair_storage,
-                    )?);
-                }
-                NurbsPoleGrid::Rational { rows }
-            } else {
-                NurbsPoleGrid::Polynomial {
-                    rows: control_points,
-                }
-            };
-            surface_structure(ctx, &u, &v, &poles)?;
-            let poles = P::admit_surface_poles_for_decode(ctx, poles)?;
-
-            let u_knots = admitted_knots(ctx, u.knots, "u_")?;
-            let v_knots = admitted_knots(ctx, v.knots, "v_")?;
-            Ok(Self {
-                u_degree: u.degree,
-                v_degree: v.degree,
-                u_knots,
-                v_knots,
-                poles,
-                normal_reversed,
-                u_periodic: u.periodic,
-                v_periodic: v.periodic,
-            })
+            let poles = super::pair_grid_lanes(
+                ctx,
+                control_points,
+                weights,
+                &mut pair_storage,
+                |index, weight| super::admit_weight(ctx, "pole grid row", index, weight),
+            )?;
+            super::build_surface(ctx, u, v, poles, normal_reversed)
         })())
     }
 }
@@ -450,52 +209,3 @@ impl NurbsSurface {
 
 #[cfg(test)]
 mod tests;
-
-pub(super) fn admit_grid<P: PoleValue<T>, T>(
-    ctx: &DecodeContext<'_>,
-    poles: NurbsPoleGrid<P>,
-) -> Result<NurbsPoleGrid<T>, ConstructionError> {
-    Ok(match poles {
-        NurbsPoleGrid::Polynomial { rows } => {
-            let mut output = Vec::new();
-            for points in rows {
-                ctx.reserve_vec(&mut output, 1, "IR NURBS admitted grid rows")?;
-                let points = collect(
-                    ctx,
-                    points.into_iter().map(|point| finite_point(ctx, point)),
-                    "IR NURBS admitted poles",
-                )?;
-                output.push(points);
-            }
-            NurbsPoleGrid::Polynomial { rows: output }
-        }
-        NurbsPoleGrid::Rational { rows } => {
-            let mut output = Vec::new();
-            for points in rows {
-                ctx.reserve_vec(&mut output, 1, "IR NURBS admitted grid rows")?;
-                let points = collect(
-                    ctx,
-                    points.into_iter().map(|pole| {
-                        Ok(WeightedPole3 {
-                            point: finite_point(ctx, pole.point)?,
-                            weight: pole.weight,
-                        })
-                    }),
-                    "IR NURBS admitted poles",
-                )?;
-                output.push(points);
-            }
-            NurbsPoleGrid::Rational { rows: output }
-        }
-    })
-}
-
-pub(super) fn construction_result<T>(
-    result: Result<T, ConstructionError>,
-) -> Result<T, NurbsError> {
-    match result {
-        Ok(value) => Ok(value),
-        Err(ConstructionError::Resource(error)) => Err(NurbsError::from(error)),
-        Err(ConstructionError::Geometry(error)) => Err(error),
-    }
-}

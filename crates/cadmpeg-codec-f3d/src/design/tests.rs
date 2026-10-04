@@ -474,7 +474,8 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     ir.model.sketches = sketches;
     ir.model.sketch_entities = entities;
     ir.model.sketch_constraints = constraints;
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
     let report = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new())
         .expect("resource allocation did not fail");
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);

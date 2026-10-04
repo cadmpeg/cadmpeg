@@ -454,11 +454,11 @@ pub(super) fn walk_reachable_topology(
                                                     *selector,
                                                     token_table,
                                                 )
-                                                .map(|result| result.map(|(mut curve, native_chart)| {
+                                                .map(|result| result.and_then(|(mut curve, native_chart)| {
                                                     if (*selector < 0) ^ record_reversed(intcurve) {
-                                                        curve.reverse_parameterization();
+                                                        curve.reverse_parameterization(ctx)?;
                                                     }
-                                                    (curve, native_chart)
+                                                    Ok((curve, native_chart))
                                                 }))
                                             })
                                     }
@@ -466,23 +466,24 @@ pub(super) fn walk_reachable_topology(
                                 }.transpose()?;
                                 let edge =
                                     ce.ref_at(6).and_then(|edge| by_index.get(&edge)).copied();
-                                let decoded = decoded.and_then(|(mut decoded, native_chart)| {
+                                let decoded = decoded.map(|(mut decoded, native_chart)| -> Result<_, cadmpeg_core::CodecError> {
                                     if native_chart {
                                         if let Some(surface) = face
                                             .ref_at(7)
                                             .and_then(|surface| by_index.get(&surface))
                                         {
-                                            nurbs::proc_curve::normalize_pcurve_for_surface_record(
+                                            let Some(()) = nurbs::proc_curve::normalize_pcurve_for_surface_record(
+                                                ctx,
                                                 surface.head(),
                                                 &surface.tokens,
                                                 &mut decoded,
-                                            )?;
+                                            ).transpose()? else { return Ok(None); };
                                         }
                                     }
-                                    pcurve_ranges_on_domain(&decoded, edge)
+                                    Ok(pcurve_ranges_on_domain(&decoded, edge)
                                         .and_then(|ranges| ranges.into_iter().next())
-                                        .map(|range| (decoded, range))
-                                });
+                                        .map(|range| (decoded, range)))
+                                }).transpose()?.flatten();
                                 if let Some((decoded, parameter_range)) = decoded {
                                     ctx.insert_hash_map(
                                         pcurve_geo,
@@ -574,7 +575,7 @@ pub(super) fn walk_reachable_topology(
                                                 // edge's stored range is on the
                                                 // reversed parameterization.
                                                 if record_reversed(crec) {
-                                                    curve.reverse_parameterization();
+                                                    curve.reverse_parameterization(ctx)?;
                                                 }
                                                 ctx.insert_hash_map(curve_geo, cv, CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)), "ASM topology curve_geo")?;
                                                 ctx.insert_hash_map(procedural_curve_defs, cv, super::ProceduralCurveSource::Cached {
@@ -897,7 +898,7 @@ fn keep_wire_edge(
             let parsed_domain = nurbs::proc_curve::nurbs_curve_parameter_domain(&decoded.curve);
             let mut curve = decoded.curve;
             if record_reversed(curve_record) {
-                curve.reverse_parameterization();
+                curve.reverse_parameterization(ctx)?;
             }
             ctx.insert_hash_map(
                 curve_geo,

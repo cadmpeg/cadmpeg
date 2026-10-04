@@ -143,7 +143,7 @@ fn nonempty_user_string_presentation_is_refused_before_output() {
             .expect("decoded object presentation");
         let original = records.first().expect("decoded object presentation record");
         let id = original.id().to_string();
-        let mut fields = original.fields();
+        let mut fields = original.fields().clone();
         fields.insert(
             "user_strings".into(),
             serde_json::json!([{ "key": "name", "value": "value" }]),
@@ -198,7 +198,7 @@ fn nonempty_mesh_modifier_presentation_is_refused_before_output() {
             .expect("decoded object presentation");
         let original = records.first().expect("decoded object presentation record");
         let id = original.id().to_string();
-        let mut fields = original.fields();
+        let mut fields = original.fields().clone();
         fields.insert(
             "mesh_modifiers".into(),
             serde_json::json!({ "displacement": { "on": true } }),
@@ -253,7 +253,7 @@ fn nonempty_layer_per_viewport_settings_are_refused_before_output() {
             .expect("decoded layer presentation");
         let original = records.first().expect("decoded layer presentation record");
         let id = original.id().to_string();
-        let mut fields = original.fields();
+        let mut fields = original.fields().clone();
         fields.insert(
             "per_viewport_settings".into(),
             serde_json::json!([{

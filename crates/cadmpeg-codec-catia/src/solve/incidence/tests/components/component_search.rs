@@ -296,9 +296,10 @@ fn incidence_components_reuse_independent_solution_domains() {
     const COMPONENT_COUNT: usize = 15;
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
+    // Global byte work admits all states; the local search budget and collection ceiling own this assertion.
+    policy.limits.max_work_units = u64::MAX;
     policy.limits.max_collection_items = 10_000_000;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
+
     let choices = (0..COMPONENT_COUNT)
         .map(|component| {
             let first = component * 2;
@@ -308,6 +309,21 @@ fn incidence_components_reuse_independent_solution_domains() {
     let edge_faces = (0..COMPONENT_COUNT)
         .map(|face| [face, face])
         .collect::<Vec<_>>();
+    let expected_solutions = (0..1_usize << COMPONENT_COUNT)
+        .map(|mask| {
+            (0..COMPONENT_COUNT)
+                .map(|component| choices[component][(mask >> component) & 1])
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    // The root contains every expected solution row; retained admission covers the complete enumeration.
+    let source = serde_json::to_vec(&expected_solutions).expect("solution rows serialize");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&source, &arena, &policy).expect("solution input");
+    let mut remaining = expected_solutions
+        .iter()
+        .cloned()
+        .collect::<std::collections::HashSet<_>>();
     let mut visited = 0usize;
 
     let outcome = crate::solve::incidence::visit_component_incidence_pair_solutions(
@@ -320,7 +336,11 @@ fn incidence_components_reuse_independent_solution_domains() {
         None,
         None,
         &|_| Ok(true),
-        &mut |_| {
+        &mut |solution| {
+            assert!(
+                remaining.remove(solution),
+                "each expected solution occurs once"
+            );
             visited += 1;
             Ok(ControlFlow::Continue(()))
         },
@@ -349,6 +369,8 @@ fn incidence_components_reuse_independent_solution_domains() {
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems));
     assert_eq!(visited, 1 << COMPONENT_COUNT);
+    assert_eq!(visited, expected_solutions.len());
+    assert!(remaining.is_empty());
 }
 
 #[test]

@@ -769,8 +769,8 @@ pub(super) fn bind_coil_extent_from_parameters(
     }
     ctx.sort_unstable_by(
         &mut sorted[..count],
-            |value| &value.0,
-            Ord::cmp,
+        |value| &value.0,
+        Ord::cmp,
         "f3d coil parameter owner ordinals sort",
     )?;
     let mut kinds = [""; 5];

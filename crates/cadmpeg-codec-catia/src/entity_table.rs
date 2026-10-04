@@ -894,12 +894,7 @@ impl PacketGrowth for ChargedPacketGrowth<'_, '_> {
         operation: &'static str,
     ) -> Result<(), Self::Error> {
         let ctx: &DecodeContext<'_> = self.0;
-        ctx.sort_unstable_by_key(
-            values,
-            key,
-            Ord::cmp,
-            operation,
-        )
+        ctx.sort_unstable_by_key(values, key, Ord::cmp, operation)
     }
 }
 

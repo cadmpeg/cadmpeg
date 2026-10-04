@@ -291,9 +291,13 @@ fn decode_projects_copious_linear_paths_with_segment_parameters() {
     assert_eq!(path.degree(), 1);
     assert_eq!(path.knots().as_slice(), [0.0, 0.0, 1.0, 2.0, 2.0]);
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_curve_point_at(path, 1.5)
-            .ok()
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+        cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            path,
+            1.5
+        )
+        .ok()
+        .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0))
     );
     assert_eq!(
@@ -681,7 +685,8 @@ fn copious_closed_path_intersection_refuses_work() {
         cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
     ];
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
+    // Five indexed point visits and one end probe precede pairwise intersection checks.
+    policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(points.len()) + 1;
     crate::test_support::with_policy_context(&[], &policy, |ctx| {
         assert!(matches!(has_form_63_self_intersection(&points, ctx),
             Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits

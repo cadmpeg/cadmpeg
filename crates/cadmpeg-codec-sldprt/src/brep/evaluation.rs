@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Caller admission for stored carrier evaluation scratch.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
@@ -13,7 +13,9 @@ pub(super) fn curve_point(
     parameter: f64,
 ) -> Result<Option<FinitePoint3>, CodecError> {
     Ok(cadmpeg_ir::eval::finite_or_refusal(
-        cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, curve, parameter)?,
+        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(
+            ctx, curve, parameter,
+        ))?,
     )?)
 }
 
@@ -23,39 +25,10 @@ pub(super) fn nurbs_curve_point(
     parameter: f64,
 ) -> Result<Option<FinitePoint3>, CodecError> {
     Ok(cadmpeg_ir::eval::finite_or_refusal(
-        cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(ctx, curve, parameter)?,
+        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+            ctx, curve, parameter,
+        ))?,
     )?)
-}
-
-fn admit_nurbs_surface<'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
-    surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
-    evaluations: u64,
-    basis_lanes: u64,
-    operation: &'static str,
-) -> Result<ScopedReservation<'ctx>, CodecError> {
-    let u = u64::from(surface.u_degree())
-        .checked_add(1)
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    let v = u64::from(surface.v_degree())
-        .checked_add(1)
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    let work = u
-        .checked_mul(u)
-        .and_then(|work| work.checked_add(v.checked_mul(v)?))
-        .and_then(|work| work.checked_add(u.checked_mul(v)?))
-        .and_then(|work| work.checked_mul(64))
-        .and_then(|work| work.checked_add(u64_from_index(surface.u_knots().len())))
-        .and_then(|work| work.checked_add(u64_from_index(surface.v_knots().len())))
-        .and_then(|work| work.checked_mul(evaluations))
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(work, operation)?;
-    let bytes = u
-        .checked_add(v)
-        .and_then(|count| count.checked_mul(basis_lanes))
-        .and_then(|count| count.checked_mul(u64_from_index(std::mem::size_of::<f64>())))
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    ctx.reserve_scoped(bytes, operation)
 }
 
 pub(crate) fn nurbs_surface_point(
@@ -65,7 +38,9 @@ pub(crate) fn nurbs_surface_point(
     v: f64,
 ) -> Result<Option<FinitePoint3>, CodecError> {
     Ok(cadmpeg_ir::eval::finite_or_refusal(
-        cadmpeg_ir::eval::decode::nurbs_surface_point_for_decode(ctx, surface, u, v)?,
+        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::nurbs_surface_point(
+            ctx, surface, u, v,
+        ))?,
     )?)
 }
 
@@ -75,12 +50,8 @@ pub(crate) fn nurbs_surface_parameter_near_point(
     point: cadmpeg_ir::math::Point3,
     seed: Option<cadmpeg_ir::math::Point2>,
 ) -> Result<Option<cadmpeg_ir::units::FinitePoint2>, CodecError> {
-    // The inverse evaluates at most 81 grid points, 24 first partials and
-    // 288 line-search points. A partial costs at most three point evaluations.
-    // Three basis lanes cover both bases, both derivatives and a lower basis.
-    let _scratch = admit_nurbs_surface(ctx, surface, 441, 3, "project SLDPRT NURBS surface point")?;
     Ok(cadmpeg_ir::eval::nurbs_surface_parameter_near_point(
-        surface, point, seed,
+        ctx, surface, point, seed,
     )?)
 }
 
@@ -93,10 +64,8 @@ pub(crate) fn nurbs_surface_partials(
     Option<cadmpeg_ir::eval::SurfacePartials<FinitePoint3, cadmpeg_ir::features::FiniteVector3>>,
     CodecError,
 > {
-    let _scratch =
-        admit_nurbs_surface(ctx, surface, 3, 3, "evaluate SLDPRT NURBS surface partials")?;
     Ok(cadmpeg_ir::eval::finite_or_refusal(
-        cadmpeg_ir::eval::nurbs_surface_partials(surface, u, v),
+        cadmpeg_ir::eval::nurbs_surface_partials(ctx, surface, u, v),
     )?)
 }
 
@@ -107,7 +76,9 @@ pub(crate) fn surface_point(
     v: f64,
 ) -> Result<Option<FinitePoint3>, CodecError> {
     Ok(cadmpeg_ir::eval::finite_or_refusal(
-        cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, u, v)?,
+        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(
+            ctx, surface, u, v,
+        ))?,
     )?)
 }
 
@@ -128,35 +99,6 @@ pub(super) fn charge_nurbs_isocurve_comparison(
     ctx.charge_work(work, OPERATION)
 }
 
-pub(super) fn admit_nurbs_isocurve<'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
-    surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
-    fixed_axis: cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis,
-) -> Result<ScopedReservation<'ctx>, CodecError> {
-    const OPERATION: &str = "evaluate SLDPRT NURBS isocurve";
-    let (degree, count) = match fixed_axis {
-        cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U => {
-            (surface.u_degree(), surface.v_count())
-        }
-        cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::V => {
-            (surface.v_degree(), surface.u_count())
-        }
-    };
-    let support = u64::from(degree)
-        .checked_add(1)
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    let work = u64_from_index(count)
-        .checked_add(support)
-        .and_then(|count| count.checked_mul(support))
-        .and_then(|work| work.checked_mul(64))
-        .and_then(|work| work.checked_add(u64_from_index(surface.u_knots().len())))
-        .and_then(|work| work.checked_add(u64_from_index(surface.v_knots().len())))
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(work, OPERATION)?;
-    let bytes = cadmpeg_ir::eval::nurbs_surface_isocurve_scratch_bytes(surface, fixed_axis)?;
-    ctx.reserve_scoped(u64_from_index(bytes), OPERATION)
-}
-
 const SURFACE_SOLVER_LOCAL_WORK: u64 = 1_000_000;
 
 fn surface_solver_budget<'ctx>(
@@ -164,8 +106,6 @@ fn surface_solver_budget<'ctx>(
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     operation: &'static str,
 ) -> Result<cadmpeg_core::decode::WorkBudget<'ctx>, CodecError> {
-    let (_, extraction_work) = cadmpeg_ir::eval::nurbs_surface_patch_workspace(surface)?;
-    ctx.charge_work(extraction_work, operation)?;
     // One normalized evaluator unit also pays for fixed arithmetic and a
     // complete scan of both knot vectors. Its local ceiling stays unchanged.
     let scale = 64_u64
@@ -188,7 +128,7 @@ pub(super) fn nurbs_surface_parameter_within_tolerance(
     const OPERATION: &str = "invert SLDPRT NURBS surface globally";
     let budget = surface_solver_budget(ctx, surface, OPERATION)?;
     let result = cadmpeg_ir::eval::nurbs_surface_parameter_within_tolerance_with_budget(
-        surface, point, seed, tolerance, &budget,
+        ctx, surface, point, seed, tolerance, &budget,
     );
     // A zero charge observes the session's original sticky refusal.
     ctx.charge_work(0, OPERATION)?;
@@ -223,21 +163,18 @@ pub(super) fn nurbs_surface_parameter_segment_chord_bound(
         .checked_mul(4)
         .and_then(|count| count.checked_add(2))
         .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    // Each split can search all patches. Restricting a tensor-product line
-    // costs at most its squared support times the combined degrees; the
-    // square of the split count also covers the in-place sort's comparisons.
+    // Restricting each tensor-product line costs at most its squared support
+    // times the combined degrees. IR admits split scans and sorting.
     let work = u
         .checked_mul(v)
         .and_then(|support| support.checked_mul(support))
         .and_then(|work| work.checked_mul(u.checked_add(v)?))
         .and_then(|work| work.checked_mul(64))
-        .and_then(|work| work.checked_add(patches))
         .and_then(|work| work.checked_mul(splits))
-        .and_then(|work| work.checked_add(splits.checked_mul(splits)?.checked_mul(64)?))
         .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(work, OPERATION)?;
     let result = cadmpeg_ir::eval::nurbs_surface_parameter_segment_chord_bound_with_budget(
-        surface, parameters, chord, &budget,
+        ctx, surface, parameters, chord, &budget,
     );
     ctx.charge_work(0, OPERATION)?;
     if budget.exhausted() {
@@ -247,5 +184,62 @@ pub(super) fn nurbs_surface_parameter_segment_chord_bound(
             SURFACE_SOLVER_LOCAL_WORK + 1,
         ));
     }
-    Ok(result?)
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+    use cadmpeg_ir::math::Point3;
+
+    #[test]
+    fn stored_surface_helpers_preserve_actual_admission_refusal() {
+        let surface = NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
+            NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
+            NurbsSurfaceLanes::new(
+                (0..3)
+                    .map(|u| {
+                        (0..3)
+                            .map(|v| Point3::new(f64::from(u) * 0.5, f64::from(v) * 0.5, 0.0))
+                            .collect()
+                    })
+                    .collect(),
+                None,
+            ),
+            false,
+        )
+        .expect("fixture admission")
+        .expect("quadratic plane");
+        for dimension in [
+            ResourceDimension::MaterializedBytes,
+            ResourceDimension::CollectionItems,
+            ResourceDimension::WorkUnits,
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+                _ => unreachable!("three scratch dimensions"),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let CodecError::ResourceLimit(original) =
+                super::nurbs_surface_partials(&ctx, &surface, 0.5, 0.5).unwrap_err()
+            else {
+                panic!("the partial helper must preserve its scratch refusal")
+            };
+            assert_eq!(original.dimension, dimension);
+            assert_eq!((original.limit, original.used), (0, 0));
+            assert!(original.additional > 0);
+            assert_eq!(ctx.resource_refusal(), Some(original));
+            assert!(
+                matches!(super::nurbs_surface_parameter_near_point(&ctx, &surface, Point3::new(f64::NAN, 0.0, 0.0), None), Err(CodecError::ResourceLimit(limit)) if limit == original)
+            );
+        }
+    }
 }

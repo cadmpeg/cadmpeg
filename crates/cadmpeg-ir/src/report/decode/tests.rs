@@ -339,9 +339,20 @@ fn coverage_entry_refuses_retained_map_storage() {
     let key = CoverageKey::new("one_count");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-        key.as_str().len() + std::mem::size_of::<(String, usize)>() - 1,
+    // Node storage follows the key copy and includes all backing lanes.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "decode coverage nodes",
+        |cap| {
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            Coverage::default().record(&ctx, key, 7)
+        },
     );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("coverage storage must refuse");
+    };
+    policy.limits.max_retained_bytes = limit.used + limit.additional - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let mut coverage = Coverage::default();
     assert!(

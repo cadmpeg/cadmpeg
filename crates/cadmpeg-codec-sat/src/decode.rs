@@ -39,7 +39,8 @@ fn decode_asm_binary(
     let width = header.width;
     let stream = crate::dialect::record_stream_start(bytes, Family::Asm, header);
     let Some(stream) = stream else {
-        return Err(unsupported_unframed(ctx, 
+        return Err(unsupported_unframed(
+            ctx,
             &StreamEvidence::Binary {
                 family: Family::Asm,
                 header,
@@ -114,7 +115,8 @@ fn decode_acis_binary(
 ) -> Result<Decoded, CodecError> {
     let stream = crate::dialect::record_stream_start(bytes, Family::Acis, header);
     let Some(stream) = stream else {
-        return Err(unsupported_unframed(ctx, 
+        return Err(unsupported_unframed(
+            ctx,
             &StreamEvidence::Binary {
                 family: Family::Acis,
                 header,
@@ -187,7 +189,8 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
     let (text_header, branch, records) = if ctx.container_only() {
         let (header, branch) = sat::parse_container(ctx, bytes).map_err(|failure| {
             failure.into_codec_error(ctx, |error| {
-                unsupported_unframed(ctx, 
+                unsupported_unframed(
+                    ctx,
                     &StreamEvidence::Text(None),
                     format!("text container does not frame: {error}"),
                 )
@@ -197,7 +200,8 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
     } else {
         let stream = sat::parse(ctx, bytes).map_err(|failure| {
             failure.into_codec_error(ctx, |error| {
-                unsupported_unframed(ctx, 
+                unsupported_unframed(
+                    ctx,
                     &StreamEvidence::Text(None),
                     format!("text stream does not frame: {error}"),
                 )
@@ -247,7 +251,11 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
 
 /// Refusal for bytes whose SAT discriminant matched but whose stream did not
 /// frame. Inspection reports the same primary match.
-fn unsupported_unframed(ctx: &DecodeContext<'_>, evidence: &StreamEvidence<'_>, message: impl Into<String>) -> CodecError {
+fn unsupported_unframed(
+    ctx: &DecodeContext<'_>,
+    evidence: &StreamEvidence<'_>,
+    message: impl Into<String>,
+) -> CodecError {
     let (matched, kernel) = match layers(ctx, evidence) {
         Ok(layers) => layers,
         Err(error) => return error,
@@ -370,12 +378,16 @@ fn build_result(
     let annotation_count = cadmpeg_core::decode::u64_from_index(annotation_records.len());
     ctx.charge_work(annotation_count, "scan SAT annotation records")?;
     for record in annotation_records {
-        let stream = StreamHandle::new_for_decode(
+        let stream = StreamHandle::new(
             ctx,
-            cadmpeg_ir::stream_name!("sat:").with_suffix(&record.stream),
+            cadmpeg_ir::stream_name!("sat:").with_suffix(
+                ctx,
+                &record.stream,
+                "compose annotation stream name",
+            )?,
             "allocate annotation stream handle",
         )?;
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             &record.id,
             &stream,
@@ -384,7 +396,7 @@ fn build_result(
         )?;
         for field in record.derived_fields {
             annotations
-                .derived_for_decode(ctx, &record.id, field)
+                .derived(ctx, &record.id, field)
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
     }

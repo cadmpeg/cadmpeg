@@ -695,14 +695,23 @@ fn property_set_issue_refuses_retained_limit_before_record_creation() {
 }
 
 #[test]
-fn preview_asset_refuses_collection_and_retained_limits_before_creation() {
+fn preview_asset_refuses_entity_retained_and_collection_limits() {
     let mut assets = Vec::new();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let asset = project_preview_asset(
+        &ctx,
+        &mut 0_u64,
+        0,
+        "inventor:property:value#1-0-17",
+        b"image",
+        "image/png",
+    )
+    .expect("projected preview");
     assert!(matches!(
-        project_preview_asset(&ctx, &mut assets, &mut 0_u64, 0, "inventor:property:value#1-0-17", b"image", "image/png"),
+        ctx.push_vec(&mut assets, asset, "collect Inventor preview asset"),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "collect Inventor preview asset"
@@ -712,7 +721,14 @@ fn preview_asset_refuses_collection_and_retained_limits_before_creation() {
     policy.limits.max_entities = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     assert!(matches!(
-        project_preview_asset(&ctx, &mut assets, &mut 0_u64, 0, "inventor:property:value#1-0-17", b"image", "image/png"),
+        project_preview_asset(
+            &ctx,
+            &mut 0_u64,
+            0,
+            "inventor:property:value#1-0-17",
+            b"image",
+            "image/png",
+        ),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::Entities
                 && limit.operation == "admit Inventor preview asset entity"
@@ -723,7 +739,14 @@ fn preview_asset_refuses_collection_and_retained_limits_before_creation() {
     policy.limits.max_retained_bytes = 7;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     assert!(matches!(
-        project_preview_asset(&ctx, &mut assets, &mut 0_u64, 0, "inventor:property:value#1-0-17", b"image", "image/png"),
+        project_preview_asset(
+            &ctx,
+            &mut 0_u64,
+            0,
+            "inventor:property:value#1-0-17",
+            b"image",
+            "image/png",
+        ),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "retain Inventor preview asset id"
@@ -732,16 +755,22 @@ fn preview_asset_refuses_collection_and_retained_limits_before_creation() {
     policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     assert!(matches!(
-        project_preview_asset(&ctx, &mut assets, &mut 0_u64, 0, "inventor:property:value#1-0-17", b"image", "image/png"),
+        project_preview_asset(
+            &ctx,
+            &mut 0_u64,
+            0,
+            "inventor:property:value#1-0-17",
+            b"image",
+            "image/png",
+        ),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::MaterializedBytes
                 && limit.operation == "retain Inventor preview identity key"
     ));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
-    project_preview_asset(
+    let asset = project_preview_asset(
         &ctx,
-        &mut assets,
         &mut 0_u64,
         0,
         "inventor:property:value#1-0-17",
@@ -749,7 +778,6 @@ fn preview_asset_refuses_collection_and_retained_limits_before_creation() {
         "image/png",
     )
     .expect("admitted preview");
-    let asset = assets.pop().expect("one preview");
     assert_eq!(asset.id.as_str(), "inventor:document:asset#preview-0");
     assert_eq!(
         asset.native_ref.as_deref(),

@@ -89,7 +89,9 @@ fn bound_spatial_profile_index_refuses_collection_limit() {
     let profile = ProfileRef::spatial_sketch_profiles(
         SpatialSketchId::mint("f3d:model:spatial-sketch#1").unwrap(),
         vec![0, 1],
+        &cadmpeg_test_support::service_decode_context(),
     )
+    .expect("profile membership admission")
     .unwrap();
     assert_refusal("f3d bound spatial profile index", false, |ctx| {
         copy_bound_profile(&profile, ctx).map(|_| ())
@@ -101,7 +103,9 @@ fn bound_spatial_selection_id_refuses_retained_limit() {
     let profile = ProfileRef::spatial_sketch_selection(
         SpatialSketchId::mint("f3d:model:spatial-sketch#1").unwrap(),
         vec!["f3d:Design/BulkStream.dat:group#1".into()],
+        &cadmpeg_test_support::service_decode_context(),
     )
+    .expect("profile membership admission")
     .unwrap();
     assert_refusal("f3d bound spatial selection id", true, |ctx| {
         copy_bound_profile(&profile, ctx).map(|_| ())
@@ -113,7 +117,9 @@ fn bound_spatial_selection_refuses_collection_limit() {
     let profile = ProfileRef::spatial_sketch_selection(
         SpatialSketchId::mint("f3d:model:spatial-sketch#1").unwrap(),
         vec!["f3d:Design/BulkStream.dat:group#1".into()],
+        &cadmpeg_test_support::service_decode_context(),
     )
+    .expect("profile membership admission")
     .unwrap();
     assert_refusal("f3d bound spatial selection", false, |ctx| {
         copy_bound_profile(&profile, ctx).map(|_| ())
@@ -125,7 +131,9 @@ fn bound_planar_path_curve_id_refuses_retained_limit() {
     let path = PathRef::sketch_curves(
         SketchId::mint("f3d:model:sketch#1").unwrap(),
         vec![SketchEntityId::mint("f3d:model:sketch-entity#1").unwrap()],
+        &cadmpeg_test_support::service_decode_context(),
     )
+    .expect("profile membership admission")
     .unwrap();
     assert_refusal("f3d bound planar curve id", true, |ctx| {
         copy_bound_path(&path, ctx).map(|_| ())
@@ -137,7 +145,9 @@ fn bound_planar_path_curve_refuses_collection_limit() {
     let path = PathRef::sketch_curves(
         SketchId::mint("f3d:model:sketch#1").unwrap(),
         vec![SketchEntityId::mint("f3d:model:sketch-entity#1").unwrap()],
+        &cadmpeg_test_support::service_decode_context(),
     )
+    .expect("profile membership admission")
     .unwrap();
     assert_refusal("f3d bound planar path curve", false, |ctx| {
         copy_bound_path(&path, ctx).map(|_| ())
@@ -149,7 +159,9 @@ fn bound_spatial_path_curve_id_refuses_retained_limit() {
     let path = PathRef::spatial_sketch_curves(
         SpatialSketchId::mint("f3d:model:spatial-sketch#1").unwrap(),
         vec![SpatialSketchEntityId::mint("f3d:model:spatial-sketch-entity#1").unwrap()],
+        &cadmpeg_test_support::service_decode_context(),
     )
+    .expect("profile membership admission")
     .unwrap();
     assert_refusal("f3d bound spatial curve id", true, |ctx| {
         copy_bound_path(&path, ctx).map(|_| ())
@@ -161,7 +173,9 @@ fn bound_spatial_path_curve_refuses_collection_limit() {
     let path = PathRef::spatial_sketch_curves(
         SpatialSketchId::mint("f3d:model:spatial-sketch#1").unwrap(),
         vec![SpatialSketchEntityId::mint("f3d:model:spatial-sketch-entity#1").unwrap()],
+        &cadmpeg_test_support::service_decode_context(),
     )
+    .expect("profile membership admission")
     .unwrap();
     assert_refusal("f3d bound spatial path curve", false, |ctx| {
         copy_bound_path(&path, ctx).map(|_| ())

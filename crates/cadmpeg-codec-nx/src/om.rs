@@ -2712,8 +2712,8 @@ pub(crate) fn sketch_payload_scalar_lanes(
     }
     ctx.stable_sort_by_key(
         &mut lanes,
-            |value| value.offset(),
-            Ord::cmp,
+        FramedScalarRun::offset,
+        Ord::cmp,
         "sort NX sketch payload scalar lanes",
     )?;
     Ok(lanes)
@@ -2768,8 +2768,8 @@ pub(crate) fn sketch_payload_fixed_pairs(
     }
     ctx.stable_sort_by(
         &mut pairs,
-            |value| &value.offset,
-            Ord::cmp,
+        |value| &value.offset,
+        Ord::cmp,
         "sort NX sketch payload pairs",
     )?;
     Ok(pairs)
@@ -2884,8 +2884,8 @@ pub(crate) fn datum_csys_payload_fixed_pairs(
     }
     ctx.stable_sort_by(
         &mut pairs,
-            |value| &value.offset,
-            Ord::cmp,
+        |value| &value.offset,
+        Ord::cmp,
         "sort NX datum csys payload pairs",
     )?;
     Ok(pairs)
@@ -3000,8 +3000,8 @@ pub(crate) fn draft_construction_binary32_lanes(
     }
     ctx.stable_sort_by_key(
         &mut lanes,
-            |value| value.offset(),
-            Ord::cmp,
+        FramedScalarRun::offset,
+        Ord::cmp,
         "sort NX draft construction lanes",
     )?;
     Ok(lanes)
@@ -3316,8 +3316,11 @@ fn operation_state_group_table_before_counter_map(
     }
     ctx.stable_sort_by_key(
         &mut candidates,
-            |value| { let (left_start, left_end) = value; (*left_end,*left_start) },
-            Ord::cmp,
+        |value| {
+            let (left_start, left_end) = value;
+            (*left_end, *left_start)
+        },
+        Ord::cmp,
         "sort NX operation state group candidates",
     )?;
 
@@ -3698,8 +3701,8 @@ pub(crate) fn operation_common_frames(
     }
     ctx.stable_sort_by_key(
         &mut frames,
-            |value| value.offset(),
-            Ord::cmp,
+        CommonFrame::<usize>::offset,
+        Ord::cmp,
         "sort NX common frames",
     )?;
     Ok(frames)
@@ -3988,8 +3991,8 @@ fn record_references(
     }
     ctx.stable_sort_by(
         &mut out,
-            |value| &value.offset,
-            Ord::cmp,
+        |value| &value.offset,
+        Ord::cmp,
         "sort NX direct references",
     )?;
     Ok(out)
@@ -4537,8 +4540,8 @@ fn select_outer_indexed_candidates<'a>(
 ) -> Result<Vec<IndexedCandidate<'a>>, CodecError> {
     ctx.stable_sort_by_key(
         &mut candidates,
-            |value| (value.start(),std::cmp::Reverse(value.source().len())),
-            Ord::cmp,
+        |value| (value.start(), std::cmp::Reverse(value.source().len())),
+        Ord::cmp,
         "nx indexed OM candidates outer sort",
     )?;
     let mut furthest_end = 0;
@@ -4551,8 +4554,8 @@ fn select_outer_indexed_candidates<'a>(
     });
     ctx.stable_sort_by(
         &mut candidates,
-            |value| &value.discovery_order,
-            Ord::cmp,
+        |value| &value.discovery_order,
+        Ord::cmp,
         "nx indexed OM candidates discovery sort",
     )?;
     Ok(candidates)

@@ -38,7 +38,12 @@ fn moved_text_lexemes_keep_their_single_byte_admission() {
         b"<TEXT>".as_slice(),
     ] {
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = if source.starts_with(b"'") { 8 } else { 4 };
+        // Strings use eight backing bytes; a URI admits four bytes before its four-byte factory.
+        policy.limits.max_retained_bytes = if source.starts_with(b"'") || source.starts_with(b"<") {
+            8
+        } else {
+            4
+        };
         with_policy_context(source, &policy, |source, ctx| {
             parser(source, ctx)
                 .value()

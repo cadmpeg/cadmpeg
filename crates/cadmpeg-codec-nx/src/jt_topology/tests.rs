@@ -159,11 +159,13 @@ fn every_face_degree_selects_its_stated_attribute_mask_context() {
 
 #[test]
 fn jt_reconstruction_refuses_ring_work_before_traversal() {
-    crate::test_support::with_decode_context_over(
+    // Admit vertex slot fills before the first face-context traversal.
+    let error = crate::test_support::resource_refusal_at(
         &[],
-        |policy| policy.limits.max_work_units = 0,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan JT vertex face context",
         |ctx| {
-            let error = super::decode(
+            super::decode(
                 ctx,
                 [&[3, 3, 3], &[3], &[], &[], &[], &[], &[], &[]],
                 &[3, 3, 3, 3],
@@ -180,11 +182,10 @@ fn jt_reconstruction_refuses_ring_work_before_traversal() {
                     large_words: &[],
                 },
             )
-            .unwrap_err();
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "scan JT vertex face context" && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-            );
         },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "scan JT vertex face context" && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
     );
 }
 

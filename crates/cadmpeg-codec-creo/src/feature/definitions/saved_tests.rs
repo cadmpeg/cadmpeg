@@ -1832,7 +1832,8 @@ fn decodes_zero_offset_positional_placement_instruction() {
             \xf1\xf7\x0b\xe3\xc0\x4e\x9f\x18\xf6\xf6\x02\xf6\x00\x00\x00\xe6";
     let rows = crate::decode::with_test_decode_ctx(|ctx| -> Result<_, CodecError> {
         Ok(placement_instruction_rows(ctx, payload, 1000)?.collect::<Vec<_>>())
-    }).expect("placement instruction search is admitted");
+    })
+    .expect("placement instruction search is admitted");
     let [row] = rows.as_slice() else {
         panic!("placement row");
     };

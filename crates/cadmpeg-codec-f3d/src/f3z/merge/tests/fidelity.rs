@@ -7,9 +7,28 @@ const ID: &str = "f3d:native:record#one";
 
 fn source(stream: &str) -> SourceFidelity {
     let mut annotations = AnnotationBuilder::new();
-    let handle = StreamHandle::new(cadmpeg_ir::StreamName::try_from(stream.to_owned()).unwrap());
-    annotations.note(ID, &handle, 7).tag("retained");
-    annotations.derived(ID, "geometry").unwrap();
+    let handle = StreamHandle::new(
+        &cadmpeg_test_support::service_decode_context(),
+        cadmpeg_ir::StreamName::try_from(stream.to_owned()).unwrap(),
+        "fixture stream handle",
+    )
+    .unwrap();
+    annotations
+        .note(
+            &cadmpeg_test_support::service_decode_context(),
+            ID,
+            &handle,
+            7,
+            Some("retained"),
+        )
+        .unwrap();
+    annotations
+        .derived(
+            &cadmpeg_test_support::service_decode_context(),
+            ID,
+            "geometry",
+        )
+        .unwrap();
     let mut fidelity = SourceFidelity::with_annotations(annotations.build());
     fidelity
         .insert_retained_record(
@@ -105,8 +124,21 @@ fn source_rescoping_refuses_identity_retained_limit() {
 #[test]
 fn source_rescoping_preserves_absent_provenance_tag() {
     let mut builder = AnnotationBuilder::new();
-    let stream = StreamHandle::new(cadmpeg_ir::StreamName::try_from("member".to_owned()).unwrap());
-    builder.note(ID, &stream, 7);
+    let stream = StreamHandle::new(
+        &cadmpeg_test_support::service_decode_context(),
+        cadmpeg_ir::StreamName::try_from("member".to_owned()).unwrap(),
+        "fixture stream handle",
+    )
+    .unwrap();
+    builder
+        .note(
+            &cadmpeg_test_support::service_decode_context(),
+            ID,
+            &stream,
+            7,
+            None,
+        )
+        .unwrap();
     let output = rescope_fidelity(
         &cadmpeg_test_support::service_decode_context(),
         SourceFidelity::with_annotations(builder.build()),
@@ -154,16 +186,28 @@ fn source_rescoping_refuses_retained_record_collection_limit() {
 
 #[test]
 fn source_rescoping_refuses_provenance_stream_handle_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let arena = DecodeArena::new();
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 5;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = rescope_fidelity(&ctx, source("member"), "part").unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "allocate annotation stream handle")
-    );
+    for _ in 0..128 {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = rescope_fidelity(&ctx, source("member"), "part").unwrap_err();
+        let cadmpeg_core::CodecError::ResourceLimit(first) = error else {
+            panic!("stream-handle storage must refuse");
+        };
+        assert_eq!(first.dimension, ResourceDimension::CollectionItems);
+        assert_eq!(first.limit, policy.limits.max_collection_items);
+        assert!(matches!(ctx.finish_session(),
+            Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first));
+        if first.operation == "allocate annotation stream handle" {
+            return;
+        }
+        let next = first.used.checked_add(first.additional).unwrap();
+        assert!(next > policy.limits.max_collection_items);
+        policy.limits.max_collection_items = next;
+    }
+    panic!("stream-handle admission must be reached");
 }
 
 #[test]
@@ -189,8 +233,21 @@ fn fidelity_append_charged_preserves_source_metadata() {
 fn fidelity_append_refuses_provenance_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let mut builder = AnnotationBuilder::new();
-    let stream = StreamHandle::new(cadmpeg_ir::StreamName::try_from("member".to_owned()).unwrap());
-    builder.note(ID, &stream, 7);
+    let stream = StreamHandle::new(
+        &cadmpeg_test_support::service_decode_context(),
+        cadmpeg_ir::StreamName::try_from("member".to_owned()).unwrap(),
+        "fixture stream handle",
+    )
+    .unwrap();
+    builder
+        .note(
+            &cadmpeg_test_support::service_decode_context(),
+            ID,
+            &stream,
+            7,
+            None,
+        )
+        .unwrap();
     let other = SourceFidelity::with_annotations(builder.build());
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();

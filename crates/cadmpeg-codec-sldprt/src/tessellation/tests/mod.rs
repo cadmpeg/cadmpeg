@@ -295,7 +295,13 @@ fn add_face(
         id: loop_id.clone(),
         face: face_id.clone(),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-            cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()).expect("valid loop ring"),
+            cadmpeg_ir::topology::LoopRing::new(
+                &cadmpeg_test_support::service_decode_context(),
+                coedge_ids,
+                Vec::new(),
+            )
+            .expect("fixture ring admission")
+            .expect("valid loop ring"),
         ),
     });
     model.faces.push(Face {
@@ -374,6 +380,7 @@ fn test_nurbs_surface() -> NurbsSurface {
         })
         .collect();
     NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
@@ -387,35 +394,51 @@ fn test_nurbs_surface() -> NurbsSurface {
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, None),
         false,
     )
+    .expect("fixture constructor admission")
     .expect("valid test NURBS surface")
 }
 
 fn flat_test_nurbs_surface() -> NurbsSurface {
     let mut surface = test_nurbs_surface();
     surface
-        .try_map_control_points(|_, point| {
-            let mut point = point.get();
-            point.z = 0.0;
-            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                    "control_points contains a non-finite point".into(),
-                )
-            })
-        })
+        .try_map_control_points(
+            |_, point| {
+                let mut point = point.get();
+                point.z = 0.0;
+                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("pole edit admission")
         .unwrap();
     surface
 }
 
 fn test_nurbs_corners(surface: &NurbsSurface) -> [Point3; 4] {
     [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)].map(|(u, v)| {
-        cadmpeg_ir::eval::nurbs_surface_point(surface, u, v)
-            .unwrap()
-            .get()
+        cadmpeg_ir::eval::decode::nurbs_surface_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            surface,
+            u,
+            v,
+        )
+        .unwrap()
+        .get()
     })
 }
 
 fn test_nurbs_point_normal(surface: &NurbsSurface, u: f64, v: f64) -> (Point3, Vector3) {
-    let partials = cadmpeg_ir::eval::nurbs_surface_partials(surface, u, v).unwrap();
+    let partials = cadmpeg_ir::eval::nurbs_surface_partials(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        surface,
+        u,
+        v,
+    )
+    .unwrap();
     (
         partials.point.get(),
         partials.du.cross(partials.dv.get()).unit().unwrap(),
@@ -551,7 +574,13 @@ fn add_cylindrical_patch_face(
         id: loop_id.clone(),
         face: face_id.clone(),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-            cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()).expect("valid loop ring"),
+            cadmpeg_ir::topology::LoopRing::new(
+                &cadmpeg_test_support::service_decode_context(),
+                coedge_ids,
+                Vec::new(),
+            )
+            .expect("fixture ring admission")
+            .expect("valid loop ring"),
         ),
     });
     model.faces.push(Face {
@@ -1310,9 +1339,14 @@ fn unique_nurbs_support_binds_exact_display_list_face() {
     set_shell_faces(&mut model, vec![face.clone()]);
     let vertices = [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)]
         .map(|(u, v)| {
-            cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v)
-                .unwrap()
-                .get()
+            cadmpeg_ir::eval::decode::nurbs_surface_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &surface,
+                u,
+                v,
+            )
+            .unwrap()
+            .get()
         })
         .to_vec();
     model.tessellations.push(mesh_from(
@@ -1406,9 +1440,14 @@ fn coincident_nurbs_supports_do_not_choose_a_display_list_face() {
             cadmpeg_ir::tessellation::TessellationMesh::List {
                 vertices: [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)]
                     .map(|(u, v)| {
-                        cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v)
-                            .unwrap()
-                            .get()
+                        cadmpeg_ir::eval::decode::nurbs_surface_point(
+                            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                            &surface,
+                            u,
+                            v,
+                        )
+                        .unwrap()
+                        .get()
                     })
                     .to_vec(),
                 triangles: vec![[0, 1, 2]],
@@ -1463,9 +1502,14 @@ fn coincident_nurbs_and_analytic_supports_do_not_fall_through_to_analytic_fit() 
             cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
                 [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)]
                     .map(|(u, v)| {
-                        cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v)
-                            .unwrap()
-                            .get()
+                        cadmpeg_ir::eval::decode::nurbs_surface_point(
+                            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                            &surface,
+                            u,
+                            v,
+                        )
+                        .unwrap()
+                        .get()
                     })
                     .to_vec(),
                 vec![[0, 1, 2]],
@@ -1897,80 +1941,10 @@ fn planar_boundary_accepts_bounded_circle_arcs() {
     assert_eq!(samples.first(), Some(&Point2::new(2.0, 0.0)));
 }
 
-#[test]
-fn circular_arc_trim_disambiguates_coincident_planar_supports() {
-    let mut model = model_with_body();
-    let target = add_square_face(&mut model, "arc-target", 0.0);
-    let competitor = add_face(
-        &mut model,
-        "arc-competitor",
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-            .unwrap(),
-        )),
-        [
-            Point3::new(2.0, 0.0, 0.0),
-            Point3::new(0.0, 2.0, 0.0),
-            Point3::new(0.0, 1.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-        ],
-    );
-    for (curve_id, radius) in [
-        ("synthetic:test:curve#curve-arc-competitor-0", 2.0),
-        ("synthetic:test:curve#curve-arc-competitor-2", 1.0),
-    ] {
-        model
-            .curves
-            .iter_mut()
-            .find(|curve| curve.id.as_str() == curve_id)
-            .unwrap()
-            .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                radius,
-            )
-            .unwrap(),
-        ));
-    }
-    set_shell_faces(&mut model, vec![target.clone(), competitor]);
-    model.tessellations.push(
-        Tessellation::new(
-            cadmpeg_ir::tessellation::TessellationId::mint(
-                "synthetic:test:tessellation#arc-trim-mesh",
-            )
-            .expect("valid identity"),
-            cadmpeg_ir::tessellation::TessellationMesh::List {
-                vertices: vec![
-                    Point3::new(0.25, -0.75, 0.0),
-                    Point3::new(1.75, -0.75, 0.0),
-                    Point3::new(1.0, -0.25, 0.0),
-                ],
-                triangles: vec![[0, 1, 2]],
-            },
-            Vec::new(),
-        )
-        .expect("valid tessellation"),
-    );
-
-    assert_eq!(
-        assign_unique_surface_owners!(&mut model).unwrap(),
-        vec!["synthetic:test:tessellation#arc-trim-mesh"]
-    );
-    assert_eq!(model.tessellations[0].faces, vec![target]);
-    assert_eq!(
-        model.tessellations[0].body,
-        Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
-    );
-}
-
 mod geometry_predicates;
 
 mod cone_supports;
 
 mod resource_admission;
+
+mod arc_trims;

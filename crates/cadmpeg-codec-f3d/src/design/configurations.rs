@@ -396,8 +396,8 @@ pub(crate) fn project_configurations(
     }
     ctx.stable_sort_by(
         &mut projected,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d configuration variants",
     )?;
     Ok(projected)
@@ -510,11 +510,7 @@ pub(crate) fn bind_configuration_suppressed_features(
                 for dependency in &feature.dependencies {
                     let copied = dependency
                         .try_clone_for_decode(ctx, "f3d configuration suppressed dependency id")?;
-                    dependencies.insert_for_decode(
-                        ctx,
-                        copied,
-                        "f3d configuration suppressed dependency",
-                    )?;
+                    dependencies.insert(ctx, copied, "f3d configuration suppressed dependency")?;
                 }
                 Ok((
                     id,
@@ -1045,7 +1041,12 @@ mod tests {
         let (mut configurations, mut feature) = suppression_limit_fixture();
         feature
             .dependencies
-            .insert(FeatureId::mint("f3d:model:feature#seed").unwrap());
+            .insert(
+                &cadmpeg_test_support::service_decode_context(),
+                FeatureId::mint("f3d:model:feature#seed").unwrap(),
+                "insert fixture member",
+            )
+            .expect("member insertion admission");
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 1;
@@ -1069,7 +1070,12 @@ mod tests {
         let feature_id_bytes = feature.id.as_str().len();
         feature
             .dependencies
-            .insert(FeatureId::mint("f3d:model:feature#seed").unwrap());
+            .insert(
+                &cadmpeg_test_support::service_decode_context(),
+                FeatureId::mint("f3d:model:feature#seed").unwrap(),
+                "insert fixture member",
+            )
+            .expect("member insertion admission");
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = u64::try_from(feature_id_bytes).unwrap();
@@ -1716,7 +1722,7 @@ mod tests {
         .unwrap();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        // The sort scratch holds two index vectors for the 21 projected variants.
+        // The allowance is below index scratch and the earlier replacement-vector peak.
         policy.limits.max_materialized_bytes =
             u64::try_from(21 * 2 * std::mem::size_of::<usize>() - 1).unwrap();
 
@@ -1724,7 +1730,7 @@ mod tests {
         assert!(
             matches!(project_configurations(&ctx, std::slice::from_ref(&table)),
             Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::MaterializedBytes
-                && failure.operation == "sort f3d configuration variants")
+                && failure.operation == "f3d projected configuration")
         );
     }
 }

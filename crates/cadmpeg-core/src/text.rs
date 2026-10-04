@@ -62,7 +62,9 @@ impl StaticNonBlankText {
     /// Validate at most one byte and retain the static borrow.
     pub const fn new(value: &'static str) -> Option<Self> {
         let bytes = value.as_bytes();
-        if bytes.is_empty() { return None; }
+        if bytes.is_empty() {
+            return None;
+        }
         match NonWhitespaceChar::from_ascii(bytes[0]) {
             Some(_) => Some(Self(value)),
             None => None,
@@ -95,7 +97,11 @@ impl JsonSchema for NonBlankString {
 }
 
 impl crate::decode::cost::DecodeCost for NonBlankString {
-    fn decode_cost(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<u64, CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
         crate::decode::cost::DecodeCost::decode_cost(self.as_str(), ctx, operation)
     }
 }
@@ -109,15 +115,20 @@ pub struct NonBlankText<S> {
 }
 
 impl<S: TextSource> AsRef<str> for NonBlankText<S> {
-    fn as_ref(&self) -> &str { self.source.as_text() }
+    fn as_ref(&self) -> &str {
+        self.source.as_text()
+    }
 }
 
 impl TryFrom<NonBlankText<String>> for NonBlankString {
     type Error = &'static str;
 
     fn try_from(value: NonBlankText<String>) -> Result<Self, Self::Error> {
-        if value.nonblank { Ok(Self(Cow::Owned(value.source))) }
-        else { Err("source identity must not be blank") }
+        if value.nonblank {
+            Ok(Self(Cow::Owned(value.source)))
+        } else {
+            Err("source identity must not be blank")
+        }
     }
 }
 
@@ -144,10 +155,18 @@ impl TryFrom<&str> for NonBlankString {
 impl NonBlankString {
     /// Validate UTF-8 text before transferring owned or copying borrowed storage.
     /// The caller admits existing owned storage; a blank borrow needs no copy.
-    pub fn for_decode<S: TextSource>(ctx: &DecodeContext<'_>, value: S, operation: &'static str) -> Result<Option<Self>, crate::decode::ResourceLimit> {
+    pub fn for_decode<S: TextSource>(
+        ctx: &DecodeContext<'_>,
+        value: S,
+        operation: &'static str,
+    ) -> Result<Option<Self>, crate::decode::ResourceLimit> {
         let value = ctx.validate_nonblank_text(value, operation)?;
-        if !value.nonblank { return Ok(None); }
-        Ok(Some(Self(Cow::Owned(value.source.into_retained_text(ctx, operation)?))))
+        if !value.nonblank {
+            return Ok(None);
+        }
+        Ok(Some(Self(Cow::Owned(
+            value.source.into_retained_text(ctx, operation)?,
+        ))))
     }
 
     /// Transfer owned text whose first byte is a non-whitespace ASCII character.
@@ -170,8 +189,10 @@ impl NonBlankString {
         arguments: std::fmt::Arguments<'_>,
     ) -> Result<Self, CodecError> {
         let value = ctx.format_retained(arguments, "format nonblank text")?;
-        if value.chars().next() != Some(leading.0) {
-            return Err(CodecError::malformed("formatted nonblank text has a different prefix"));
+        if !value.starts_with(leading.0) {
+            return Err(CodecError::malformed(
+                "formatted nonblank text has a different prefix",
+            ));
         }
         Ok(Self(Cow::Owned(value)))
     }
@@ -201,7 +222,11 @@ impl NonBlankString {
     }
 
     /// Consumes the value and returns the source string.
-    pub fn into_string(self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<String, CodecError> {
+    pub fn into_string(
+        self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<String, CodecError> {
         ctx.charge_work(0, operation)?;
         match self.0 {
             Cow::Owned(value) => Ok(value),
@@ -369,7 +394,9 @@ pub fn named_entries_reporting<V>(
     let mut refused = Vec::new();
     let mut entries = entries.into_iter();
     loop {
-        let Some((name, value)) = ctx.next_charged(&mut entries, "named entry key scan")? else { break };
+        let Some((name, value)) = ctx.next_charged(&mut entries, "named entry key scan")? else {
+            break;
+        };
         match NonBlankString::for_decode(ctx, name, "named entry key scan")? {
             Some(key) => {
                 if ctx.contains_key_btree_map(&kept, &key, "named entry key comparisons")? {
@@ -465,8 +492,7 @@ impl<'de> Deserialize<'de> for NonBlankString {
     where
         D: serde::Deserializer<'de>,
     {
-        Self::try_from(String::deserialize(deserializer)?)
-            .map_err(serde::de::Error::custom)
+        Self::try_from(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)
     }
 }
 
@@ -544,13 +570,14 @@ mod tests {
 
     #[test]
     fn prefixes_preserve_nonblank_strings_and_wire_values() {
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         const HASH: NonWhitespaceChar = match NonWhitespaceChar::from_ascii(b'#') {
             Some(character) => character,
             None => panic!("the literal is an ASCII non-whitespace character"),
         };
         const PINNED: &str = "pinned";
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         for (prefix, suffix, expected) in [
             (HASH, "42", "#42"),
             (NonWhitespaceChar::hex_digit(0x0a), "", "a"),
@@ -560,7 +587,10 @@ mod tests {
             assert_eq!(value.as_str(), expected);
             assert_eq!(serde_json::to_value(&value).unwrap(), expected);
         }
-        assert_eq!(crate::nonblank_literal!(&ctx, "#{}", 42).unwrap().as_str(), "#42");
+        assert_eq!(
+            crate::nonblank_literal!(&ctx, "#{}", 42).unwrap().as_str(),
+            "#42"
+        );
         assert_eq!(crate::nonblank_const!(PINNED).as_str(), "pinned");
     }
 
@@ -575,8 +605,14 @@ mod tests {
         map.insert(borrowed.clone(), 7);
         assert_eq!(map.get(&owned), Some(&7));
         assert_eq!(map.get("pinned"), Some(&7));
-        assert_eq!(serde_json::to_string(&borrowed).unwrap(), serde_json::to_string(&owned).unwrap());
-        assert_eq!(crate::nonblank_literal!("key {{value}}").as_str(), "key {value}");
+        assert_eq!(
+            serde_json::to_string(&borrowed).unwrap(),
+            serde_json::to_string(&owned).unwrap()
+        );
+        assert_eq!(
+            crate::nonblank_literal!("key {{value}}").as_str(),
+            "key {value}"
+        );
         for value in ["", " ", "\t", "é"] {
             assert!(super::StaticNonBlankText::new(value).is_none());
         }
@@ -585,8 +621,16 @@ mod tests {
         policy.limits.max_work_units = 0;
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert_eq!(owned.into_string(&ctx, "move owned nonblank").unwrap(), "pinned");
-        let CodecError::ResourceLimit(refusal) = borrowed.into_string(&ctx, "copy static nonblank").unwrap_err() else { panic!("resource refusal") };
+        assert_eq!(
+            owned.into_string(&ctx, "move owned nonblank").unwrap(),
+            "pinned"
+        );
+        let CodecError::ResourceLimit(refusal) = borrowed
+            .into_string(&ctx, "copy static nonblank")
+            .unwrap_err()
+        else {
+            panic!("resource refusal")
+        };
         assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
         assert_eq!(refusal.additional, 6);
         assert_eq!(ctx.resource_refusal(), Some(refusal));
@@ -595,15 +639,27 @@ mod tests {
     #[test]
     fn formatted_nonblank_text_pins_work_and_retained_bytes() {
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         let value = crate::nonblank_literal!(&ctx, "#{}", 42).unwrap();
         assert_eq!(value.as_str(), "#42");
-        let CodecError::ResourceLimit(work) = ctx.charge_work(u64::MAX, "probe work").unwrap_err() else { panic!("work refusal") };
+        let CodecError::ResourceLimit(work) = ctx.charge_work(u64::MAX, "probe work").unwrap_err()
+        else {
+            panic!("work refusal")
+        };
         // The length-counting pass and the formatting pass each visit three output bytes.
         assert_eq!(work.used, 6);
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-        assert_eq!(crate::nonblank_literal!(&ctx, "#{}", 42).unwrap().as_str(), "#42");
-        let CodecError::ResourceLimit(storage) = ctx.charge_retained(u64::MAX, "probe storage").unwrap_err() else { panic!("storage refusal") };
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        assert_eq!(
+            crate::nonblank_literal!(&ctx, "#{}", 42).unwrap().as_str(),
+            "#42"
+        );
+        let CodecError::ResourceLimit(storage) =
+            ctx.charge_retained(u64::MAX, "probe storage").unwrap_err()
+        else {
+            panic!("storage refusal")
+        };
         // One three-byte output buffer; formatting creates no intermediate string.
         assert_eq!(storage.used, 3);
     }
@@ -622,15 +678,27 @@ mod tests {
         policy.limits.max_work_units = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let called = std::cell::Cell::new(false);
-        let CodecError::ResourceLimit(first) = crate::nonblank_literal!(&ctx, "prefix{}", Suffix(&called)).unwrap_err() else { panic!("resource refusal") };
+        let CodecError::ResourceLimit(first) =
+            crate::nonblank_literal!(&ctx, "prefix{}", Suffix(&called)).unwrap_err()
+        else {
+            panic!("resource refusal")
+        };
         assert!(!called.get());
         assert_eq!(first.operation, "format nonblank text");
         assert_eq!(ctx.resource_refusal(), Some(first));
-        let CodecError::ResourceLimit(second) = crate::nonblank_literal!(&ctx, "other{}", 1).unwrap_err() else { panic!("resource refusal") };
+        let CodecError::ResourceLimit(second) =
+            crate::nonblank_literal!(&ctx, "other{}", 1).unwrap_err()
+        else {
+            panic!("resource refusal")
+        };
         assert_eq!(second, first);
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         let leading = NonWhitespaceChar::from_ascii(b'#').unwrap();
-        assert!(matches!(NonBlankString::formatted(&ctx, leading, format_args!(" ")), Err(CodecError::Malformed(_))));
+        assert!(matches!(
+            NonBlankString::formatted(&ctx, leading, format_args!(" ")),
+            Err(CodecError::Malformed(_))
+        ));
     }
 
     #[test]
@@ -650,13 +718,17 @@ mod tests {
     #[test]
     fn every_admitted_prefix_produces_text_accepted_by_the_public_reader() {
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         for byte in u8::MIN..=u8::MAX {
             let Some(prefix) = NonWhitespaceChar::from_ascii(byte) else {
                 continue;
             };
             let value = NonBlankString::prefixed(&ctx, prefix, "\t\n\u{85}\u{3000}").unwrap();
-            assert!(NonBlankString::try_from(value.as_str()).is_ok(), "byte {byte}");
+            assert!(
+                NonBlankString::try_from(value.as_str()).is_ok(),
+                "byte {byte}"
+            );
             let wire = serde_json::to_string(&value).unwrap();
             assert_eq!(
                 serde_json::from_str::<NonBlankString>(&wire).unwrap(),
@@ -688,7 +760,9 @@ mod tests {
         assert!(NonBlankString::try_from("").is_err());
         assert!(NonBlankString::try_from("\t\n").is_err());
         assert_eq!(
-            NonBlankString::try_from(" a ").ok().map(|value| value.as_str().to_owned()),
+            NonBlankString::try_from(" a ")
+                .ok()
+                .map(|value| value.as_str().to_owned()),
             Some(" a ".to_owned())
         );
     }
@@ -821,10 +895,19 @@ mod tests {
         policy.limits.max_work_units = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let advanced = std::cell::Cell::new(false);
-        let entries = std::iter::from_fn(|| { advanced.set(true); Some((String::from("key"), 1)) });
-        let CodecError::ResourceLimit(first) = named_entries_reporting(&ctx, "f", entries).unwrap_err() else { panic!("refusal") };
+        let entries = std::iter::from_fn(|| {
+            advanced.set(true);
+            Some((String::from("key"), 1))
+        });
+        let CodecError::ResourceLimit(first) =
+            named_entries_reporting(&ctx, "f", entries).unwrap_err()
+        else {
+            panic!("refusal")
+        };
         assert!(!advanced.get());
-        let CodecError::ResourceLimit(second) = ctx.charge_work(0, "later").unwrap_err() else { panic!("refusal") };
+        let CodecError::ResourceLimit(second) = ctx.charge_work(0, "later").unwrap_err() else {
+            panic!("refusal")
+        };
         assert_eq!(first, second);
     }
 
@@ -838,19 +921,32 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let value = String::from("\u{2003}a");
         let pointer = value.as_ptr();
-        let value = NonBlankString::for_decode(&ctx, value, "validate").unwrap().unwrap();
+        let value = NonBlankString::for_decode(&ctx, value, "validate")
+            .unwrap()
+            .unwrap();
         assert_eq!(value.as_str(), "\u{2003}a");
         assert_eq!(value.as_str().as_ptr(), pointer);
-        let CodecError::ResourceLimit(limit) = ctx.charge_work(1, "probe").unwrap_err() else { panic!("refusal") };
+        let CodecError::ResourceLimit(limit) = ctx.charge_work(1, "probe").unwrap_err() else {
+            panic!("refusal")
+        };
         assert_eq!(limit.used, 4);
         policy.limits.max_work_units = 3;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let first = NonBlankString::for_decode(&ctx, String::from("\u{2003}a"), "validate").unwrap_err();
-        let CodecError::ResourceLimit(second) = ctx.charge_work(0, "later").unwrap_err() else { panic!("refusal") };
+        let first =
+            NonBlankString::for_decode(&ctx, String::from("\u{2003}a"), "validate").unwrap_err();
+        let CodecError::ResourceLimit(second) = ctx.charge_work(0, "later").unwrap_err() else {
+            panic!("refusal")
+        };
         assert_eq!(first, second);
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         for value in ["", "\u{2003}\n", " a "] {
-            assert_eq!(NonBlankString::for_decode(&ctx, String::from(value), "validate").unwrap().is_some(), NonBlankString::try_from(value).is_ok());
+            assert_eq!(
+                NonBlankString::for_decode(&ctx, String::from(value), "validate")
+                    .unwrap()
+                    .is_some(),
+                NonBlankString::try_from(value).is_ok()
+            );
         }
     }
 
@@ -863,14 +959,27 @@ mod tests {
         policy.limits.max_retained_bytes = 4;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let source = String::from("\u{2003}a");
-        let result = NonBlankString::for_decode(&ctx, &source, "borrowed nonblank").unwrap().unwrap();
+        let result = NonBlankString::for_decode(&ctx, &source, "borrowed nonblank")
+            .unwrap()
+            .unwrap();
         assert_eq!(result.as_str(), source);
         assert_ne!(result.as_str().as_ptr(), source.as_ptr());
-        let CodecError::ResourceLimit(work) = ctx.charge_work(1, "probe").unwrap_err() else { panic!("work refusal") };
+        let CodecError::ResourceLimit(work) = ctx.charge_work(1, "probe").unwrap_err() else {
+            panic!("work refusal")
+        };
         assert_eq!(work.used, 8);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert_eq!(NonBlankString::for_decode(&ctx, source.as_str(), "borrowed nonblank").unwrap().unwrap().as_str(), source);
-        let CodecError::ResourceLimit(storage) = ctx.charge_retained(1, "probe").unwrap_err() else { panic!("storage refusal") };
+        assert_eq!(
+            NonBlankString::for_decode(&ctx, source.as_str(), "borrowed nonblank")
+                .unwrap()
+                .unwrap()
+                .as_str(),
+            source
+        );
+        let CodecError::ResourceLimit(storage) = ctx.charge_retained(1, "probe").unwrap_err()
+        else {
+            panic!("storage refusal")
+        };
         assert_eq!(storage.used, 4);
     }
 
@@ -882,8 +991,12 @@ mod tests {
         // Three whitespace bytes are validated without retaining their text.
         policy.limits.max_work_units = 3;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(NonBlankString::for_decode(&ctx, "\u{2003}", "blank text").unwrap().is_none());
-        let CodecError::ResourceLimit(work) = ctx.charge_work(1, "probe").unwrap_err() else { panic!("work refusal") };
+        assert!(NonBlankString::for_decode(&ctx, "\u{2003}", "blank text")
+            .unwrap()
+            .is_none());
+        let CodecError::ResourceLimit(work) = ctx.charge_work(1, "probe").unwrap_err() else {
+            panic!("work refusal")
+        };
         assert_eq!(work.used, 3);
         policy.limits.max_work_units = 8;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
@@ -891,7 +1004,13 @@ mod tests {
         assert_eq!(first.dimension, ResourceDimension::RetainedBytes);
         assert_eq!(first.additional, 4);
         assert_eq!(ctx.resource_refusal(), Some(first));
-        let CodecError::ResourceLimit(second) = NonBlankString::try_from("owned").unwrap().into_string(&ctx, "later owned move").unwrap_err() else { panic!("fused refusal") };
+        let CodecError::ResourceLimit(second) = NonBlankString::try_from("owned")
+            .unwrap()
+            .into_string(&ctx, "later owned move")
+            .unwrap_err()
+        else {
+            panic!("fused refusal")
+        };
         assert_eq!(second, first);
     }
 
@@ -907,8 +1026,12 @@ mod tests {
         let pointer = source.as_ptr();
         let result = source.into_retained_text(&ctx, "owned transfer").unwrap();
         assert_eq!(result.as_ptr(), pointer);
-        let CodecError::ResourceLimit(first) = ctx.charge_work(1, "refuse").unwrap_err() else { panic!("work refusal") };
-        let second = result.into_retained_text(&ctx, "later transfer").unwrap_err();
+        let CodecError::ResourceLimit(first) = ctx.charge_work(1, "refuse").unwrap_err() else {
+            panic!("work refusal")
+        };
+        let second = result
+            .into_retained_text(&ctx, "later transfer")
+            .unwrap_err();
         assert_eq!(second, first);
     }
 
@@ -922,17 +1045,27 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let source = String::from("\u{2003}a");
         let pointer = source.as_ptr();
-        let token = ctx.validate_nonblank_text(source, "validate owned token").unwrap();
+        let token = ctx
+            .validate_nonblank_text(source, "validate owned token")
+            .unwrap();
         assert_eq!(token.as_ref(), "\u{2003}a");
         let value = NonBlankString::try_from(token).unwrap();
         assert_eq!(value.as_str().as_ptr(), pointer);
-        let blank = ctx.validate_nonblank_text(String::from("\u{2003}"), "validate blank token").unwrap();
+        let blank = ctx
+            .validate_nonblank_text(String::from("\u{2003}"), "validate blank token")
+            .unwrap();
         assert_eq!(blank.as_ref(), "\u{2003}");
         assert!(NonBlankString::try_from(blank).is_err());
-        let first = ctx.validate_nonblank_text(String::from("x"), "token refusal").unwrap_err();
+        let first = ctx
+            .validate_nonblank_text(String::from("x"), "token refusal")
+            .unwrap_err();
         assert_eq!(first.used, 7);
         assert_eq!(ctx.resource_refusal(), Some(first));
-        assert_eq!(ctx.validate_nonblank_text(String::from("later"), "later token").unwrap_err(), first);
+        assert_eq!(
+            ctx.validate_nonblank_text(String::from("later"), "later token")
+                .unwrap_err(),
+            first
+        );
     }
 
     #[test]
@@ -1011,7 +1144,9 @@ mod tests {
         let entries = vec![("width".to_owned(), 1), ("width".to_owned(), 2)];
         // One root node and the one-byte record consume the retained ceiling before the duplicate key copy.
         let bytes = 11 * (std::mem::size_of::<NonBlankString>() + std::mem::size_of::<i32>())
-            + 16 * std::mem::size_of::<usize>() + 2 * std::mem::align_of::<NonBlankString>() + 1;
+            + 16 * std::mem::size_of::<usize>()
+            + 2 * std::mem::align_of::<NonBlankString>()
+            + 1;
         assert!(matches!(
             checked_reporting(entries, 10, crate::decode::u64_from_index(bytes)),
             Err(crate::CodecError::ResourceLimit(limit))

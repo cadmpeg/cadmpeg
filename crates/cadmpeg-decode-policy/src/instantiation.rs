@@ -281,7 +281,9 @@ pub(crate) fn check_imported<'tcx>(
 ) {
     let key_work_proofs: HashSet<String> = std::env::var_os("CADMPEG_POLICY_KEY_WORK_PROOFS")
         .and_then(|path| std::fs::read_to_string(path).ok())
-        .map_or_else(HashSet::new, |source| source.lines().map(str::to_owned).collect());
+        .map_or_else(HashSet::new, |source| {
+            source.lines().map(str::to_owned).collect()
+        });
     let mut pending = vec![(
         root.instance,
         root.fixed_operands.clone(),
@@ -469,6 +471,7 @@ pub(crate) fn check_imported<'tcx>(
             let fixed_extent = args
                 .get(match summary.work {
                     external::Work::Argument(index) => index,
+                    external::Work::TextCharacter => 1,
                     _ => 0,
                 })
                 .is_some_and(|operand| {
@@ -639,6 +642,11 @@ pub(crate) fn check_imported<'tcx>(
                             | external::Allocation::Input(0)
                     ) {
                 types::Shape::Fixed
+            } else if (summary.work == external::Work::TextCharacter
+                || operation_name.is_some_and(|name| name.as_str() == "write_str"))
+                && types::standard_string(tcx, receiver)
+            {
+                types::heap(tcx, receiver.peel_refs(), &mut Vec::new())
             } else if summary.allocation == external::Allocation::Growth {
                 // Backing slot bytes are proved in the generic body. Child
                 // cloning and key traits remain concrete work obligations.
@@ -646,16 +654,33 @@ pub(crate) fn check_imported<'tcx>(
             } else {
                 allocation_shape(output, receiver, true)
             };
-            let symbolic_allocation = raw_receiver.map_or(types::Shape::Unknown, |receiver| {
-                allocation_shape(raw_output, receiver, false)
-            });
+            let string_fmt_write = summary.allocation == external::Allocation::Growth
+                && operation_name
+                    .is_some_and(|name| matches!(name.as_str(), "write_char" | "write_str"));
+            // A generic fmt::Write receiver has no String allocation summary.
+            let symbolic_formatter = string_fmt_write
+                && raw_receiver.is_some_and(|receiver| !types::standard_string(tcx, receiver));
+            let symbolic_allocation = if symbolic_formatter {
+                types::Shape::Fixed
+            } else {
+                raw_receiver.map_or(types::Shape::Unknown, |receiver| {
+                    allocation_shape(raw_output, receiver, false)
+                })
+            };
             let index = match summary.work {
                 external::Work::Argument(index) => index,
+                external::Work::TextCharacter => 1,
                 _ => 0,
             };
             let raw_extent = args.get(index).map(|operand| operand.node.ty(body, tcx));
             let work_shape = |extent: rustc_middle::ty::Ty<'tcx>, allocation, concrete, fixed| {
-                if concrete && (fixed || admitted_conversion)
+                if summary.work == external::Work::TextCharacter {
+                    if fixed {
+                        types::Shape::Fixed
+                    } else {
+                        types::Shape::Dynamic
+                    }
+                } else if concrete && (fixed || admitted_conversion)
                     || summary.work == external::Work::Fixed
                     || summary.work == external::Work::Iterator
                         && vector_output
@@ -733,30 +758,65 @@ pub(crate) fn check_imported<'tcx>(
             };
             let arguments_work = |indices: &[usize], concrete| {
                 indices.iter().fold(types::Shape::Fixed, |shape, index| {
-                    let Some(operand) = args.get(*index) else { return shape.join(types::Shape::Unknown); };
+                    let Some(operand) = args.get(*index) else {
+                        return shape.join(types::Shape::Unknown);
+                    };
                     let raw = operand.node.ty(body, tcx);
-                    let extent = if concrete { instance.instantiate_mir(tcx, rustc_middle::ty::EarlyBinder::bind(tcx, raw)) } else { raw };
-                    let fixed = crate::fixed::mir_operand(tcx, body, &operand.node, &fixed_operands, &mut HashSet::new());
-                    shape.join(work_shape(extent, if concrete { allocation } else { symbolic_allocation }, concrete, fixed))
+                    let extent = if concrete {
+                        instance.instantiate_mir(tcx, rustc_middle::ty::EarlyBinder::bind(tcx, raw))
+                    } else {
+                        raw
+                    };
+                    let fixed = crate::fixed::mir_operand(
+                        tcx,
+                        body,
+                        &operand.node,
+                        &fixed_operands,
+                        &mut HashSet::new(),
+                    );
+                    shape.join(work_shape(
+                        extent,
+                        if concrete {
+                            allocation
+                        } else {
+                            symbolic_allocation
+                        },
+                        concrete,
+                        fixed,
+                    ))
                 })
             };
-            let symbolic_work = if let external::Work::Arguments(indices) = summary.work {
+            // A String specialization adds UTF-8 work that the generic trait body does not see.
+            let symbolic_work = if summary.work == external::Work::TextCharacter
+                && raw_receiver.is_some_and(|receiver| !types::standard_string(tcx, receiver))
+            {
+                types::Shape::Fixed
+            } else if let external::Work::Arguments(indices) = summary.work {
                 arguments_work(indices, false)
-            } else { raw_extent.map_or(types::Shape::Unknown, |extent| {
-                work_shape(extent, symbolic_allocation, false, fixed_extent)
-            }) };
-            let work = if key_work_proofs.contains(&crate::key_work::proof_key(tcx, instance.def_id(), block.terminator().source_info.span)) {
+            } else {
+                raw_extent.map_or(types::Shape::Unknown, |extent| {
+                    work_shape(extent, symbolic_allocation, false, fixed_extent)
+                })
+            };
+            let work = if key_work_proofs.contains(&crate::key_work::proof_key(
+                tcx,
+                instance.def_id(),
+                block.terminator().source_info.span,
+            )) {
                 types::Shape::Fixed
             } else if let external::Work::Arguments(indices) = summary.work {
                 arguments_work(indices, true)
-            } else { raw_extent.map_or(types::Shape::Unknown, |extent| {
-                work_shape(
-                    instance.instantiate_mir(tcx, rustc_middle::ty::EarlyBinder::bind(tcx, extent)),
-                    allocation,
-                    true,
-                    fixed_extent,
-                )
-            }) };
+            } else {
+                raw_extent.map_or(types::Shape::Unknown, |extent| {
+                    work_shape(
+                        instance
+                            .instantiate_mir(tcx, rustc_middle::ty::EarlyBinder::bind(tcx, extent)),
+                        allocation,
+                        true,
+                        fixed_extent,
+                    )
+                })
+            };
             for (shape, symbolic, rule) in [
                 (
                     allocation,

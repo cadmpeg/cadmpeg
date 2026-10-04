@@ -737,6 +737,7 @@ mod tests {
             id: CurveId::mint("synthetic:tolerance:curve#nurbs").expect("valid identity"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     degree,
                     if degree == 1 {
                         vec![0.0, 0.0, 0.5, 1.0, 1.0]
@@ -751,6 +752,7 @@ mod tests {
                     None,
                     false,
                 )
+                .expect("fixture constructor admission")
                 .expect("test fixture invariant"),
             )),
             source_object: None,
@@ -908,7 +910,10 @@ mod tests {
         let right = with_source(&[(&key, "b"), ("footer_fingerprint", "g")]);
         let result = diff(&left, &right);
         assert!(!result.is_empty());
-        assert_eq!(result.source.attributes[0].key.as_str(), "footer_fingerprint");
+        assert_eq!(
+            result.source.attributes[0].key.as_str(),
+            "footer_fingerprint"
+        );
     }
 
     /// A document with no source metadata compares against one that has some

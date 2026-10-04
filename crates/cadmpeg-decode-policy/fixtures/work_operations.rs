@@ -55,7 +55,12 @@ pub fn decode(
     Ok(())
 }
 
-pub fn exact_ranges(ctx: &DecodeContext, bytes: &[u8], target: &mut [u8], end: usize) -> Result<(), ()> {
+pub fn exact_ranges(
+    ctx: &DecodeContext,
+    bytes: &[u8],
+    target: &mut [u8],
+    end: usize,
+) -> Result<(), ()> {
     ctx.charge_work(bytes[..end].len() as u64, "range")?;
     target[..end].copy_from_slice(&bytes[..end]);
     ctx.charge_work(bytes[..1].len() as u64, "range")?;
@@ -68,7 +73,12 @@ pub fn exact_ranges(ctx: &DecodeContext, bytes: &[u8], target: &mut [u8], end: u
     target.copy_from_slice(bytes);
     Ok(())
 }
-pub fn changed_range(ctx: &DecodeContext, bytes: &[u8], target: &mut [u8], mut end: usize) -> Result<(), ()> {
+pub fn changed_range(
+    ctx: &DecodeContext,
+    bytes: &[u8],
+    target: &mut [u8],
+    mut end: usize,
+) -> Result<(), ()> {
     ctx.charge_work(bytes[..end].len() as u64, "range")?;
     end += 1;
     target[..end].copy_from_slice(&bytes[..end]); // finding: uncharged_decode_work

@@ -353,8 +353,8 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
                 }
                 ctx.sort_unstable_by(
                     &mut resolved,
-            |value| value,
-            Ord::cmp,
+                    |value| value,
+                    Ord::cmp,
                     "creo sketch explicit incident entities sort",
                 )?;
                 if resolved.len() == vertex.entities.len() {
@@ -386,8 +386,8 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
             )?;
             ctx.sort_unstable_by(
                 &mut derived,
-            |value| value,
-            Ord::cmp,
+                |value| value,
+                Ord::cmp,
                 "creo sketch incident comparison sort",
             )?;
             derived.dedup();

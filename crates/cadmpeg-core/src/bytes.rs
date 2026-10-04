@@ -84,6 +84,4 @@ mod tests {
         assert_eq!(super::assemble_f32_be([0x3f, 0xc0, 0, 0]), 1.5);
         assert_eq!(super::assemble_f64_le([0, 0, 0, 0, 0, 0, 0xf0, 0x3f]), 1.0);
     }
-
-
 }

@@ -2657,3 +2657,5 @@ cadmpeg_core::named_optional_field!(
 cadmpeg_core::named_optional_field!(deserialize_cache, LegacyCache, "cache");
 cadmpeg_core::named_optional_field!(deserialize_native, Box<SweepSurfaceConstruction>, "native");
 cadmpeg_core::named_optional_field!(deserialize_spine, CurveId, "spine");
+
+mod identity_rewrite;

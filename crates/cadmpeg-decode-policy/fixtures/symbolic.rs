@@ -221,11 +221,28 @@ pub fn scoped_slack(ctx: &DecodeContext, count: usize) -> Result<Vec<u8>, ()> {
 }
 
 impl DecodeContext {
-    fn reserve_hash_set_storage<T>(&self, _values: &mut std::collections::HashSet<T>, _count: usize) -> Result<(), ()> { Ok(()) }
-    fn reserve_hash_map_storage<K, V>(&self, _values: &mut std::collections::HashMap<K, V>, _count: usize) -> Result<(), ()> { Ok(()) }
+    fn reserve_hash_set_storage<T>(
+        &self,
+        _values: &mut std::collections::HashSet<T>,
+        _count: usize,
+    ) -> Result<(), ()> {
+        Ok(())
+    }
+    fn reserve_hash_map_storage<K, V>(
+        &self,
+        _values: &mut std::collections::HashMap<K, V>,
+        _count: usize,
+    ) -> Result<(), ()> {
+        Ok(())
+    }
 }
 
-pub fn hash_storage_only(ctx: &DecodeContext, set: &mut std::collections::HashSet<u8>, map: &mut std::collections::HashMap<u8, u8>, other: &mut std::collections::HashSet<u8>) -> Result<(), ()> {
+pub fn hash_storage_only(
+    ctx: &DecodeContext,
+    set: &mut std::collections::HashSet<u8>,
+    map: &mut std::collections::HashMap<u8, u8>,
+    other: &mut std::collections::HashSet<u8>,
+) -> Result<(), ()> {
     ctx.reserve_hash_set_storage(set, 1)?;
     set.insert(1);
     ctx.reserve_hash_map_storage(map, 1)?;
@@ -234,7 +251,11 @@ pub fn hash_storage_only(ctx: &DecodeContext, set: &mut std::collections::HashSe
     Ok(())
 }
 
-pub fn mapped_error_keeps_admission<T>(ctx: &DecodeContext, values: &mut Vec<T>, value: T) -> Result<(), &'static str> {
+pub fn mapped_error_keeps_admission<T>(
+    ctx: &DecodeContext,
+    values: &mut Vec<T>,
+    value: T,
+) -> Result<(), &'static str> {
     ctx.reserve_vec(values, 1).map_err(|_| "refusal")?;
     values.push(value);
     Ok(())

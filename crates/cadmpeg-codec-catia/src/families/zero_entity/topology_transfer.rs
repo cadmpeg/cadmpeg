@@ -95,7 +95,7 @@ pub(super) struct ZeroEntityClosedTopology<'a> {
 pub(super) fn transfer_closed_face_topology(
     admission: &mut FamilyEntityAdmission<'_, '_>,
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     solved: ZeroEntityClosedTopology<'_>,
     topology_budget: &WorkBudget<'_>,
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -1036,7 +1036,7 @@ pub(super) fn transfer_closed_face_topology(
                     "vertex_uses",
                     "catia_annotation_field"
                 ));
-                let ring = admitted!(cadmpeg_ir::topology::LoopRing::new_for_decode(
+                let ring = admitted!(cadmpeg_ir::topology::LoopRing::new(
                     admission.context(),
                     admitted!(admission.context().try_collect_vec(
                         coedge_ids.iter().map(|id| id.try_clone_for_decode(
@@ -1411,15 +1411,16 @@ fn curve_orientation(
     parameter_range: [f64; 2],
     endpoints: [Point3; 2],
 ) -> Result<Option<bool>, cadmpeg_core::CodecError> {
-    let Some(start) = cadmpeg_ir::eval::finite_or_refusal(
-        cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, geometry, parameter_range[0])?,
-    )?
+    let Some(start) =
+        cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+            cadmpeg_ir::eval::decode::curve_point(ctx, geometry, parameter_range[0]),
+        )?)?
     else {
         return Ok(None);
     };
-    let Some(end) = cadmpeg_ir::eval::finite_or_refusal(
-        cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, geometry, parameter_range[1])?,
-    )?
+    let Some(end) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+        cadmpeg_ir::eval::decode::curve_point(ctx, geometry, parameter_range[1]),
+    )?)?
     else {
         return Ok(None);
     };
@@ -1780,10 +1781,12 @@ mod tests {
         .expect("complete topology without native ownership root");
         assert_eq!(no_root_counts.faces, 2);
         assert_eq!(no_root_ir.model.bodies[0].kind, BodyKind::Solid);
-        assert!(
-            crate::assemble::neutral_model_is_admissible(&mut no_root_ir, &[])
-                .expect("resource allocation did not fail")
-        );
+        assert!(crate::assemble::neutral_model_is_admissible(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut no_root_ir,
+            &[]
+        )
+        .expect("resource allocation did not fail"));
         let mut annotations = AnnotationBuilder::new();
         let root = ZeroEntityOwnershipRoot {
             face_roster_pos: 1,
@@ -1825,8 +1828,12 @@ mod tests {
                 .iter()
                 .any(|candidate| candidate.id == coedge.radial_next)
         }));
-        assert!(crate::assemble::neutral_model_is_admissible(&mut ir, &[])
-            .expect("resource allocation did not fail"));
+        assert!(crate::assemble::neutral_model_is_admissible(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut ir,
+            &[]
+        )
+        .expect("resource allocation did not fail"));
     }
 
     #[test]
@@ -1934,8 +1941,12 @@ mod tests {
                 .geometry,
             CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
         ));
-        assert!(crate::assemble::neutral_model_is_admissible(&mut ir, &[])
-            .expect("resource allocation did not fail"));
+        assert!(crate::assemble::neutral_model_is_admissible(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut ir,
+            &[]
+        )
+        .expect("resource allocation did not fail"));
     }
 }
 

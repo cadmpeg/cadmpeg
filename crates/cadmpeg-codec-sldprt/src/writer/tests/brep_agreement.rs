@@ -67,9 +67,13 @@ fn feature_output_scope_edit_is_refused() {
     } else {
         Vec::new()
     };
-    decoded.ir_mut().model.features[0]
-        .evaluation
-        .set_outputs((replacement).try_into().unwrap());
+    decoded.ir_mut().model.features[0].evaluation.set_outputs(
+        cadmpeg_ir::features::DistinctMembers::try_from(
+            replacement,
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap(),
+    );
     let error = crate::test_support::plan_inherited_write(
         decoded.ir(),
         decoded.source_fidelity(),
@@ -118,9 +122,13 @@ fn feature_output_edit_with_nongeometric_history_edit_is_refused() {
         Vec::new()
     };
     let mut edit = decoded.ir_mut();
-    edit.model.features[modeling]
-        .evaluation
-        .set_outputs((replacement).try_into().unwrap());
+    edit.model.features[modeling].evaluation.set_outputs(
+        cadmpeg_ir::features::DistinctMembers::try_from(
+            replacement,
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap(),
+    );
     edit.model.features[nongeometric].source_text = Some("changed".into());
     drop(edit);
     let error = crate::test_support::plan_inherited_write(

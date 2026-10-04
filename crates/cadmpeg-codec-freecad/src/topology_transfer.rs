@@ -11,9 +11,7 @@ use cadmpeg_ir::geometry::nurbs::NurbsError;
 use cadmpeg_ir::geometry::pcurve::{PcurveMetadata, PcurveNurbsPoles, WeightedPole2};
 use cadmpeg_ir::geometry::{
     pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
-    sampled::{
-        GeometryLayoutError, PolygonalSurface, PolylineCurve, PolylineSamples, PolylineVertex,
-    },
+    sampled::{PolygonalSurface, PolylineCurve, PolylineSamples, PolylineVertex},
     Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
     SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
@@ -200,8 +198,12 @@ pub(crate) fn transfer(
             });
         let source_object =
             ctx.copy_retained_text(source_object, "FreeCAD topology source object")?;
-        let source_object = cadmpeg_core::text::NonBlankString::for_decode(ctx, source_object, "validate nonblank text")?
-            .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?;
+        let source_object = cadmpeg_core::text::NonBlankString::for_decode(
+            ctx,
+            source_object,
+            "validate nonblank text",
+        )?
+        .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?;
         let mut builder = Builder::new(ctx, payload, tables, source_object)?;
         builder.emit_pcurves(ir)?;
         for root in builder.body_roots()? {
@@ -270,7 +272,11 @@ struct RegionTraversal {
 struct OccurrenceKey(String);
 
 impl cadmpeg_core::decode::cost::DecodeCost for OccurrenceKey {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         cadmpeg_core::decode::cost::DecodeCost::decode_cost(&self.0, ctx, operation)
     }
 }
@@ -285,7 +291,11 @@ impl OccurrenceKey {
 struct SourceOccurrenceKey(String);
 
 impl cadmpeg_core::decode::cost::DecodeCost for SourceOccurrenceKey {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         cadmpeg_core::decode::cost::DecodeCost::decode_cost(&self.0, ctx, operation)
     }
 }
@@ -344,10 +354,14 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
     fn source_association(&self) -> Result<SourceObjectAssociation, CodecError> {
         Ok(SourceObjectAssociation {
             format: cadmpeg_ir::CodecFormat::Fcstd,
-            object_id: cadmpeg_core::text::NonBlankString::for_decode(self.ctx, self.ctx.copy_retained_text(
-                self.source_object.as_str(),
-                "FreeCAD topology source association",
-            )?, "validate nonblank text")?
+            object_id: cadmpeg_core::text::NonBlankString::for_decode(
+                self.ctx,
+                self.ctx.copy_retained_text(
+                    self.source_object.as_str(),
+                    "FreeCAD topology source association",
+                )?,
+                "validate nonblank text",
+            )?
             .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
             name: None,
             color: None,
@@ -1162,7 +1176,8 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                                 .copy_slice(triangles, "FreeCAD polygonal surface triangles")?,
                             triangulation.deflection,
                             *deflection_scale,
-                        )
+                            self.ctx,
+                        )?
                         .map_err(|error| CodecError::Malformed(error.to_string()))?,
                     )),
                     source_object: Some(self.source_association()?),
@@ -1355,23 +1370,19 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 id: loop_id.try_clone_for_decode(self.ctx, "FreeCAD loop record identity")?,
                 face: face_id.try_clone_for_decode(self.ctx, "FreeCAD loop face identity")?,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                    cadmpeg_ir::topology::LoopRing::new_for_decode(
-                        self.ctx,
-                        coedge_ids,
-                        Vec::new(),
-                    )
-                    .map_err(cadmpeg_core::CodecError::from)?
-                    .map_err(|error| {
-                        crate::resource::malformed_charged(
-                            self.ctx,
-                            format_args!(
-                                "FCStd face {} loop {} has invalid ring: {error}",
-                                face_id,
-                                loop_index + 1,
-                            ),
-                            "FreeCAD face ring diagnostic",
-                        )
-                    })?,
+                    cadmpeg_ir::topology::LoopRing::new(self.ctx, coedge_ids, Vec::new())
+                        .map_err(cadmpeg_core::CodecError::from)?
+                        .map_err(|error| {
+                            crate::resource::malformed_charged(
+                                self.ctx,
+                                format_args!(
+                                    "FCStd face {} loop {} has invalid ring: {error}",
+                                    face_id,
+                                    loop_index + 1,
+                                ),
+                                "FreeCAD face ring diagnostic",
+                            )
+                        })?,
                 ),
             });
             self.bind_topology(
@@ -1585,8 +1596,8 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             )
             .map_err(CodecError::malformed)?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline({
-                place_polyline_samples(&mut samples, carrier_transform)?;
-                PolylineCurve::from_scaled_deflection(samples, deflection, scale)
+                place_polyline_samples(&mut samples, carrier_transform, self.ctx)?;
+                PolylineCurve::from_scaled_deflection(samples, deflection, scale, self.ctx)?
                     .map_err(|error| CodecError::Malformed(error.to_string()))?
             })),
             source_object: Some(self.source_association()?),
@@ -1606,8 +1617,8 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             ir.model.curves.push(Curve {
                 id: self.polygon_curve_id(edge, ordinal, true)?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline({
-                    place_polyline_samples(&mut samples, carrier_transform)?;
-                    PolylineCurve::from_scaled_deflection(samples, deflection, scale)
+                    place_polyline_samples(&mut samples, carrier_transform, self.ctx)?;
+                    PolylineCurve::from_scaled_deflection(samples, deflection, scale, self.ctx)?
                         .map_err(|error| CodecError::Malformed(error.to_string()))?
                 })),
                 source_object: Some(self.source_association()?),
@@ -1921,7 +1932,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             });
             if has_procedural_construction {
                 ir.model
-                    .add_procedural_surface_for_decode(
+                    .add_procedural_surface(
                         self.ctx,
                         &id.try_clone_for_decode(
                             self.ctx,
@@ -2365,12 +2376,13 @@ pub(crate) fn pcurve_geometry(
             let mut knots = ctx.collection_vec(nurbs.knots.len(), "FreeCAD pcurve knots")?;
             knots.extend(nurbs.knots.iter().map(|knot| knot.get()));
             Some(PcurveGeometry::Nurbs {
-                nurbs: PcurveNurbs::from_admitted_rows(
+                nurbs: PcurveNurbs::new(
+                    ctx,
                     nurbs.degree,
-                    cadmpeg_ir::geometry::nurbs::KnotVector::new(knots)?,
+                    cadmpeg_ir::geometry::nurbs::KnotVector::new(ctx, knots)??,
                     poles,
                     nurbs.periodic,
-                )?,
+                )??,
             })
         }
         TextCurve2d::Trimmed {
@@ -2479,16 +2491,19 @@ fn transform_surface(
 fn place_polyline_samples(
     samples: &mut PolylineSamples<FiniteReal, FinitePoint3>,
     transform: Transform,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    samples
-        .edit_admitted_points(|point| {
-            transform.apply_point(point.get()).ok_or_else(|| {
-                GeometryLayoutError::EditRefused(
-                    "placed polyline sample contains a non-finite coordinate".to_string(),
-                )
-            })
-        })
-        .map_err(|error| CodecError::malformed(error.to_string()))
+    samples.edit_admitted_points(
+        |point| match transform.apply_point(point.get()) {
+            Some(point) => Ok(point),
+            None => Err(CodecError::Malformed(ctx.copy_retained_text(
+                "placed polyline sample contains a non-finite coordinate",
+                "FreeCAD polyline placement refusal",
+            )?)),
+        },
+        ctx,
+    )??;
+    Ok(())
 }
 
 fn transform_normalized_vector(transform: Transform, vector: Vector3) -> Option<FiniteVector3> {

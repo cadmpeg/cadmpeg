@@ -76,8 +76,8 @@ fn legacy_scan_refuses_work_after_directory_traversal() {
 
     // Start with the same small policy and advance across the shared CFB charges.
     let mut cap = 3;
-    let mut reached = false;
-    for _ in 0..256 {
+    // Each positive refusal advances the exact cumulative allowance.
+    let reached = loop {
         let limit = crate::test_support::with_decode_context_over(
             &file,
             |policy| policy.limits.max_work_units = cap,
@@ -94,8 +94,7 @@ fn legacy_scan_refuses_work_after_directory_traversal() {
             },
         );
         if limit.operation == "scan legacy NX directory" {
-            reached = true;
-            break;
+            break true;
         }
         let needed = limit
             .used
@@ -103,7 +102,7 @@ fn legacy_scan_refuses_work_after_directory_traversal() {
             .expect("fixture work fits");
         assert!(needed > cap);
         cap = needed;
-    }
+    };
     assert!(
         reached,
         "CFB admission must reach the legacy NX directory refusal"
@@ -653,22 +652,21 @@ fn fastload_id_table_refuses_collection_limit_before_reserve() {
 #[test]
 fn fastload_candidate_scan_refuses_work_limit_before_reading_count() {
     let file = rmfastload_prt();
-
-    crate::test_support::with_decode_context_over(
+    // Admit marker search and refuse the candidate visit before its count read.
+    let error = crate::test_support::resource_refusal_at(
         &file,
-        |policy| {
-            policy.limits.max_work_units = 0;
-        },
-        |ctx| {
-            let error = container::scan_bytes(ctx, file.as_slice())
-                .expect_err("candidate scan needs one work unit");
-            let CodecError::ResourceLimit(limit) = error else {
-                panic!("FastLoad scan must return a resource refusal: {error}");
-            };
-            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(limit.operation, "scan NX FastLoad table candidates");
-        },
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan NX FastLoad table candidates",
+        |ctx| container::scan_bytes(ctx, file.as_slice()),
     );
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("FastLoad scan must return a resource refusal: {error}");
+    };
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits
+    );
+    assert_eq!(limit.operation, "scan NX FastLoad table candidates");
 }
 
 #[test]

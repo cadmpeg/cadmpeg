@@ -633,9 +633,12 @@ fn insert_termination_field(
     value: String,
     operation: &'static str,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let name =
-        cadmpeg_core::text::NonBlankString::for_decode(ctx, copy_termination_text(ctx, name, operation)?, "validate nonblank text")?
-            .ok_or_else(|| cadmpeg_core::CodecError::malformed("blank termination field name"))?;
+    let name = cadmpeg_core::text::NonBlankString::for_decode(
+        ctx,
+        copy_termination_text(ctx, name, operation)?,
+        "validate nonblank text",
+    )?
+    .ok_or_else(|| cadmpeg_core::CodecError::malformed("blank termination field name"))?;
     ctx.insert_btree_map(fields, name, value, operation)?;
     Ok(())
 }
@@ -1176,12 +1179,7 @@ fn history_object_offsets(
         ctx.reserve_vec(&mut objects, 1, operation)?;
         objects.push((name.offset, id));
     }
-    ctx.sort_unstable_by(
-        &mut objects,
-            |value| &value.0,
-            Ord::cmp,
-        operation,
-    )?;
+    ctx.sort_unstable_by(&mut objects, |value| &value.0, Ord::cmp, operation)?;
     Ok(objects)
 }
 
@@ -1314,12 +1312,7 @@ pub(crate) fn project_surface_sweep_profiles(
                 objects.push((name.offset, *feature));
             }
         }
-        ctx.sort_unstable_by(
-            &mut objects,
-            |value| &value.0,
-            Ord::cmp,
-            OPERATION,
-        )?;
+        ctx.sort_unstable_by(&mut objects, |value| &value.0, Ord::cmp, OPERATION)?;
         for (index, &(start, feature)) in objects.iter().enumerate() {
             ctx.charge_work(
                 u64_from_index(feature.input_class.as_ref().map_or(0, String::len))
@@ -1423,13 +1416,13 @@ pub(crate) fn project_surface_sweep_profiles(
                         ),
                         OPERATION,
                     )?;
-                    let Ok(curve) = GeneratedCurveRef::new(feature_id, local_id) else {
+                    let Ok(curve) = GeneratedCurveRef::new(feature_id, local_id, ctx)? else {
                         continue;
                     };
                     let mut curves = Vec::new();
                     ctx.reserve_vec(&mut curves, 1, OPERATION)?;
                     curves.push(curve);
-                    let Ok(profile) = PlanarProfileRef::generated(curves, native) else {
+                    let Ok(profile) = PlanarProfileRef::generated(curves, native, ctx)? else {
                         continue;
                     };
                     ctx.reserve_vec(&mut generated, 1, OPERATION)?;
@@ -1514,9 +1507,7 @@ pub(crate) fn project_surface_sweep_profiles(
                 ctx.charge_work(work, OPERATION)?;
             }
             if dependency != feature.id && !feature.dependencies.contains(&dependency) {
-                feature
-                    .dependencies
-                    .insert_for_decode(ctx, dependency, OPERATION)?;
+                feature.dependencies.insert(ctx, dependency, OPERATION)?;
             }
         }
     }
@@ -1714,14 +1705,14 @@ pub(crate) fn project_compact_combine_paths(
             let owner = copy_termination_feature_id(ctx, id, OPERATION)?;
             let body_owner = copy_termination_feature_id(ctx, id, OPERATION)?;
             let local_id = component_local_ids(ctx, &components, OPERATION)?;
-            let Ok(body) = GeneratedBodyRef::new(body_owner, local_id) else {
+            let Ok(body) = GeneratedBodyRef::new(body_owner, local_id, ctx)? else {
                 return Ok(None);
             };
             let mut bodies = Vec::new();
             ctx.reserve_vec(&mut bodies, 1, OPERATION)?;
             bodies.push(body);
             let native = copy_termination_text(ctx, native, OPERATION)?;
-            let Ok(selection) = BodySelection::generated_for_decode(bodies, native, ctx)? else {
+            let Ok(selection) = BodySelection::generated(bodies, native, ctx)? else {
                 return Ok(None);
             };
             Ok(Some((selection, components, owner)))
@@ -1848,23 +1839,10 @@ pub(crate) fn project_compact_combine_paths(
                 ctx.charge_work(work, OPERATION)?;
             }
             if dependency != feature.id && !feature.dependencies.contains(&dependency) {
-                feature
-                    .dependencies
-                    .insert_for_decode(ctx, dependency, OPERATION)?;
+                feature.dependencies.insert(ctx, dependency, OPERATION)?;
             }
         }
-        for selection in [&projection.target, &projection.tools] {
-            if let BodySelection::Generated { bodies, .. } = selection {
-                for body in bodies {
-                    let work = u64_from_index(body.feature.as_str().len())
-                        .checked_add(u64_from_index(body.local_id.as_str().len()))
-                        .and_then(|work| work.checked_add(2))
-                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                    ctx.charge_work(work, OPERATION)?;
-                }
-            }
-        }
-        let operands = CombineOperands::new(projection.target, projection.tools)
+        let operands = CombineOperands::new(projection.target, projection.tools, ctx)?
             .map_err(cadmpeg_core::CodecError::malformed)?;
         feature.evaluation.edit(|definition, _| {
             if let FeatureDefinition::Operation(FeatureOperation::Combine {

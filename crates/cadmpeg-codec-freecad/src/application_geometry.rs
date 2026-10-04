@@ -150,7 +150,11 @@ fn association(
 ) -> Result<SourceObjectAssociation, CodecError> {
     Ok(SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Fcstd,
-        object_id: cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.copy_retained_text(&property.owner, "FreeCAD geometry object identity")?, "validate nonblank text")?
+        object_id: cadmpeg_core::text::NonBlankString::for_decode(
+            ctx,
+            ctx.copy_retained_text(&property.owner, "FreeCAD geometry object identity")?,
+            "validate nonblank text",
+        )?
         .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
         name: Some(ctx.copy_retained_text(&property.name, "FreeCAD geometry property name")?),
         color: None,

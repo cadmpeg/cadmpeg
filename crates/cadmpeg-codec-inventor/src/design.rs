@@ -582,35 +582,7 @@ pub(crate) fn project_parameters(
             dependencies.len(),
             "collect Inventor parameter dependencies",
         )?;
-        let peer_count = if dependencies.is_empty() {
-            0
-        } else {
-            dependencies.len() - 1
-        };
-        let comparison_bytes = ctx
-            .admit_iter(
-                &dependencies,
-                "measure Inventor parameter dependency comparisons",
-            )?
-            .try_fold(0_u64, |total, id| {
-                total.checked_add(cadmpeg_core::decode::u64_from_index(id.as_str().len()))
-            })
-            .and_then(|total| total.checked_mul(cadmpeg_core::decode::u64_from_index(peer_count)))
-            .and_then(|total| total.checked_mul(2))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "compare Inventor parameter dependencies",
-                    u64::MAX,
-                    u64::MAX,
-                )
-            })?;
-        // Each distinct pair is compared in both insert_for_decode and insert.
-        ctx.charge_work(comparison_bytes, "compare Inventor parameter dependencies")?;
-        dependency_members.extend_for_decode(
-            ctx,
-            dependencies,
-            "collect Inventor parameter dependencies",
-        )?;
+        dependency_members.append(ctx, dependencies, "collect Inventor parameter dependencies")?;
         let projected_parameter = DesignParameter {
             id,
             owner: None,
@@ -2525,7 +2497,11 @@ mod tests {
             value: Some(ParameterValue::Real(
                 cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite scalar fixture"),
             )),
-            dependencies: (dependencies).try_into().expect("valid test fixture"),
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
+                dependencies,
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("valid test fixture"),
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -2572,12 +2548,11 @@ mod tests {
             expression: name.into(),
             display: None,
             value: None,
-            dependencies: dependency
-                .into_iter()
-                .map(id)
-                .collect::<Vec<_>>()
-                .try_into()
-                .expect("valid dependency fixture"),
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
+                dependency.into_iter().map(id).collect::<Vec<_>>(),
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("valid dependency fixture"),
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -2610,36 +2585,32 @@ mod tests {
             expression: name.into(),
             display: None,
             value: None,
-            dependencies: dependency
-                .into_iter()
-                .map(id)
-                .collect::<Vec<_>>()
-                .try_into()
-                .expect("valid dependency fixture"),
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
+                dependency.into_iter().map(id).collect::<Vec<_>>(),
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("valid dependency fixture"),
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: None,
         };
         let parameters = vec![make("c", Some("b")), make("b", Some("a")), make("a", None)];
-        let mut policy = DecodePolicy::service();
-        let id_bytes = parameters
-            .iter()
-            .map(|parameter| parameter.id.as_str().len())
-            .sum::<usize>();
-        let dependency_bytes = parameters
-            .iter()
-            .flat_map(|parameter| parameter.dependencies.as_slice())
-            .map(|id| id.as_str().len())
-            .sum::<usize>();
-        // Twenty-two source, fill, collector and queue visits plus two index hashes and each dependency lookup precede the first edge visit.
-        policy.limits.max_work_units =
-            cadmpeg_core::decode::u64_from_index(22 + 2 * id_bytes + dependency_bytes);
-        let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty fixture view");
+        // The dynamic cap reaches the first reverse-edge visit after identity admission.
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "visit Inventor parameter edge",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("empty fixture view");
+                close_parameter_graph(&ctx, parameters.clone())
+            },
+        );
         assert!(matches!(
-            close_parameter_graph(&ctx, parameters),
-            Err(CodecError::ResourceLimit(limit))
+            error,
+            CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::WorkUnits
                     && limit.operation == "visit Inventor parameter edge"
         ));
@@ -2656,7 +2627,11 @@ mod tests {
             expression: "a".into(),
             display: None,
             value: None,
-            dependencies: Vec::new().try_into().expect("empty dependencies"),
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
+                Vec::new(),
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("empty dependencies"),
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -2685,7 +2660,11 @@ mod tests {
             expression: "a".into(),
             display: None,
             value: None,
-            dependencies: Vec::new().try_into().expect("empty dependencies"),
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
+                Vec::new(),
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("empty dependencies"),
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -2839,44 +2818,23 @@ mod tests {
             + 16
             + 31
             + 12 * std::mem::size_of::<u32>();
-        // The cap includes planning overlap and rendered-map overlap with earlier text live.
-        let length_map_overlap =
-            8 * std::mem::size_of::<(u32, super::MeasuredExpression)>() + 8 + 31;
-        // Add length is 2 * child length + 7 bytes: 1, 9, 25, 57, 121, 249.
-        let rendered_lengths_before_map_growth = 1 + 9 + 25 + 57;
-        let rendered_map_four_buckets = 4 * std::mem::size_of::<(u32, String)>() + 4 + 31;
-        let rendered_map_eight_buckets = 8 * std::mem::size_of::<(u32, String)>() + 8 + 31;
-        let planning_peak = plan_bytes + length_map_overlap;
-        let rendered_map_growth_peak = plan_bytes
-            + rendered_lengths_before_map_growth
-            + rendered_map_four_buckets
-            + rendered_map_eight_buckets;
-        let live = planning_peak.max(rendered_map_growth_peak);
-
-        // Each Add emits twice its child length plus seven delimiters. The
-        // four-bucket overlap determines whether 121 bytes fit before refusal.
-        let next_rendered_length = 2 * 57 + 7;
-        let map_growth_fits_next_text = rendered_map_four_buckets >= next_rendered_length;
-        let rendered_lengths_before_refusal = rendered_lengths_before_map_growth
-            + if map_growth_fits_next_text {
-                next_rendered_length
-            } else {
-                0
-            };
-        let refusal_length = if map_growth_fits_next_text {
-            2 * next_rendered_length + 7
-        } else {
-            next_rendered_length
-        };
-        let used = plan_bytes + rendered_lengths_before_refusal + rendered_map_eight_buckets;
-        policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(live);
+        // Five rendered lengths total 213 bytes; their memo table has eight buckets.
+        // The sixth shared-add node needs 2*121+7 bytes, above every earlier replacement peak.
+        let live = plan_bytes
+            + (1 + 9 + 25 + 57 + 121)
+            + 8 * std::mem::size_of::<(u32, String)>()
+            + 8
+            + 31;
+        let next_length = 2 * 121 + 7;
+        policy.limits.max_materialized_bytes =
+            cadmpeg_core::decode::u64_from_index(live + next_length - 1);
         assert!(matches!(
             render_graph(&policy, kinds, 8),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::MaterializedBytes
                     && limit.operation == "render Inventor expression bytes"
-                    && limit.used == cadmpeg_core::decode::u64_from_index(used)
-                    && limit.additional == cadmpeg_core::decode::u64_from_index(refusal_length)
+                    && limit.used == cadmpeg_core::decode::u64_from_index(live)
+                    && limit.additional == cadmpeg_core::decode::u64_from_index(next_length)
         ));
     }
 
@@ -2952,8 +2910,8 @@ mod tests {
     #[test]
     fn expression_render_refuses_work_limit_before_text_allocation() {
         let mut policy = DecodePolicy::service();
-        // One node visit fits; the token-and-ordinal lookup refuses before allocating text.
-        policy.limits.max_work_units = 1;
+        // One expression visit and two complete four-byte ancestor-key hashes precede rendering.
+        policy.limits.max_work_units = 1 + 2 * 4;
         assert!(matches!(
             render_graph(&policy, vec![reference_leaf()], 1),
             Err(CodecError::ResourceLimit(limit))

@@ -184,7 +184,11 @@ pub(super) fn orient_loop_members(
             ctx.push_vec(occurrences, (node, sense), "catia b5 orientation edge uses")?;
         }
     }
-    let mut constraints = ctx.collect_indexed_vec(loop_ids.len(), "catia b5 loop orientation constraints", |_| Ok(Vec::<(usize, bool)>::new()))?;
+    let mut constraints = ctx.collect_indexed_vec(
+        loop_ids.len(),
+        "catia b5 loop orientation constraints",
+        |_| Ok(Vec::<(usize, bool)>::new()),
+    )?;
     for [(left, left_reversed), (right, right_reversed)] in uses
         .values()
         .filter_map(|occurrences| <&[_; 2]>::try_from(occurrences.as_slice()).ok())
@@ -468,7 +472,7 @@ pub(super) struct EmittedFaceInputs<'a> {
 /// face with its loops and coedges, closing radial-next rings by shared edge.
 pub(super) fn emit_faces(
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     graph: &B5Graph,
     plan: &TransferPlan,
     emitted: &EmittedFaceInputs<'_>,
@@ -784,12 +788,9 @@ pub(super) fn emit_faces(
                     "catia_b5_loop_annotation",
                 )?;
             }
-            let Ok(ring) = cadmpeg_ir::topology::LoopRing::new_for_decode(
-                admission.context(),
-                coedge_ids,
-                vertex_uses,
-            )
-            .map_err(cadmpeg_core::CodecError::from)?
+            let Ok(ring) =
+                cadmpeg_ir::topology::LoopRing::new(admission.context(), coedge_ids, vertex_uses)
+                    .map_err(cadmpeg_core::CodecError::from)?
             else {
                 return Ok(false);
             };

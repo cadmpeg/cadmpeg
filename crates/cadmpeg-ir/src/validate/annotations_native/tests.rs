@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use super::annotated_entity_json;
+use super::check_annotations;
 use crate::report::check::Check;
 use crate::validate::validate_neutral;
 use crate::{examples::unit_cube, NativeNamespace, NativeRecord};
 use serde_json::{Map, Value};
-use std::collections::HashSet;
 
 #[test]
 fn model_entity_wins_when_native_id_collides() {
@@ -22,9 +21,38 @@ fn model_entity_wins_when_native_id_collides() {
         .expect("valid native identity")],
     );
     ir.native.0.insert("collision".into(), namespace);
-    let entities = annotated_entity_json(&ir, &HashSet::from([id.as_str()]));
-    assert!(entities[&id].get("position").is_some());
-    assert!(entities[&id].get("native_only").is_none());
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let all_ids = super::BorrowedIdentities::build(&ctx, |add| add(id.as_str(), ())).unwrap();
+    let mut builder = crate::AnnotationBuilder::new();
+    builder
+        .derived(
+            &cadmpeg_test_support::service_decode_context(),
+            &id,
+            "position",
+        )
+        .unwrap();
+    builder
+        .derived(
+            &cadmpeg_test_support::service_decode_context(),
+            &id,
+            "native_only",
+        )
+        .unwrap();
+    let mut findings = Vec::new();
+    check_annotations(
+        &ctx,
+        crate::native::view::NativeView::new(&ir, None),
+        &builder.build(),
+        &all_ids,
+        &mut findings,
+    )
+    .unwrap();
+    assert!(!findings
+        .iter()
+        .any(|finding| finding.message.contains("`position`")));
+    assert!(findings
+        .iter()
+        .any(|finding| finding.message.contains("`native_only`")));
 }
 
 #[test]
@@ -32,10 +60,27 @@ fn annotation_keys_and_field_paths_are_checked() {
     let ir = unit_cube().expect("valid unit cube fixture");
     let mut source_fidelity = crate::SourceFidelity::default();
     let mut annotations = crate::AnnotationBuilder::new();
-    let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
-    annotations.note("missing", &stream, 0);
+    let stream = crate::annotations::StreamHandle::new(
+        &cadmpeg_test_support::service_decode_context(),
+        crate::stream_name!("test:source"),
+        "fixture stream handle",
+    )
+    .unwrap();
     annotations
-        .derived(ir.model.edges[0].id.as_str(), "not_a_serialized_field")
+        .note(
+            &cadmpeg_test_support::service_decode_context(),
+            "missing",
+            &stream,
+            0,
+            None,
+        )
+        .unwrap();
+    annotations
+        .derived(
+            &cadmpeg_test_support::service_decode_context(),
+            ir.model.edges[0].id.as_str(),
+            "not_a_serialized_field",
+        )
         .expect("nonempty exactness field");
     source_fidelity.annotations = annotations.build();
     let findings = crate::validate_neutral_with_source_fidelity(&ir, &source_fidelity, Vec::new())
@@ -60,7 +105,9 @@ fn native_topology_link_must_resolve() {
         )
         .expect("valid native identity")],
     );
-    ir.native.finalize();
+    ir.native
+        .finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
     assert!(validate_neutral(&ir, Vec::new())
         .expect("resource allocation did not fail")
         .findings
@@ -119,6 +166,7 @@ fn parameter_native_ref_must_resolve() {
 fn unresolved_unknown_record_link_is_reported_once() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.set_native_unknowns(
+        &cadmpeg_test_support::service_decode_context(),
         "test",
         &[crate::NativeUnknownRecord {
             id: crate::ids::UnknownId::mint("test:model:unknown#0").expect("valid identity"),

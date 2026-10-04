@@ -408,18 +408,20 @@ fn unsigned_signed_branch_charges_work_before_expansion() {
         SectionAxis::U,
         1.0,
     )];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("small input fits the policy");
-    let error = super::solve_unsigned_dimension_coordinates(
-        &ctx,
-        &equations,
-        &BTreeMap::new(),
-        &[(1, 2, SectionAxis::U, 1.0)],
-    )
-    .expect_err("the first signed branch needs one work unit");
+    // Copied equation buffers and their complete key costs precede the first branch visit.
+    let error = crate::test_support::last_refusal_at(
+        &[0],
+        ResourceDimension::WorkUnits,
+        "explore Creo section distance signs",
+        |ctx| {
+            super::solve_unsigned_dimension_coordinates(
+                ctx,
+                &equations,
+                &BTreeMap::new(),
+                &[(1, 2, SectionAxis::U, 1.0)],
+            )
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits

@@ -361,3 +361,5 @@ impl From<DesignMirrorScopeTolerance> for DesignMirrorScopeToleranceWire {
         }
     }
 }
+
+mod identity_rewrite;

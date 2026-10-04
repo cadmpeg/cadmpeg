@@ -1132,7 +1132,15 @@ fn graph_analytic_candidates_do_not_scan_discarded_fallbacks() {
             .unwrap();
     crate::test_support::with_decode_context_over(
         &[],
-        |policy| policy.limits.max_work_units = 1,
+        |policy| {
+            // One candidate visit and four passes over its empty-tree node bound.
+            let node =
+                11 * std::mem::size_of::<(
+                    usize,
+                    (cadmpeg_ir::features::FinitePoint3, &crate::topology::Node),
+                )>() + 18 * std::mem::size_of::<usize>();
+            policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(1 + 4 * node);
+        },
         |ctx| {
             let candidates = ordered_point_candidates(ctx, &graph).unwrap();
             assert_eq!(candidates.len(), 1);

@@ -222,6 +222,7 @@ macro_rules! checked_scalar {
         #[cfg_attr(feature = "schema", derive(JsonSchema))]
         #[serde(transparent)]
         pub struct $name(f64);
+        rewrite_scalar!($name);
 
         impl $name {
             /// Admits a value within the scalar's domain.
@@ -1413,3 +1414,5 @@ impl NonZeroReal {
 }
 #[cfg(test)]
 mod tests;
+
+mod identity_rewrite;

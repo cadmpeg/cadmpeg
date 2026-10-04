@@ -607,8 +607,15 @@ fn combine_historical_rows_refuse_collection_limit() {
 
 #[test]
 fn combine_member_validation_refuses_collection_limit() {
-    let result =
-        with_combine_collection_limit(1, |ctx| super::super::charge_combine_body_members(ctx, 1));
+    let result = with_combine_collection_limit(1, |ctx| {
+        let body = cadmpeg_ir::ids::BodyId::mint("test:model:body#member").unwrap();
+        let native = cadmpeg_core::text::NonBlankString::try_from("native").unwrap();
+        cadmpeg_ir::features::BodyMembers::try_from_rows(
+            vec![cadmpeg_ir::features::BodyMember::new(body, native)],
+            ctx,
+        )
+        .map_err(cadmpeg_core::CodecError::from)
+    });
     assert!(matches!(
         result,
         Err(cadmpeg_core::CodecError::ResourceLimit { .. })

@@ -113,8 +113,13 @@ fn tessellation_faces_refuse_at_collection_limit() {
 
 #[test]
 fn face_ring_diagnostic_refuses_at_matching_retained_limit() {
-    let error = cadmpeg_ir::topology::LoopRing::new(Vec::new(), Vec::new())
-        .expect_err("empty ring is invalid");
+    let error = cadmpeg_ir::topology::LoopRing::new(
+        &cadmpeg_test_support::service_decode_context(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("fixture ring admission")
+    .expect_err("empty ring is invalid");
     assert_retained_refusal_at(&[], "FreeCAD face ring diagnostic", |ctx| {
         Err::<(), _>(crate::resource::malformed_charged(
             ctx,
@@ -132,7 +137,8 @@ fn connected_component_comparison_refuses_at_work_limit() {
     let connected = std::collections::HashSet::from(["edge".to_owned()]);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_work_units = 1;
+    // Two assignment flags precede the two-step connectivity comparison.
+    policy.limits.max_work_units = 2 + 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     assert!(
         matches!(connected_components(&ctx, &[connected.clone(), connected]),
@@ -213,6 +219,7 @@ fn pcurve_malformed_loss_message_refuses_at_retained_limit() {
 #[test]
 fn placed_nurbs_curve_basis_refuses_at_collection_limit() {
     let nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_finite_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![
             FiniteReal::ZERO,
@@ -224,6 +231,7 @@ fn placed_nurbs_curve_basis_refuses_at_collection_limit() {
         None,
         false,
     )
+    .expect("fixture pole pairing admission")
     .expect("valid NURBS curve");
     let geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(
         cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(nurbs),
@@ -249,11 +257,13 @@ fn placed_nurbs_surface_basis_refuses_at_collection_limit() {
     ];
     let axis = || NurbsSurfaceAxis::new(1, knots.clone(), false);
     let nurbs = NurbsSurface::from_finite_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         axis(),
         axis(),
         NurbsSurfaceLanes::new(vec![vec![FinitePoint3::ZERO; 2]; 2], None),
         false,
     )
+    .expect("fixture pole pairing admission")
     .expect("valid NURBS surface");
     let geometry = cadmpeg_ir::geometry::SurfaceGeometry::Solved(
         cadmpeg_ir::geometry::SolvedSurfaceGeometry::Nurbs(nurbs),

@@ -23,7 +23,7 @@ fn spine_model(count: u32) -> (CadIr, CurveId) {
     policy.limits.max_collection_items =
         cadmpeg_core::decode::u64_from_index(knots.len() + points.len());
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let nurbs = NurbsCurve::from_lanes_for_decode(&ctx, 1, knots, points, None, false)
+    let nurbs = NurbsCurve::from_lanes(&ctx, 1, knots, points, None, false)
         .expect("service storage")
         .expect("clamped linear test spine");
     let mut ir = CadIr::empty();
@@ -73,12 +73,14 @@ fn closest_pcurve_controls_refuse_one_below_collection_need() {
 
     let pcurve = PcurveGeometry::Nurbs {
         nurbs: PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
             None,
             false,
         )
+        .expect("fixture pcurve construction admission")
         .expect("polynomial pcurve"),
     };
     let error = crate::test_support::with_decode_context_over(
@@ -89,7 +91,9 @@ fn closest_pcurve_controls_refuse_one_below_collection_need() {
     .expect_err("two controls exceed one slot");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "nx blend pcurve controls"));
+            && limit.operation == "IR pcurve control copy"
+            && limit.used == 0
+            && limit.additional == 2));
     let result = crate::test_support::with_decode_context(|ctx| {
         super::closest_pcurve_parameters(ctx, &pcurve, Point2::new(0.5, 0.0), None)
     })

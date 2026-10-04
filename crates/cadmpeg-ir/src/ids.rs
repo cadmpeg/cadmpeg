@@ -10,6 +10,8 @@
 //! components before `#`). Compose typed IDs from an [`IdentityNamespace`]
 //! and an [`IdentityKey`]; validate existing strings with [`is_valid_identity`].
 
+pub mod comparison;
+
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use serde::Deserialize;
@@ -31,17 +33,44 @@ use std::fmt::{self, Display};
 /// The key is non-empty, contains no `#`, and the whole id has no whitespace.
 #[must_use]
 pub fn is_valid_identity(id: &str) -> bool {
-    let Some((namespace, key)) = id.split_once('#') else {
-        return false;
-    };
-    if key.is_empty() || key.contains('#') || id.chars().any(char::is_whitespace) {
-        return false;
+    match check_identity(id, |_| Ok::<(), std::convert::Infallible>(())) {
+        Ok(valid) => valid,
+        Err(error) => match error {},
     }
-    let mut components = namespace.split(':');
-    components.next().is_some_and(|value| !value.is_empty())
-        && components.next().is_some_and(|value| !value.is_empty())
-        && components.next().is_some_and(|value| !value.is_empty())
-        && components.next().is_none()
+}
+
+/// One grammar scan with an explicit admission callback before each scalar.
+fn check_identity<E>(id: &str, mut visit: impl FnMut(u64) -> Result<(), E>) -> Result<bool, E> {
+    visit(0)?;
+    let mut characters = id.chars();
+    let mut separators = 0_u8;
+    let mut key = false;
+    let mut nonempty = false;
+    while !characters.as_str().is_empty() {
+        visit(1)?;
+        let Some(character) = characters.next() else {
+            break;
+        };
+        if character.is_whitespace() {
+            return Ok(false);
+        }
+        match character {
+            '#' if key || !nonempty || separators != 2 => return Ok(false),
+            '#' => {
+                key = true;
+                nonempty = false;
+            }
+            ':' if !key => {
+                if !nonempty || separators == 2 {
+                    return Ok(false);
+                }
+                separators += 1;
+                nonempty = false;
+            }
+            _ => nonempty = true,
+        }
+    }
+    Ok(key && nonempty)
 }
 
 /// An entity identity with validated namespace and key grammar.
@@ -51,7 +80,7 @@ pub struct Identity(String);
 
 impl serde::Serialize for Identity {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        crate::schema::serialize_reference_id(self.as_str(), serializer)
+        serializer.serialize_str(self.as_str())
     }
 }
 
@@ -76,7 +105,11 @@ impl schemars::JsonSchema for Identity {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for Identity {
-    fn decode_cost(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<u64, CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
         cadmpeg_core::decode::cost::DecodeCost::decode_cost(self.as_str(), ctx, operation)
     }
 }
@@ -93,12 +126,23 @@ impl Identity {
 
     /// Admit a string matching the entity identity grammar.
     pub fn new(value: impl Into<String>) -> Result<Self, IdentityError> {
-        let value = value.into();
-        if is_valid_identity(&value) {
+        match Self::admit_text(value.into(), |_| Ok::<(), std::convert::Infallible>(())) {
+            Ok(result) => result.map_err(|value| IdentityError::InvalidId { value }),
+            Err(error) => match error {},
+        }
+    }
+
+    /// Admit owned text with the same grammar used by standard reconstruction.
+    /// Invalid grammar returns the owned input; admission failure stays outside it.
+    pub(crate) fn admit_text<E>(
+        value: String,
+        visit: impl FnMut(u64) -> Result<(), E>,
+    ) -> Result<Result<Self, String>, E> {
+        Ok(if check_identity(&value, visit)? {
             Ok(Self(value))
         } else {
-            Err(IdentityError::InvalidId { value })
-        }
+            Err(value)
+        })
     }
 
     /// Borrow the identity string.
@@ -412,10 +456,15 @@ impl StaticIdentityKey {
 pub struct IdentityKey(std::borrow::Cow<'static, str>);
 
 impl cadmpeg_core::decode::cost::DecodeCost for IdentityKey {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         cadmpeg_core::decode::cost::DecodeCost::decode_cost(self.as_str(), ctx, operation)
     }
 }
+rewrite_scalar!(IdentityKey);
 
 impl IdentityKey {
     /// Copy owned key text under the decode budget; retain static borrowed text.
@@ -967,12 +1016,26 @@ macro_rules! id_type {
         }
 
 
+        impl $crate::schema::rewrite::typed::RewriteIdentities for $name {
+            fn rewrite_native_value<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: &mut serde_json::Value, map: &mut $crate::schema::rewrite::typed::IdentityMap<'_, F>) -> Result<(), cadmpeg_core::CodecError> {
+                <$crate::ids::Identity as $crate::schema::rewrite::typed::RewriteIdentities>::rewrite_native_value(ctx, value, map)
+            }
+
+            fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
+                $crate::schema::rewrite::typed::RewriteIdentities::visit_identity_references(&self.0, ctx, visitor)
+            }
+            fn rewrite_identities<F>(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut $crate::schema::rewrite::typed::IdentityMap<'_, F>) -> Result<Self, cadmpeg_core::CodecError>
+            where F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError> {
+                $crate::schema::rewrite::typed::RewriteIdentities::rewrite_identities(self.0, ctx, map).map(Self)
+            }
+        }
+
         impl serde::Serialize for $name {
             fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
             where
                 S: serde::Serializer,
             {
-                $crate::schema::serialize_reference_id(self.0.as_str(), serializer)
+                serializer.serialize_str(self.0.as_str())
             }
         }
 
@@ -1073,6 +1136,7 @@ macro_rules! local_id_type {
             }
         }
 
+        rewrite_record!($name, []; (text));
 
         #[cfg(feature = "schema")]
         impl schemars::JsonSchema for $name {

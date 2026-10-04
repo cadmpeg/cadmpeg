@@ -589,8 +589,12 @@ fn an_ordered_pair_scales_and_refuses_the_first_failing_value() {
 
 #[test]
 fn checked_knots_and_vectors_hand_out_finite_reals_without_a_check() {
-    let knots = crate::geometry::nurbs::KnotVector::new(vec![0.0, 0.0, 1.0, 2.5])
-        .expect("non-decreasing knots");
+    let knots = crate::geometry::nurbs::KnotVector::new(
+        &cadmpeg_test_support::service_decode_context(),
+        vec![0.0, 0.0, 1.0, 2.5],
+    )
+    .expect("fixture knot admission")
+    .expect("non-decreasing knots");
     assert_eq!(
         knots
             .finite_knots()

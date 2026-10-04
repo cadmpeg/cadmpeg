@@ -352,7 +352,7 @@ pub(in super::super) fn saved_spline_nurbs(
         "creo saved spline controls",
     )?;
     converted_controls.extend(control_points.into_iter().map(Point3::from));
-    match NurbsCurve::from_lanes_for_decode(ctx, 3, knots, converted_controls, None, false)? {
+    match NurbsCurve::from_lanes(ctx, 3, knots, converted_controls, None, false)? {
         Ok(curve) => Ok(Some(curve)),
         Err(error) => {
             refusal.note_checked(
@@ -470,12 +470,13 @@ pub(in super::super) fn saved_spline_sketch_geometry(
         } else {
             cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points: controls }
         };
-    match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_admitted_rows(
+    match cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
+        ctx,
         nurbs.degree(),
         knots,
         poles,
         nurbs.periodic(),
-    ) {
+    )? {
         Ok(pcurve) => Ok(Some(SketchGeometry::nurbs(pcurve))),
         Err(error) => {
             refusal.note_checked(
@@ -508,7 +509,11 @@ pub(in super::super) fn interpolation_spline_surface(
     let Some(v_control_count) = v_sample_count.checked_add(2) else {
         return Ok(None);
     };
-    let mut position_controls = ctx.collect_indexed_vec(u_control_count, "creo interpolation surface position controls", |_| Ok(Vec::<[f64; 3]>::new()))?;
+    let mut position_controls = ctx.collect_indexed_vec(
+        u_control_count,
+        "creo interpolation surface position controls",
+        |_| Ok(Vec::<[f64; 3]>::new()),
+    )?;
     for row in &mut position_controls {
         *row = ctx.alloc_filled(
             v_sample_count,
@@ -540,7 +545,10 @@ pub(in super::super) fn interpolation_spline_surface(
         }
     }
 
-    let mut v_derivative_controls = ctx.collect_indexed_vec(2, "creo interpolation surface derivative controls", |_| Ok(Vec::<[f64; 3]>::new()))?;
+    let mut v_derivative_controls =
+        ctx.collect_indexed_vec(2, "creo interpolation surface derivative controls", |_| {
+            Ok(Vec::<[f64; 3]>::new())
+        })?;
     for row in &mut v_derivative_controls {
         *row = ctx.alloc_filled(
             u_control_count,
@@ -619,7 +627,7 @@ pub(in super::super) fn interpolation_spline_surface(
         row.extend_from_slice(points);
         pole_rows.push(row);
     }
-    match NurbsSurface::from_lanes_for_decode(
+    match NurbsSurface::from_lanes(
         ctx,
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(3, u_knots, false),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(3, v_knots, false),
@@ -745,7 +753,7 @@ pub(in super::super) fn extruded_nurbs_surface(
     let mut v_knots = Vec::new();
     ctx.reserve_vec(&mut v_knots, 4, "creo extruded NURBS V knots")?;
     v_knots.extend([0.0, 0.0, 1.0, 1.0]);
-    let v_knots = match cadmpeg_ir::geometry::nurbs::KnotValue::admit(v_knots) {
+    let v_knots = match cadmpeg_ir::geometry::nurbs::KnotVector::new(ctx, v_knots)? {
         Ok(knots) => knots,
         Err(error) => {
             refusal.note_checked(
@@ -756,12 +764,13 @@ pub(in super::super) fn extruded_nurbs_surface(
             return Ok(None);
         }
     };
-    match NurbsSurface::from_admitted_grid(
+    match NurbsSurface::new(
+        ctx,
         NurbsSurfaceAxis::new(directrix.degree(), u_knots, directrix.periodic()),
         NurbsSurfaceAxis::new(1, v_knots, false),
         poles,
         false,
-    ) {
+    )? {
         Ok(surface) => Ok(Some(surface)),
         Err(error) => {
             refusal.note_checked(
@@ -792,12 +801,13 @@ pub(super) fn copy_pcurve_nurbs(
             points: ctx.copy_slice(points, pole_operation)?,
         },
     };
-    cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_admitted_rows(
+    cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
+        ctx,
         curve.degree(),
         knots,
         poles,
         curve.periodic(),
-    )
+    )?
     .map_err(CodecError::malformed)
 }
 
@@ -839,8 +849,7 @@ pub(super) fn sketch_nurbs_curve(
             NurbsPoles3::Rational { points: lifted }
         }
     };
-    let Some(nurbs) =
-        NurbsCurve::new_admitted_poles(curve.degree(), knots, poles, curve.periodic()).ok()
+    let Some(nurbs) = NurbsCurve::new(ctx, curve.degree(), knots, poles, curve.periodic())?.ok()
     else {
         return Ok(None);
     };
@@ -862,7 +871,7 @@ pub(super) fn oriented_sketch_nurbs_curve(
         return Ok(None);
     };
     Ok(nurbs
-        .reverse_parameterization_in_range(lower, upper)
+        .reverse_parameterization_in_range(ctx, lower, upper)?
         .map(|()| nurbs))
 }
 
@@ -913,7 +922,7 @@ pub(super) fn sketch_nurbs_pcurve(
             PcurveNurbsPoles::Rational { points: projected }
         }
     };
-    match PcurveNurbs::from_admitted_rows(nurbs.degree(), knots, poles, nurbs.periodic()) {
+    match PcurveNurbs::new(ctx, nurbs.degree(), knots, poles, nurbs.periodic())? {
         Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
         Err(error) => {
             refusal.note_checked(
@@ -1279,7 +1288,7 @@ pub(in super::super) fn placed_tabulated_cylinder_directrix(
     let mut knots = Vec::new();
     ctx.reserve_vec(&mut knots, 8, "creo tabulated-cylinder directrix knots")?;
     knots.extend([0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]);
-    match NurbsCurve::from_lanes_for_decode(ctx, 3, knots, controls, None, false)? {
+    match NurbsCurve::from_lanes(ctx, 3, knots, controls, None, false)? {
         Ok(curve) => Ok(Some((curve, sweep))),
         Err(error) => {
             refusal.note_checked(
@@ -1319,12 +1328,14 @@ mod tests {
     fn sketch_line_nurbs() -> SketchGeometry {
         SketchGeometry::nurbs(
             PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
                 None,
                 false,
             )
+            .expect("fixture pcurve construction admission")
             .expect("linear sketch NURBS"),
         )
     }
@@ -1664,12 +1675,14 @@ mod tests {
         let upper = f64::MAX;
         let geometry = SketchGeometry::nurbs(
             PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![lower, lower, upper, upper],
                 vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
                 None,
                 false,
             )
+            .expect("fixture pcurve construction admission")
             .expect("wide finite sketch NURBS"),
         );
         let reversed = crate::decode::with_test_decode_ctx(|ctx| {
@@ -1693,12 +1706,14 @@ mod tests {
     #[test]
     fn translating_nurbs_rejects_nonfinite_poles() {
         let curve = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(f64::MAX, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
         )
+        .expect("fixture constructor admission")
         .expect("finite NURBS fixture");
 
         assert!(crate::decode::with_test_decode_ctx(|ctx| {
@@ -1712,12 +1727,14 @@ mod tests {
     #[test]
     fn placed_section_nurbs_refuses_knot_and_pole_limits() {
         let curve = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(1.0, 2.0, 0.0), Point3::new(3.0, 4.0, 0.0)],
             None,
             false,
         )
+        .expect("fixture constructor admission")
         .expect("finite curve");
         let transform = crate::placement::FeatureSectionTransform::new(
             1,
@@ -1748,12 +1765,14 @@ mod tests {
     #[test]
     fn translated_nurbs_refuses_knot_and_pole_limits() {
         let curve = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(1.0, 2.0, 0.0), Point3::new(3.0, 4.0, 0.0)],
             None,
             false,
         )
+        .expect("fixture constructor admission")
         .expect("finite curve");
         for limit in [0, 4] {
             let error = with_collection_limit(limit, |ctx| {
@@ -1779,12 +1798,14 @@ mod tests {
 
     fn extruded_nurbs_refusal_at_limit(limit: u64) -> cadmpeg_core::CodecError {
         let curve = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(1.0, 2.0, 0.0), Point3::new(3.0, 4.0, 0.0)],
             Some(vec![1.0, 0.5]),
             false,
         )
+        .expect("fixture constructor admission")
         .expect("rational directrix");
         with_collection_limit(limit, |ctx| {
             extruded_nurbs_surface(
@@ -2024,6 +2045,7 @@ mod tests {
     #[test]
     fn two_refused_extruded_carriers_state_two_records_each_naming_its_carrier() {
         let directrix = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![
@@ -2033,6 +2055,7 @@ mod tests {
             None,
             false,
         )
+        .expect("fixture constructor admission")
         .expect("valid directrix");
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
         let (first, second) = with_collection_limit(u64::MAX, |ctx| {

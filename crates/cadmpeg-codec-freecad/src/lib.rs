@@ -118,8 +118,8 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         arena!(namespace.arena_as_for_decode::<native::StringTableRecord>(ctx, "string_tables"));
     ctx.stable_sort_by(
         &mut string_table_records,
-            |value| &value.index,
-            Ord::cmp,
+        |value| &value.index,
+        Ord::cmp,
         "FreeCAD native string tables sort",
     )?;
     let string_tables = arena!(native::StringTables::try_from(string_table_records));
@@ -790,8 +790,8 @@ fn validate_span_chain(
     let mut ordered = spans.iter().collect::<Vec<_>>();
     ctx.stable_sort_by_key(
         &mut ordered,
-            |value| value.span.start(),
-            Ord::cmp,
+        |value| value.span.start(),
+        Ord::cmp,
         "FreeCAD archive span chain sort",
     )?;
     let valid = ordered.first().is_some_and(|span| span.span.start() == 0)
@@ -1000,13 +1000,13 @@ impl CodecBackend for FcstdCodec {
             ir.model.curves = curve_transfer.curves;
             for (owner, procedural) in curve_transfer.procedural {
                 ir.model
-                    .add_procedural_curve_for_decode(ctx, &owner, procedural)?
+                    .add_procedural_curve(ctx, &owner, procedural)?
                     .map_err(|error| CodecError::malformed(error.to_string()))?;
             }
             ir.model.surfaces = surface_transfer.surfaces;
             for (owner, procedural) in surface_transfer.procedural {
                 ir.model
-                    .add_procedural_surface_for_decode(ctx, &owner, procedural)?
+                    .add_procedural_surface(ctx, &owner, procedural)?
                     .map_err(|error| CodecError::malformed(error.to_string()))?;
             }
             geometry_transferred |= application_geometry::transfer(

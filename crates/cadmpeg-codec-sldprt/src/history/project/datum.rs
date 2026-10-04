@@ -304,8 +304,11 @@ pub(super) fn project_native_axis_helix(
     })() else {
         return Ok(None);
     };
-    let axis_native_ref =
-        cadmpeg_core::text::NonBlankString::for_decode(ctx, copy_reference_text(ctx, &feature.id)?, "validate nonblank text")?;
+    let axis_native_ref = cadmpeg_core::text::NonBlankString::for_decode(
+        ctx,
+        copy_reference_text(ctx, &feature.id)?,
+        "validate nonblank text",
+    )?;
     Ok(axis_native_ref.map(|axis_native_ref| {
         FeatureDefinition::Operation(FeatureOperation::HelixNativeAxis {
             axis_native_ref,

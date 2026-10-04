@@ -790,14 +790,16 @@ fn saved_line_joins_through_order_table() {
             SketchEntityId::mint("creo:featdefs:sketch_entity#5:42".to_string())
                 .expect("valid test fixture"),
             SketchGeometry::native(
-                cadmpeg_core::text::NonBlankString::try_from("line").expect("nonempty source identity"),
+                cadmpeg_core::text::NonBlankString::try_from("line")
+                    .expect("nonempty source identity"),
             ),
         ),
         (
             SketchEntityId::mint("creo:featdefs:sketch_entity#5:99".to_string())
                 .expect("valid test fixture"),
             SketchGeometry::native(
-                cadmpeg_core::text::NonBlankString::try_from("point").expect("nonempty source identity"),
+                cadmpeg_core::text::NonBlankString::try_from("point")
+                    .expect("nonempty source identity"),
             ),
         ),
     ]);
@@ -1461,12 +1463,14 @@ fn generated_saved_geometry_forms_closed_profiles() {
             10,
             SketchGeometry::try_from(SketchGeometryDefinition::Nurbs {
                 curve: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
                     None,
                     false,
                 )
+                .expect("fixture pcurve construction admission")
                 .expect("valid test pcurve"),
             })
             .expect("valid test fixture"),

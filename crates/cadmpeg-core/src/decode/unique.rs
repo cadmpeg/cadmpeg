@@ -20,13 +20,16 @@ impl DecodeContext<'_> {
         let mut storage = self.reserve_scoped(0, operation)?;
         let mut entries = entries.into_iter();
         loop {
-            let Some((key, value)) = self.next_charged(&mut entries, operation)? else { break };
+            let Some((key, value)) = self.next_charged(&mut entries, operation)? else {
+                break;
+            };
             if let Some(previous) = self.get_mut_hash_map(&mut table, &key, operation)? {
                 *previous = None;
                 continue;
             }
             // discarded-value: the key was absent before the admitted insertion.
-            let _ = storage.with_storage(|| self.insert_hash_map(&mut table, key, Some(value), operation))?;
+            let _ = storage
+                .with_storage(|| self.insert_hash_map(&mut table, key, Some(value), operation))?;
         }
         self.retain_hash_map(&mut table, |_, value| Ok(value.is_some()), operation)?;
         Ok((table, storage))
@@ -35,7 +38,9 @@ impl DecodeContext<'_> {
 
 #[cfg(test)]
 mod tests {
-    use crate::decode::{u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use crate::decode::{
+        u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+    };
     use crate::CodecError;
 
     #[test]
@@ -47,10 +52,7 @@ mod tests {
             u64_from_index(4 * (std::mem::size_of::<(u32, Option<i32>)>() + 32));
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let (table, storage) = ctx
-            .unique_index(
-                [(1_u32, 2), (1, 3), (1, 4), (2, 5)],
-                "unique test",
-            )
+            .unique_index([(1_u32, 2), (1, 3), (1, 4), (2, 5)], "unique test")
             .expect("two slots");
         assert_eq!(table.len(), 1);
         assert_eq!(table.get(&2), Some(&Some(5)));
@@ -88,10 +90,8 @@ mod tests {
                 _ => panic!("test dimension"),
             }
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-            assert!(
-                matches!(ctx.unique_index([("long key", 1)], "unique test"),
-                Err(CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
-            );
+            assert!(matches!(ctx.unique_index([("long key", 1)], "unique test"),
+                Err(CodecError::ResourceLimit(limit)) if limit.dimension == dimension));
         }
     }
 
@@ -102,15 +102,28 @@ mod tests {
         // Two source steps, three three-byte key operations, and three hash bucket visits.
         policy.limits.max_work_units = 14;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        let (values, _scope) = ctx.unique_index([(String::from("key"), 7_u8)], "index").expect("admission");
+        let (values, _scope) = ctx
+            .unique_index([(String::from("key"), 7_u8)], "index")
+            .expect("admission");
         assert_eq!(values.get("key"), Some(&Some(7)));
         assert_eq!(values.capacity(), 3);
-        let CodecError::ResourceLimit(limit) = ctx.charge_work(1, "probe").expect_err("exact work") else { panic!("refusal") };
+        let CodecError::ResourceLimit(limit) = ctx.charge_work(1, "probe").expect_err("exact work")
+        else {
+            panic!("refusal")
+        };
         assert_eq!(limit.used, 14);
         policy.limits.max_work_units = 13;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        let CodecError::ResourceLimit(first) = ctx.unique_index([(String::from("key"), 7_u8)], "index").expect_err("bucket refusal") else { panic!("refusal") };
-        let CodecError::ResourceLimit(second) = ctx.charge_work(0, "later").expect_err("fused") else { panic!("refusal") };
+        let CodecError::ResourceLimit(first) = ctx
+            .unique_index([(String::from("key"), 7_u8)], "index")
+            .expect_err("bucket refusal")
+        else {
+            panic!("refusal")
+        };
+        let CodecError::ResourceLimit(second) = ctx.charge_work(0, "later").expect_err("fused")
+        else {
+            panic!("refusal")
+        };
         assert_eq!(first, second);
     }
 }

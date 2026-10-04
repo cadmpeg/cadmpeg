@@ -293,10 +293,15 @@ fn face_appearance_binding_id_preserves_identity_text() {
 fn annotation_provenance_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let ctx = context(&arena, 0);
-    let stream = cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("f3d:native"));
+    let stream = cadmpeg_ir::annotations::StreamHandle::new(
+        &cadmpeg_test_support::service_decode_context(),
+        cadmpeg_ir::stream_name!("f3d:native"),
+        "fixture stream handle",
+    )
+    .unwrap();
     let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
     let error = annotations
-        .note_for_decode(&ctx, "f3d:test:entity#one", &stream, 0, Some("entity"))
+        .note(&ctx, "f3d:test:entity#one", &stream, 0, Some("entity"))
         .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -310,14 +315,20 @@ fn annotation_provenance_refuses_retained_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let stream = cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("f3d:native"));
+    let stream = cadmpeg_ir::annotations::StreamHandle::new(
+        &cadmpeg_test_support::service_decode_context(),
+        cadmpeg_ir::stream_name!("f3d:native"),
+        "fixture stream handle",
+    )
+    .unwrap();
     let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
     let error = annotations
-        .note_for_decode(&ctx, "f3d:test:entity#one", &stream, 0, Some("entity"))
+        .note(&ctx, "f3d:test:entity#one", &stream, 0, Some("entity"))
         .unwrap_err();
+    // Copying the map key admits retained bytes before the provenance node.
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect source provenance")
+        if limit.operation == "retain source provenance identity")
     );
 }
 
@@ -327,7 +338,7 @@ fn annotation_exactness_refuses_collection_limit() {
     let ctx = context(&arena, 0);
     let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
     let error = annotations
-        .derived_for_decode(&ctx, "f3d:test:entity#one", "definition")
+        .derived(&ctx, "f3d:test:entity#one", "definition")
         .unwrap_err();
     assert!(
         matches!(error, cadmpeg_ir::annotations::AnnotationFieldError::Resource(limit)
@@ -602,7 +613,8 @@ fn source_image_copy_refuses_retained_limit() {
 fn unique_asset_append_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let ctx = context(&arena, 0);
-    let asset = cadmpeg_ir::assets::Asset::try_new(&cadmpeg_test_support::service_decode_context(), 
+    let asset = cadmpeg_ir::assets::Asset::try_new(
+        &cadmpeg_test_support::service_decode_context(),
         cadmpeg_ir::assets::AssetId::mint("f3d:model:asset#one").unwrap(),
         Some("one.png".into()),
         Some("image/png".into()),

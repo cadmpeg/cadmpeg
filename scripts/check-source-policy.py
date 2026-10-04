@@ -446,6 +446,236 @@ def resolve_module_target(
     return None
 
 
+# Hand-written one-item charge followed by a map or set insert. The core
+# operations charge only when a new key is inserted; a charge before the
+# insert also bills a key that was already present.
+CHARGE_ONE_CALL = re.compile(r"(?<![\w])charge_collection_items\s*\(")
+CHARGE_ONE_ARG = re.compile(r"1|u64_from_index\s*\(\s*1\s*\)")
+CHARGE_RECEIVER = re.compile(r"[\w.\s]*")
+INSERT_STATEMENT = re.compile(
+    r"(?:let\s+[^=;]*?=\s*)?(?P<place>[A-Za-z_]\w*(?:\s*\.\s*[A-Za-z_]\w*)*)"
+    r"\s*\.\s*(?P<method>insert|entry)\s*\("
+)
+SKIPPED_STATEMENT = re.compile(
+    r"(?:let\b|(?:[\w.\s]*\.\s*)?(?:charge_retained|charge_work)\s*\(|[\w.\s]*\.\s*grow\s*\()"
+)
+STOPPING_STATEMENT = re.compile(r"(?:return|continue|break)\b")
+KEYED_COLLECTION = r"(?:BTreeMap|HashMap|BTreeSet|HashSet)"
+FN_ITEM = re.compile(r"\bfn\s+[A-Za-z_]\w*")
+COLLECTION_CHARGE_EXEMPT_FILES = {
+    "crates/cadmpeg-core/src/decode/collect.rs",
+    "crates/cadmpeg-core/src/decode/context.rs",
+}
+COLLECTION_CHARGE_MESSAGE = (
+    "Use ctx.insert_btree_set / insert_btree_map / admit_btree_entry (or the hash forms "
+    "insert_hash_set / insert_hash_map / admit_hash_map_entry), which charge only a new key, "
+    "instead of charging one collection item by hand before the insert."
+)
+_OPENERS = {"(": ")", "[": "]", "{": "}"}
+
+
+def matching_close(code: str, open_index: int) -> int | None:
+    """Index of the delimiter closing the one at ``open_index`` in masked Rust."""
+    stack: list[str] = []
+    for index in range(open_index, len(code)):
+        char = code[index]
+        if char in _OPENERS:
+            stack.append(_OPENERS[char])
+        elif char in ")]}":
+            if not stack or stack.pop() != char:
+                return None
+            if not stack:
+                return index
+    return None
+
+
+def top_level_arguments(code: str, open_index: int, close_index: int) -> list[str]:
+    """Split the arguments between a call's parentheses at depth-zero commas."""
+    arguments, depth, start = [], 0, open_index + 1
+    for index in range(open_index + 1, close_index):
+        char = code[index]
+        if char in "([{":
+            depth += 1
+        elif char in ")]}":
+            depth -= 1
+        elif char == "," and depth == 0:
+            arguments.append(code[start:index])
+            start = index + 1
+    arguments.append(code[start:close_index])
+    if len(arguments) > 1 and not arguments[-1].strip():
+        arguments.pop()
+    return [argument.strip() for argument in arguments]
+
+
+def next_statement(code: str, start: int) -> tuple[int, str, int] | None:
+    """Offset, text and end of the statement at ``start``; None at the block's end."""
+    index = start
+    while index < len(code) and code[index].isspace():
+        index += 1
+    if index >= len(code) or code[index] == "}":
+        return None
+    begin, depth = index, 0
+    while index < len(code):
+        char = code[index]
+        if char in "([{":
+            depth += 1
+        elif char in ")]}":
+            if depth == 0:
+                return begin, code[begin:index], index
+            depth -= 1
+            if char == "}" and depth == 0:
+                after = index + 1
+                while after < len(code) and code[after].isspace():
+                    after += 1
+                if code[after:after + 1] not in {";", ".", "?"} and not code.startswith("else", after):
+                    return begin, code[begin:index + 1], index + 1
+        elif char == ";" and depth == 0:
+            return begin, code[begin:index], index + 1
+        index += 1
+    return begin, code[begin:], len(code)
+
+
+def enclosing_function(code: str, offset: int) -> str:
+    """Signature and body of the innermost function containing ``offset``."""
+    best = None
+    for match in FN_ITEM.finditer(code, 0, offset):
+        brace = code.find("{", match.end())
+        semicolon = code.find(";", match.end())
+        if brace == -1 or (semicolon != -1 and semicolon < brace):
+            continue
+        close = matching_close(code, brace)
+        if close is not None and close >= offset:
+            best = (match.start(), close + 1)
+    return code[best[0]:best[1]] if best else ""
+
+
+def declares_keyed_collection(function: str, name: str) -> bool:
+    """True when ``name`` is a parameter or let binding of a map or set in ``function``."""
+    ident = re.escape(name)
+    if re.search(
+        rf"(?<![\w.]){ident}\s*:\s*(?:&\s*(?:'\w+\s*)?(?:mut\s+)?)?(?:\w+\s*::\s*)*{KEYED_COLLECTION}\b",
+        function,
+    ):
+        return True
+    for binding in re.finditer(rf"\blet\s+(?:mut\s+)?{ident}\b", function):
+        end, depth = binding.end(), 0
+        while end < len(function):
+            char = function[end]
+            if char in "([{":
+                depth += 1
+            elif char in ")]}":
+                depth -= 1
+            elif char == ";" and depth <= 0:
+                break
+            end += 1
+        if re.search(rf"\b{KEYED_COLLECTION}\b", function[binding.end():end]):
+            return True
+    return False
+
+
+def keyed_insert(statement: str, function: str) -> bool:
+    """True when ``statement`` inserts into, or takes an entry of, a local map or set."""
+    match = INSERT_STATEMENT.match(statement)
+    if match is None:
+        return False
+    open_index = match.end() - 1
+    close = matching_close(statement, open_index)
+    if close is None:
+        return False
+    arguments = top_level_arguments(statement, open_index, close)
+    place = re.sub(r"\s+", "", match["place"])
+    if "." in place or not declares_keyed_collection(function, place):
+        return False
+    if match["method"] == "entry":
+        return True
+    return len(arguments) in {1, 2}
+
+
+def charges_nested_member(code: str, statement: str, cursor: int, charge: int) -> bool:
+    """Recognize a charged vector append or singleton set below an admitted map entry."""
+    match = INSERT_STATEMENT.match(statement)
+    if match is None:
+        return False
+    opening = match.end() - 1
+    close = matching_close(statement, opening)
+    if close is None:
+        return False
+    arguments = top_level_arguments(statement, opening, close)
+    if match["method"] == "entry":
+        binding = re.match(r"let\s+(?:mut\s+)?([A-Za-z_]\w*)\s*=", statement)
+        if binding is None or not re.fullmatch(r"\s*\.\s*or_default\s*\(\s*\)\s*", statement[close + 1:]):
+            return False
+        following = next_statement(code, cursor)
+        if following is None:
+            return False
+        _, reserve, after_reserve = following
+        if not re.match(r"(?:[A-Za-z_]\w*\s*::\s*)*reserve_admitted_vec\s*\(", reserve):
+            return False
+        reserve_open = reserve.index("(")
+        reserve_close = matching_close(reserve, reserve_open)
+        if reserve_close is None:
+            return False
+        reserve_args = top_level_arguments(reserve, reserve_open, reserve_close)
+        if len(reserve_args) < 2 or reserve_args[:2] != [binding[1], "1"]:
+            return False
+        append = next_statement(code, after_reserve)
+        return append is not None and re.match(re.escape(binding[1]) + r"\s*\.\s*push\s*\(", append[1]) is not None
+    if match["method"] != "insert" or len(arguments) != 2:
+        return False
+    singleton = re.fullmatch(r"(?:[A-Za-z_]\w*\s*::\s*)*BTreeSet\s*::\s*from\s*\(\s*\[([^\[\]]*)\]\s*\)", arguments[1])
+    if singleton is None or "," in singleton[1] or not singleton[1].strip():
+        return False
+    place = re.sub(r"\s+", "", match["place"])
+    key = re.sub(r"\s+", "", arguments[0])
+    prefix = code[:charge]
+    admission = re.compile(r"\.\s*admit_btree_entry\s*\(")
+    for admitted in admission.finditer(prefix):
+        admission_close = matching_close(prefix, admitted.end() - 1)
+        if admission_close is None:
+            continue
+        args = top_level_arguments(prefix, admitted.end() - 1, admission_close)
+        if len(args) >= 2 and re.sub(r"\s+", "", args[0]).removeprefix("&mut").removeprefix("&") == place and re.sub(r"\s+", "", args[1]).removeprefix("&") == key:
+            tail = prefix[admission_close + 1:]
+            if re.fullmatch(r"\s*\?\s*;\s*[\w.\s]*", tail):
+                return True
+    return False
+
+
+def scan_hand_charged_inserts(code: str):
+    """Yield (charge offset, insert offset) for each hand-charged map or set insert."""
+    for call in CHARGE_ONE_CALL.finditer(code):
+        open_index = call.end() - 1
+        close = matching_close(code, open_index)
+        if close is None:
+            continue
+        arguments = top_level_arguments(code, open_index, close)
+        if not arguments or not CHARGE_ONE_ARG.fullmatch(arguments[0]):
+            continue
+        lead = max(code.rfind(";", 0, call.start()), code.rfind("{", 0, call.start()),
+                   code.rfind("}", 0, call.start()))
+        if not CHARGE_RECEIVER.fullmatch(code[lead + 1:call.start()]):
+            continue
+        after = close + 1
+        while code[after:after + 1].isspace() or code[after:after + 1] == "?":
+            after += 1
+        if code[after:after + 1] != ";":
+            continue
+        cursor, function = after + 1, None
+        while (found := next_statement(code, cursor)) is not None:
+            begin, statement, cursor = found
+            if STOPPING_STATEMENT.match(statement):
+                break
+            if function is None:
+                function = enclosing_function(code, call.start())
+            if keyed_insert(statement, function):
+                if charges_nested_member(code, statement, cursor, call.start()):
+                    break
+                yield call.start(), begin
+                break
+            if not SKIPPED_STATEMENT.match(statement):
+                break
+
+
 def scan_saturating_arithmetic(path: Path, code: str) -> list[Finding]:
     """Require checked arithmetic with an explicit overflow branch."""
     return [Finding(
@@ -725,6 +955,10 @@ def scan_patterns(path: Path, source: str) -> list[Finding]:
         if match.start() not in declarations:
             report("bare_tolerance", code.count("\n", 0, match.start()) + 1,
                    "Give the tolerance a module-local constant name that states its intent.")
+    if relative_path(path) not in COLLECTION_CHARGE_EXEMPT_FILES:
+        for charge, _insert in scan_hand_charged_inserts(code):
+            report("hand_charged_collection_insert", code.count("\n", 0, charge) + 1,
+                   COLLECTION_CHARGE_MESSAGE)
     for offset, count in iter_vec_repeats(code):
         if not VEC_REPEAT_LITERAL.fullmatch(count) and not ADMITTED_LEN_REPEAT.fullmatch(count):
             report("unchecked_vec_repeat", code.count("\n", 0, offset) + 1,
@@ -2033,8 +2267,17 @@ ENCODE_SORT_PATH = re.compile(
     r")"
 )
 DECODE_CONTEXT_BINDING = re.compile(
-    r"\b([A-Za-z_]\w*)\s*:\s*&\s*(?:'[A-Za-z_]\w*\s*)?(?:mut\s+)?"
+    r"\b([A-Za-z_]\w*)\s*:\s*(?:&\s*(?:'[A-Za-z_]\w*\s*)?(?:mut\s+)?)?"
     r"(?:::\s*)?(?:[A-Za-z_]\w*\s*::\s*)*DecodeContext\b"
+)
+
+IR_DECODE_SORT_PATH = re.compile(
+    r"crates/cadmpeg-ir/src/(?:native/.*|math/.*|validate/.*|eval/.*|"
+    r"document\.rs|hash\.rs|eval\.rs|codec\.rs)"
+)
+DECODE_RECEIVER_BINDING = re.compile(
+    r"\b([A-Za-z_]\w*)\s*:\s*(?:&\s*(?:'[A-Za-z_]\w*\s*)?(?:mut\s+)?)?"
+    r"(?:::\s*)?(?:[A-Za-z_]\w*\s*::\s*)*([A-Za-z_]\w*)\b"
 )
 
 
@@ -2042,7 +2285,7 @@ def scan_decode_sorts(sources: dict[Path, str]) -> list[Finding]:
     """Reject slice sorts in functions borrowing a decode context and in decode crate code.
 
     Function scopes exclude nested function items. Closures keep their enclosing
-    context. Struct fields identify context access through a method's self value.
+    context. Annotated receiver types identify owned and borrowed context fields.
     """
     parsed = {}
     context_fields: dict[tuple[str, str], set[str]] = {}
@@ -2070,7 +2313,7 @@ def scan_decode_sorts(sources: dict[Path, str]) -> list[Finding]:
     for path, (code, tokens, pairs, parents, words, crate) in parsed.items():
         if relative_path(path) in DECODE_SORT_EXEMPT_FILES:
             continue
-        decode_scope = bool(DECODE_SORT_CRATE.fullmatch(crate)) and not ENCODE_SORT_PATH.fullmatch(relative_path(path))
+        decode_scope = (bool(DECODE_SORT_CRATE.fullmatch(crate)) or bool(IR_DECODE_SORT_PATH.fullmatch(relative_path(path)))) and not ENCODE_SORT_PATH.fullmatch(relative_path(path))
         functions = []
         for index, _, _, owner in evaluation_signatures(tokens, pairs, parents):
             opening = index + 2
@@ -2098,12 +2341,17 @@ def scan_decode_sorts(sources: dict[Path, str]) -> list[Finding]:
                         cursor = tokens[child_end].end()
             pieces.append(code[cursor:tokens[end].end()])
             scope = "".join(pieces)
-            fields = context_fields.get((crate, owner), set())
+            receivers = {
+                name: context_fields.get((crate, type_name), set())
+                for name, type_name in DECODE_RECEIVER_BINDING.findall(scope)
+            }
+            receivers["self"] = context_fields.get((crate, owner), set())
             bindings = set(DECODE_CONTEXT_BINDING.findall(scope))
-            contexts[index] = bindings, fields, bool(bindings) or any(
-                re.search(r"\bself\s*\.\s*" + re.escape(field) + r"\b", scope)
-                for field in fields
+            has_context = bool(bindings) or any(
+                re.search(r"\b" + re.escape(receiver) + r"\s*\.\s*" + re.escape(field) + r"\b", scope)
+                for receiver, fields in receivers.items() for field in fields
             )
+            contexts[index] = bindings, receivers, has_context
         for index, word in enumerate(words):
             if word not in SLICE_SORT_METHODS or index == 0 or words[index - 1] != ".":
                 continue
@@ -2112,12 +2360,13 @@ def scan_decode_sorts(sources: dict[Path, str]) -> list[Finding]:
             enclosing = [scope for scope in functions if scope[1] < index < scope[2]]
             if not enclosing:
                 continue
-            bindings, fields, has_context = contexts[max(enclosing, key=lambda scope: scope[0])[0]]
+            bindings, receivers, has_context = contexts[max(enclosing, key=lambda scope: scope[0])[0]]
             if not has_context and not decode_scope:
                 continue
             # The context operation shares the slice method's unstable name.
             receiver = words[index - 2] if index >= 2 else ""
-            if receiver in bindings or (receiver in fields and words[index - 4:index - 2] == ["self", "."]):
+            field_owner = words[index - 4] if index >= 4 and words[index - 3] == "." else ""
+            if receiver in bindings or receiver in receivers.get(field_owner, set()):
                 continue
             findings.append(Finding(
                 "uncharged_decode_sort", relative_path(path),

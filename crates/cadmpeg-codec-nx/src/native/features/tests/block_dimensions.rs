@@ -274,7 +274,8 @@ fn block_dimension_refusal(
                     .expect("finite expression value"),
             ),
             source_entry: "section".into(),
-            source_table: cadmpeg_core::text::NonBlankString::try_from("table").expect("source table"),
+            source_table: cadmpeg_core::text::NonBlankString::try_from("table")
+                .expect("source table"),
             source_offset: u64::from(index),
         }
     });

@@ -1003,7 +1003,11 @@ pub(super) fn fixed_kind_path_operations(
     )
     .unwrap()
     .expect("generated parameter")
-    .into_record(&cadmpeg_test_support::service_decode_context(), "Design/BulkStream.dat", 65)
+    .into_record(
+        &cadmpeg_test_support::service_decode_context(),
+        "Design/BulkStream.dat",
+        65,
+    )
     .unwrap()
     .expect("located parameter");
     parameter.id = "f3d:native:design-parameter#65".into();

@@ -50,14 +50,16 @@ fn section_solver_incidence_requires_available_geometry_and_active_semantics() {
             SketchEntityId::mint("creo:featdefs:sketch_entity#917:14".to_string())
                 .expect("valid test fixture"),
             SketchGeometry::native(
-                cadmpeg_core::text::NonBlankString::try_from("point").expect("nonempty source identity"),
+                cadmpeg_core::text::NonBlankString::try_from("point")
+                    .expect("nonempty source identity"),
             ),
         ),
         (
             SketchEntityId::mint("creo:featdefs:sketch_entity#917:99".to_string())
                 .expect("valid test fixture"),
             SketchGeometry::native(
-                cadmpeg_core::text::NonBlankString::try_from("point").expect("nonempty source identity"),
+                cadmpeg_core::text::NonBlankString::try_from("point")
+                    .expect("nonempty source identity"),
             ),
         ),
     ]);
@@ -89,7 +91,8 @@ fn section_solver_incidence_requires_available_geometry_and_active_semantics() {
         SketchEntityId::mint("creo:featdefs:sketch_entity#917:14".to_string())
             .expect("valid test fixture"),
         SketchGeometry::native(
-            cadmpeg_core::text::NonBlankString::try_from("point").expect("nonempty source identity"),
+            cadmpeg_core::text::NonBlankString::try_from("point")
+                .expect("nonempty source identity"),
         ),
     )]);
     assert!(matches!(
@@ -636,7 +639,8 @@ fn section_solver_incidence_requires_available_geometry_and_active_semantics() {
             SketchEntityId::mint("creo:featdefs:sketch_entity#917:13".to_string())
                 .expect("valid test fixture"),
             SketchGeometry::native(
-                cadmpeg_core::text::NonBlankString::try_from("line").expect("nonempty source identity"),
+                cadmpeg_core::text::NonBlankString::try_from("line")
+                    .expect("nonempty source identity"),
             ),
         ),
         (
@@ -722,7 +726,8 @@ fn section_solver_incidence_requires_available_geometry_and_active_semantics() {
             SketchEntityId::mint("creo:featdefs:sketch_entity#917:97".to_string())
                 .expect("valid test fixture"),
             SketchGeometry::native(
-                cadmpeg_core::text::NonBlankString::try_from("point").expect("nonempty source identity"),
+                cadmpeg_core::text::NonBlankString::try_from("point")
+                    .expect("nonempty source identity"),
             ),
         ),
         (

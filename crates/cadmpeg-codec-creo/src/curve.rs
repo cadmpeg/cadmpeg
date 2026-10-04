@@ -860,11 +860,22 @@ pub(crate) fn prototypes(
 ) -> Result<Vec<CurvePrototype>, cadmpeg_core::CodecError> {
     let mut result = Vec::new();
     let mut start = 0;
-    while let Some(relative) = ctx.find_bytes_from(payload, b"crv_array\0", start, "find Creo curve marker")? {
+    while let Some(relative) =
+        ctx.find_bytes_from(payload, b"crv_array\0", start, "find Creo curve marker")?
+    {
         let section_start = relative;
         start = relative + b"crv_array\0".len();
-        let section_end = ctx.find_bytes_from(payload, b"crv_array\0", start, "find Creo curve marker")?.unwrap_or(payload.len());
-        let Some(id_label) = ctx.find_bytes_in(payload, b"crv_id\0", start, section_end, "find Creo curve marker")? else {
+        let section_end = ctx
+            .find_bytes_from(payload, b"crv_array\0", start, "find Creo curve marker")?
+            .unwrap_or(payload.len());
+        let Some(id_label) = ctx.find_bytes_in(
+            payload,
+            b"crv_id\0",
+            start,
+            section_end,
+            "find Creo curve marker",
+        )?
+        else {
             continue;
         };
         let id_start = id_label + b"crv_id\0".len();
@@ -872,19 +883,41 @@ pub(crate) fn prototypes(
         if id_end == id_start {
             continue;
         }
-        let Some(type_label) = ctx.find_bytes_in(payload, b"type\0", id_end, section_end, "find Creo curve marker")? else {
+        let Some(type_label) = ctx.find_bytes_in(
+            payload,
+            b"type\0",
+            id_end,
+            section_end,
+            "find Creo curve marker",
+        )?
+        else {
             continue;
         };
         let Some(&type_byte) = payload.get(type_label + b"type\0".len()) else {
             continue;
         };
-        let feature_id = ctx.find_bytes_in(payload, b"feat_id\0", id_end, section_end, "find Creo curve marker")?.and_then(|label| {
-            let value_start = label + b"feat_id\0".len();
-            let (value, end) = compact_int(payload, value_start);
-            (end != value_start).then_some(value)
-        });
-        let directions =
-            ctx.find_bytes_in(payload, b"crv_pnt_dir\0", id_end, section_end, "find Creo curve marker")?.and_then(|label| {
+        let feature_id = ctx
+            .find_bytes_in(
+                payload,
+                b"feat_id\0",
+                id_end,
+                section_end,
+                "find Creo curve marker",
+            )?
+            .and_then(|label| {
+                let value_start = label + b"feat_id\0".len();
+                let (value, end) = compact_int(payload, value_start);
+                (end != value_start).then_some(value)
+            });
+        let directions = ctx
+            .find_bytes_in(
+                payload,
+                b"crv_pnt_dir\0",
+                id_end,
+                section_end,
+                "find Creo curve marker",
+            )?
+            .and_then(|label| {
                 let value_start = label + b"crv_pnt_dir\0".len();
                 (payload.get(value_start) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
                 let (count, after_count) = compact_int(payload, value_start + 1);
@@ -1001,8 +1034,8 @@ pub(crate) fn prototype_topology_rows(
     }
     ctx.stable_sort_by(
         rows.as_mut_slice(),
-            |value| &value.offset,
-            Ord::cmp,
+        |value| &value.offset,
+        Ord::cmp,
         "creo prototype topology rows rows ordering",
     )?;
     Ok(rows)
@@ -1032,7 +1065,9 @@ pub(crate) fn expression_records_with_model_name(
     let mut labels = Vec::new();
     for (label, backup) in [(PRIMARY, false), (BACKUP, true)] {
         let mut start = 0;
-        while let Some(offset) = ctx.find_bytes_from(payload, label, start, "find Creo curve marker")? {
+        while let Some(offset) =
+            ctx.find_bytes_from(payload, label, start, "find Creo curve marker")?
+        {
             ctx.reserve_vec(&mut labels, 1, "creo expression record labels")?;
             labels.push((offset, label.len(), backup));
             start = offset + label.len();
@@ -1040,8 +1075,8 @@ pub(crate) fn expression_records_with_model_name(
     }
     ctx.sort_unstable_by(
         &mut labels,
-            |value| &value.0,
-            Ord::cmp,
+        |value| &value.0,
+        Ord::cmp,
         "creo expression record labels sort",
     )?;
 
@@ -1051,7 +1086,14 @@ pub(crate) fn expression_records_with_model_name(
         let end = labels
             .get(index + 1)
             .map_or(payload.len(), |(next, _, _)| *next);
-        let Some(id_label) = ctx.find_bytes_in(payload, ID, offset + label_len, end, "find Creo curve marker")? else {
+        let Some(id_label) = ctx.find_bytes_in(
+            payload,
+            ID,
+            offset + label_len,
+            end,
+            "find Creo curve marker",
+        )?
+        else {
             continue;
         };
         let id_start = id_label + ID.len();
@@ -1061,7 +1103,14 @@ pub(crate) fn expression_records_with_model_name(
         }
         let local_system =
             (|| -> Result<Option<CurveExpressionLocalSystem>, cadmpeg_core::CodecError> {
-                let Some(offset) = ctx.find_bytes_in(payload, LOCAL_SYSTEM, after_id, end, "find Creo curve marker")? else {
+                let Some(offset) = ctx.find_bytes_in(
+                    payload,
+                    LOCAL_SYSTEM,
+                    after_id,
+                    end,
+                    "find Creo curve marker",
+                )?
+                else {
                     return Ok(None);
                 };
                 let extents_start = offset + LOCAL_SYSTEM.len();
@@ -1091,7 +1140,9 @@ pub(crate) fn expression_records_with_model_name(
                     offset,
                 }))
             })()?;
-        let Some(expression_offset) = ctx.find_bytes_in(payload, EXPRESSION, after_id, end, "find Creo curve marker")? else {
+        let Some(expression_offset) =
+            ctx.find_bytes_in(payload, EXPRESSION, after_id, end, "find Creo curve marker")?
+        else {
             continue;
         };
         let opener = expression_offset + EXPRESSION.len();
@@ -2111,7 +2162,11 @@ fn evaluate_expression_program_details(
             || solve_program.executable_line_indices.contains(index)
     };
     let control_is_valid = expression_program_control_is_valid(ctx, lines)?;
-    let mut parsed_assignments = ctx.collect_indexed_vec(lines.len(), "creo parsed expression assignment slots", |_| Ok(None::<CurveExpressionAssignment>))?;
+    let mut parsed_assignments = ctx.collect_indexed_vec(
+        lines.len(),
+        "creo parsed expression assignment slots",
+        |_| Ok(None::<CurveExpressionAssignment>),
+    )?;
     for (index, line) in lines.iter().enumerate() {
         if solve_line_is_executable(&index) {
             parsed_assignments[index] = expression_assignment(ctx, line)?;
@@ -2201,7 +2256,11 @@ fn evaluate_expression_program_details(
         {
             let mut dimensions =
                 ctx.alloc_filled(block.unknowns.len(), None, "creo solve dimension snapshots")?;
-            let mut initial_values = ctx.collect_indexed_vec(block.unknowns.len(), "creo solve initial value snapshots", |_| Ok(None))?;
+            let mut initial_values = ctx.collect_indexed_vec(
+                block.unknowns.len(),
+                "creo solve initial value snapshots",
+                |_| Ok(None),
+            )?;
             for ((dimension, initial), unknown) in dimensions
                 .iter_mut()
                 .zip(&mut initial_values)
@@ -7792,8 +7851,8 @@ pub(crate) fn topology_rows_with_face_ids(
     }
     ctx.stable_sort_by(
         rows.as_mut_slice(),
-            |value| &value.offset,
-            Ord::cmp,
+        |value| &value.offset,
+        Ord::cmp,
         "creo topology rows with face ids rows ordering",
     )?;
     rows.dedup_by_key(|row| row.offset);
@@ -7806,7 +7865,8 @@ pub(crate) fn depdb_cross_section_rows(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<DepdbCurveRow>, cadmpeg_core::CodecError> {
-    let Some(array) = ctx.find_bytes_from(payload, b"crv_array\0", 0, "find Creo curve marker")? else {
+    let Some(array) = ctx.find_bytes_from(payload, b"crv_array\0", 0, "find Creo curve marker")?
+    else {
         return Ok(Vec::new());
     };
     let header = array + b"crv_array\0".len();
@@ -7823,7 +7883,13 @@ pub(crate) fn depdb_cross_section_rows(
     if count == 0 || prototypes(ctx, payload)?.len() != 1 {
         return Ok(Vec::new());
     }
-    let Some(topology) = ctx.find_bytes_from(payload, b"topol_ref_data\0", after_count, "find Creo curve marker")? else {
+    let Some(topology) = ctx.find_bytes_from(
+        payload,
+        b"topol_ref_data\0",
+        after_count,
+        "find Creo curve marker",
+    )?
+    else {
         return Ok(Vec::new());
     };
     let mut cursor = topology + b"topol_ref_data\0".len();
@@ -7847,7 +7913,9 @@ pub(crate) fn depdb_cross_section_rows(
         (b"\xe1\xe0", 1),
     ] {
         let mut search = cursor;
-        while let Some(offset) = ctx.find_bytes_from(payload, marker, search, "find Creo curve marker")? {
+        while let Some(offset) =
+            ctx.find_bytes_from(payload, marker, search, "find Creo curve marker")?
+        {
             ctx.reserve_vec(&mut boundaries, 1, "creo cross-section row boundaries")?;
             boundaries.push((offset, length));
             search = offset + marker.len();
@@ -7855,8 +7923,8 @@ pub(crate) fn depdb_cross_section_rows(
     }
     ctx.sort_unstable_by(
         &mut boundaries,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "creo cross-section row boundaries sort",
     )?;
     boundaries.dedup();
@@ -7984,8 +8052,21 @@ struct TopologyPrefix {
     end: usize,
 }
 
-fn row_terminator(ctx: &cadmpeg_core::decode::DecodeContext<'_>, payload: &[u8], start: usize, end: usize) -> Result<Option<(usize, usize)>, cadmpeg_core::CodecError> {
-    let short = ctx.find_bytes_in(payload, b"\xe1\xe3", start, end, "find Creo curve row terminator")?.map(|offset| (offset, 2));
+fn row_terminator(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Result<Option<(usize, usize)>, cadmpeg_core::CodecError> {
+    let short = ctx
+        .find_bytes_in(
+            payload,
+            b"\xe1\xe3",
+            start,
+            end,
+            "find Creo curve row terminator",
+        )?
+        .map(|offset| (offset, 2));
     let long_search_end = match short {
         Some((offset, _)) => {
             let Some(bound) = offset.checked_add(b"\xe1\xf5\x05\xf6\xe3".len()) else {
@@ -7995,8 +8076,15 @@ fn row_terminator(ctx: &cadmpeg_core::decode::DecodeContext<'_>, payload: &[u8],
         }
         None => end,
     };
-    let long =
-        ctx.find_bytes_in(payload, b"\xe1\xf5\x05\xf6\xe3", start, long_search_end, "find Creo curve row terminator")?.map(|offset| (offset, 5));
+    let long = ctx
+        .find_bytes_in(
+            payload,
+            b"\xe1\xf5\x05\xf6\xe3",
+            start,
+            long_search_end,
+            "find Creo curve row terminator",
+        )?
+        .map(|offset| (offset, 5));
     Ok(match (short, long) {
         (Some(left), Some(right)) => Some(if left.0 < right.0 { left } else { right }),
         (Some(value), None) | (None, Some(value)) => Some(value),
@@ -8019,7 +8107,9 @@ fn framed_rows_with_face_ids(
     let mut result = Vec::new();
     let mut arrays = Vec::new();
     let mut search = 0;
-    while let Some(array) = ctx.find_bytes_from(payload, b"crv_array\0", search, "find Creo curve marker")? {
+    while let Some(array) =
+        ctx.find_bytes_from(payload, b"crv_array\0", search, "find Creo curve marker")?
+    {
         ctx.reserve_vec(&mut arrays, 1, "creo curve namespace starts")?;
         arrays.push(array + b"crv_array\0".len());
         search = array + b"crv_array\0".len();
@@ -8034,21 +8124,33 @@ fn framed_rows_with_face_ids(
             None => {
                 let mut end = payload.len();
                 for label in CURVE_NAMESPACE_BOUNDARIES {
-                    if let Some(offset) = ctx.find_bytes_from(payload, label, namespace_start, "find Creo curve namespace boundary")? {
+                    if let Some(offset) = ctx.find_bytes_from(
+                        payload,
+                        label,
+                        namespace_start,
+                        "find Creo curve namespace boundary",
+                    )? {
                         end = end.min(offset);
                     }
                 }
                 end
             }
         };
-        let Some(label) = ctx.find_bytes_in(payload, b"topol_ref_data\0", namespace_start, namespace_end, "find Creo curve marker")?
+        let Some(label) = ctx.find_bytes_in(
+            payload,
+            b"topol_ref_data\0",
+            namespace_start,
+            namespace_end,
+            "find Creo curve marker",
+        )?
         else {
             continue;
         };
         let mut cursor = label + b"topol_ref_data\0".len();
         let mut boundary_anchored = false;
         let mut segments = Vec::new();
-        while let Some((terminator, length)) = row_terminator(ctx, payload, cursor, namespace_end)? {
+        while let Some((terminator, length)) = row_terminator(ctx, payload, cursor, namespace_end)?
+        {
             ctx.reserve_vec(&mut segments, 1, "creo framed curve segments")?;
             segments.push((cursor, terminator, boundary_anchored));
             cursor = terminator + length;
@@ -8092,8 +8194,8 @@ fn framed_rows_with_face_ids(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-            |value| &value.start,
-            Ord::cmp,
+        |value| &value.start,
+        Ord::cmp,
         "creo framed rows with face ids result ordering",
     )?;
     result.dedup_by_key(|row| row.start);
@@ -8123,8 +8225,8 @@ fn framed_segment_with_face_ids(
     }
     ctx.sort_unstable_by(
         &mut prefixes,
-            |value| &value.1,
-            Ord::cmp,
+        |value| &value.1,
+        Ord::cmp,
         "creo framed curve prefixes sort",
     )?;
     let closes = segment
@@ -8451,8 +8553,8 @@ pub(crate) fn pcurve_endpoints(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-            |value| &value.offset,
-            Ord::cmp,
+        |value| &value.offset,
+        Ord::cmp,
         "creo pcurve endpoints result ordering",
     )?;
     Ok(result)
@@ -8605,8 +8707,8 @@ pub(crate) fn two_chart_pcurve_samples(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-            |value| &value.offset,
-            Ord::cmp,
+        |value| &value.offset,
+        Ord::cmp,
         "creo two chart pcurve samples result ordering",
     )?;
     let mut counts = BTreeMap::new();
@@ -8697,8 +8799,8 @@ pub(crate) fn fc02_short_pcurve_endpoints(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-            |value| &value.offset,
-            Ord::cmp,
+        |value| &value.offset,
+        Ord::cmp,
         "creo fc02 short pcurve endpoints result ordering",
     )?;
     Ok(result)
@@ -8779,8 +8881,8 @@ pub(crate) fn fc_coordinates(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-            |value| &value.offset,
-            Ord::cmp,
+        |value| &value.offset,
+        Ord::cmp,
         "creo fc coordinates result ordering",
     )?;
     Ok(result)
@@ -8970,8 +9072,8 @@ pub(crate) fn fc05_circles(
     }
     ctx.stable_sort_by(
         circles.as_mut_slice(),
-            |value| &value.offset,
-            Ord::cmp,
+        |value| &value.offset,
+        Ord::cmp,
         "creo fc05 circles circles ordering",
     )?;
     Ok(circles)
@@ -9120,8 +9222,8 @@ pub(crate) fn fc05_cylinder_cap_pairs(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-            |value| &value.offset,
-            Ord::cmp,
+        |value| &value.offset,
+        Ord::cmp,
         "creo fc05 cylinder cap pairs result ordering",
     )?;
     Ok(result)
@@ -9135,11 +9237,17 @@ pub(crate) fn prototype_pcurve_endpoints(
     let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
-    while let Some(namespace) = ctx.find_bytes_from(payload, b"crv_array\0", search, "find Creo curve marker")? {
+    while let Some(namespace) =
+        ctx.find_bytes_from(payload, b"crv_array\0", search, "find Creo curve marker")?
+    {
         let start = namespace + b"crv_array\0".len();
-        let end = ctx.find_bytes_from(payload, b"crv_array\0", start, "find Creo curve marker")?.unwrap_or(payload.len());
+        let end = ctx
+            .find_bytes_from(payload, b"crv_array\0", start, "find Creo curve marker")?
+            .unwrap_or(payload.len());
         search = start;
-        let Some(id_label) = ctx.find_bytes_in(payload, b"crv_id\0", start, end, "find Creo curve marker")? else {
+        let Some(id_label) =
+            ctx.find_bytes_in(payload, b"crv_id\0", start, end, "find Creo curve marker")?
+        else {
             continue;
         };
         let id_start = id_label + b"crv_id\0".len();
@@ -9147,8 +9255,17 @@ pub(crate) fn prototype_pcurve_endpoints(
         if after_id == id_start {
             continue;
         }
-        let prototype_end = ctx.find_bytes_in(payload, b"topol_ref_data\0", after_id, end, "find Creo curve marker")?.unwrap_or(end);
-        let Some(points_label) = unique_find_in(ctx, payload, b"crv_pnt_arr\0", after_id, prototype_end)?
+        let prototype_end = ctx
+            .find_bytes_in(
+                payload,
+                b"topol_ref_data\0",
+                after_id,
+                end,
+                "find Creo curve marker",
+            )?
+            .unwrap_or(end);
+        let Some(points_label) =
+            unique_find_in(ctx, payload, b"crv_pnt_arr\0", after_id, prototype_end)?
         else {
             continue;
         };
@@ -9192,8 +9309,8 @@ pub(crate) fn prototype_pcurve_endpoints(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-            |value| &value.offset,
-            Ord::cmp,
+        |value| &value.offset,
+        Ord::cmp,
         "creo prototype pcurve endpoints result ordering",
     )?;
     Ok(result)
@@ -9206,18 +9323,32 @@ pub(crate) fn prototype_topology(
 ) -> Result<Vec<CurvePrototypeTopology>, cadmpeg_core::CodecError> {
     let mut result = Vec::new();
     let mut search = 0;
-    while let Some(namespace) = ctx.find_bytes_from(payload, b"crv_array\0", search, "find Creo curve marker")? {
+    while let Some(namespace) =
+        ctx.find_bytes_from(payload, b"crv_array\0", search, "find Creo curve marker")?
+    {
         let start = namespace + b"crv_array\0".len();
-        let end = ctx.find_bytes_from(payload, b"crv_array\0", start, "find Creo curve marker")?.unwrap_or(payload.len());
+        let end = ctx
+            .find_bytes_from(payload, b"crv_array\0", start, "find Creo curve marker")?
+            .unwrap_or(payload.len());
         search = start;
-        let Some(id_label) = ctx.find_bytes_in(payload, b"crv_id\0", start, end, "find Creo curve marker")? else {
+        let Some(id_label) =
+            ctx.find_bytes_in(payload, b"crv_id\0", start, end, "find Creo curve marker")?
+        else {
             continue;
         };
         let id_start = id_label + b"crv_id\0".len();
         let Ok((curve_id, _)) = reference_id(payload, id_start) else {
             continue;
         };
-        let prototype_end = ctx.find_bytes_in(payload, b"topol_ref_data\0", id_start, end, "find Creo curve marker")?.unwrap_or(end);
+        let prototype_end = ctx
+            .find_bytes_in(
+                payload,
+                b"topol_ref_data\0",
+                id_start,
+                end,
+                "find Creo curve marker",
+            )?
+            .unwrap_or(end);
         let reference = |label: &[u8]| -> Result<Option<u32>, cadmpeg_core::CodecError> {
             let Some(offset) = unique_find_in(ctx, payload, label, id_start, prototype_end)? else {
                 return Ok(None);
@@ -9247,8 +9378,8 @@ pub(crate) fn prototype_topology(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-            |value| &value.offset,
-            Ord::cmp,
+        |value| &value.offset,
+        Ord::cmp,
         "creo prototype topology result ordering",
     )?;
     Ok(result)
@@ -9309,8 +9440,8 @@ pub(crate) fn bind_prototype_pcurves(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-            |value| &value.offset,
-            Ord::cmp,
+        |value| &value.offset,
+        Ord::cmp,
         "creo bind prototype pcurves result ordering",
     )?;
     Ok(result)
@@ -9484,14 +9615,25 @@ fn topology_suffix_candidates(row: &[u8]) -> Option<[Option<TopologySuffixCandid
     Some(candidates)
 }
 
-fn unique_find_in(ctx: &cadmpeg_core::decode::DecodeContext<'_>, data: &[u8], needle: &[u8], from: usize, end: usize) -> Result<Option<usize>, cadmpeg_core::CodecError> {
-    let Some(offset) = ctx.find_bytes_in(data, needle, from, end, "find Creo unique curve field")? else {
+fn unique_find_in(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    data: &[u8],
+    needle: &[u8],
+    from: usize,
+    end: usize,
+) -> Result<Option<usize>, cadmpeg_core::CodecError> {
+    let Some(offset) =
+        ctx.find_bytes_in(data, needle, from, end, "find Creo unique curve field")?
+    else {
         return Ok(None);
     };
     let Some(next) = offset.checked_add(1) else {
         return Ok(None);
     };
-    Ok(ctx.find_bytes_in(data, needle, next, end, "find Creo unique curve field")?.is_none().then_some(offset))
+    Ok(ctx
+        .find_bytes_in(data, needle, next, end, "find Creo unique curve field")?
+        .is_none()
+        .then_some(offset))
 }
 
 #[cfg(test)]

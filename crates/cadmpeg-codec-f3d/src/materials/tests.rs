@@ -1252,7 +1252,9 @@ fn source_less_tolerant_vertex_retains_custom_attribute_ownership() {
 
     let mut source = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     source.source = None;
-    source.set_native_unknowns("f3d", &[]).unwrap();
+    source
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let vertex = source.model.vertices[0].id.clone();
     source.model.vertices[0].tolerance =
         Some(cadmpeg_ir::scalar::PositiveReal::new(0.025).expect("positive finite tolerance"));

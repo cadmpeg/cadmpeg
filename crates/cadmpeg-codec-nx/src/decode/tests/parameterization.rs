@@ -57,7 +57,8 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
             .clone();
         let expected = Point2::new(12.0, 7.0);
         let point = cadmpeg_ir::eval::model_surface_point_by_id(
-            &cadmpeg_ir::index::ModelIndex::new(result.ir()),
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &cadmpeg_ir::index::ModelIndex::build(result.ir(), cadmpeg_ir::index::StandardIndex),
             &surface,
             expected.u,
             expected.v,
@@ -89,7 +90,8 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
             }
         }
         let translated_point = cadmpeg_ir::eval::model_surface_point_by_id(
-            &cadmpeg_ir::index::ModelIndex::new(&translated),
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &cadmpeg_ir::index::ModelIndex::build(&translated, cadmpeg_ir::index::StandardIndex),
             &surface,
             expected.u,
             expected.v,
@@ -148,7 +150,8 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
                 None,
             ));
         let nested_point = cadmpeg_ir::eval::model_surface_point_by_id(
-            &cadmpeg_ir::index::ModelIndex::new(&translated),
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &cadmpeg_ir::index::ModelIndex::build(&translated, cadmpeg_ir::index::StandardIndex),
             &nested_surface,
             expected.u,
             expected.v,
@@ -171,57 +174,71 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
 
 #[test]
 fn offset_surface_parameter_solver_accepts_a_seed_within_fit_tolerance() {
-    crate::test_support::with_decode_context(|geometry_ctx| {
-        let stream = offset_surface_topology_partition_stream();
-        let mut cur = Cursor::new(prt_with_partition(&stream));
-        let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-        let surface = result
-            .ir()
-            .model
-            .procedural_surface_owner(&result.ir().model.procedural_surfaces[0].id)
-            .expect("offset surface owner")
-            .clone();
-        let seed = Point2::new(12.0, 7.0);
-        let mut point = cadmpeg_ir::eval::model_surface_point_by_id(
-            &cadmpeg_ir::index::ModelIndex::new(result.ir()),
-            &surface,
-            seed.u,
-            seed.v,
-        )
-        .unwrap()
-        .get();
-        point.x += 0.01;
+    for work_limit in [256, 32768] {
+        crate::test_support::with_decode_context(|geometry_ctx| {
+            let stream = offset_surface_topology_partition_stream();
+            let mut cur = Cursor::new(prt_with_partition(&stream));
+            let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+            let surface = result
+                .ir()
+                .model
+                .procedural_surface_owner(&result.ir().model.procedural_surfaces[0].id)
+                .expect("offset surface owner")
+                .clone();
+            let seed = Point2::new(12.0, 7.0);
+            let mut point = cadmpeg_ir::eval::model_surface_point_by_id(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &cadmpeg_ir::index::ModelIndex::build(
+                    result.ir(),
+                    cadmpeg_ir::index::StandardIndex,
+                ),
+                &surface,
+                seed.u,
+                seed.v,
+            )
+            .unwrap()
+            .get();
+            point.x += 0.01;
 
-        let actual = offset_surface_parameters_with_tolerance(
-            geometry_ctx,
-            result.ir(),
-            &surface,
-            point,
-            Some(seed),
-            Some(0.02),
-        )
-        .unwrap();
+            let actual = offset_surface_parameters_with_tolerance(
+                geometry_ctx,
+                result.ir(),
+                &surface,
+                point,
+                Some(seed),
+                Some(0.02),
+            )
+            .unwrap();
 
-        assert_eq!(actual, seed);
+            assert_eq!(actual, seed);
 
-        let index = cadmpeg_ir::index::ModelIndex::new(result.ir());
-        let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
-            geometry_ctx,
-            cadmpeg_core::decode::u64_from_index(256),
-        );
-        let local = crate::decode::offset::refine_offset_surface_parameters_with_index_and_budget(
-            &index,
-            &surface,
-            point,
-            seed,
-            0.02,
-            &geometry_budget,
-        )
-        .expect("evaluator allocation succeeds")
-        .expect("a local fit inside the relation tolerance is admissible");
-        assert!((local.u - seed.u).abs() <= 0.02);
-        assert!((local.v - seed.v).abs() <= 0.02);
-    });
+            let index =
+                cadmpeg_ir::index::ModelIndex::build(result.ir(), cadmpeg_ir::index::StandardIndex);
+            let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
+                geometry_ctx,
+                cadmpeg_core::decode::u64_from_index(work_limit),
+            );
+            let local =
+                crate::decode::offset::refine_offset_surface_parameters_with_index_and_budget(
+                    &index,
+                    &surface,
+                    point,
+                    seed,
+                    0.02,
+                    &geometry_budget,
+                );
+            if work_limit == 256 {
+                let first = local.expect_err("the original slice cannot admit all evaluation work");
+                assert_eq!(geometry_ctx.resource_refusal(), Some(first));
+                return;
+            }
+            let local = local
+                .expect("evaluator allocation succeeds")
+                .expect("a local fit inside the relation tolerance is admissible");
+            assert!((local.u - seed.u).abs() <= 0.02);
+            assert!((local.v - seed.v).abs() <= 0.02);
+        });
+    }
 }
 
 #[test]
@@ -246,6 +263,7 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
             id: support.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 NurbsSurface::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                         3,
                         vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
@@ -267,6 +285,7 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
                     ),
                     false,
                 )
+                .expect("fixture constructor admission")
                 .expect("valid wavy support"),
             )),
             source_object: None,
@@ -300,7 +319,8 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
 
         let expected = Point2::new(0.2, 0.45);
         let point = cadmpeg_ir::eval::model_surface_point_by_id(
-            &cadmpeg_ir::index::ModelIndex::new(&ir),
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex),
             &offset,
             expected.u,
             expected.v,
@@ -353,7 +373,8 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
             None,
         ));
         let nested_point = cadmpeg_ir::eval::model_surface_point_by_id(
-            &cadmpeg_ir::index::ModelIndex::new(&ir),
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex),
             &nested,
             expected.u,
             expected.v,
@@ -814,6 +835,7 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
             .find(|candidate| candidate.id == edge)
             .and_then(|edge| edge.tolerance);
         let _attached = ir.model.add_procedural_curve(
+            &cadmpeg_ir::document::admission::StandardAdmission,
             &curve,
             cadmpeg_ir::geometry::ProceduralCurve::new(
                 cadmpeg_ir::ids::ProceduralCurveId::mint("nx:test:intersection#0")
@@ -826,12 +848,14 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
                                 pcurve: Some(
                                     PcurveGeometry::Nurbs {
                                         nurbs: PcurveNurbs::from_lanes(
+                                            &cadmpeg_test_support::service_decode_context(),
                                             1,
                                             vec![0.0, 0.0, 1.0, 1.0],
                                             vec![Point2::new(0.0, 0.0), Point2::new(10.0, 0.0)],
                                             None,
                                             false,
                                         )
+                                        .expect("fixture pcurve construction admission")
                                         .expect("valid support pcurve"),
                                     }
                                     .into(),
@@ -852,7 +876,12 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
             ),
         );
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-        let source_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:test"));
+        let source_stream = StreamHandle::new(
+            &cadmpeg_test_support::service_decode_context(),
+            cadmpeg_ir::stream_name!("nx:test"),
+            "fixture stream handle",
+        )
+        .unwrap();
         let graph =
             crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &[]))
                 .unwrap();
@@ -932,37 +961,53 @@ fn linear_intersection_endpoint_witness_requires_a_clamped_linear_curve() {
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![first, last],
                 None,
                 false,
             )
+            .expect("fixture constructor admission")
             .expect("valid clamped witness curve"),
         )),
         source_object: None,
     });
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
+    let index =
+        cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
 
     assert_eq!(
-        crate::decode::pcurves::linear_nurbs_curve_endpoint_witness_with_index(&index, &curve_id),
+        crate::decode::pcurves::linear_nurbs_curve_endpoint_witness_with_index(
+            &index,
+            &curve_id,
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .unwrap(),
         Some([first, last])
     );
 
     ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.5, 1.0, 1.0],
             vec![first, last],
             None,
             false,
         )
+        .expect("fixture constructor admission")
         .expect("cardinality-valid unclamped witness curve"),
     ));
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
+    let index =
+        cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
     assert!(
-        crate::decode::pcurves::linear_nurbs_curve_endpoint_witness_with_index(&index, &curve_id)
-            .is_none()
+        crate::decode::pcurves::linear_nurbs_curve_endpoint_witness_with_index(
+            &index,
+            &curve_id,
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .unwrap()
+        .is_none()
     );
 }
 
@@ -1125,142 +1170,155 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
 
     const FIT_TOLERANCE: f64 = 1.0e-9;
 
-    crate::test_support::with_decode_context(|geometry_ctx| {
-        let surface_id = SurfaceId::mint("test:model:entity#synthetic:serialized-seed-surface")
-            .expect("identity grammar");
-        let curve_id = CurveId::mint("test:model:entity#synthetic:serialized-seed-curve")
-            .expect("identity grammar");
-        let procedural_id =
-            ProceduralCurveId::mint("test:model:entity#synthetic:serialized-seed-intersection")
+    for work_limit in [64, 32768] {
+        crate::test_support::with_decode_context(|geometry_ctx| {
+            let surface_id = SurfaceId::mint("test:model:entity#synthetic:serialized-seed-surface")
                 .expect("identity grammar");
-        let mut ir = cadmpeg_ir::document::CadIr::empty();
-        ir.model.surfaces.push(Surface {
-            id: surface_id.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                NurbsSurface::from_lanes(
-                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-                        1,
-                        vec![0.0, 0.0, 1.0, 1.0],
+            let curve_id = CurveId::mint("test:model:entity#synthetic:serialized-seed-curve")
+                .expect("identity grammar");
+            let procedural_id =
+                ProceduralCurveId::mint("test:model:entity#synthetic:serialized-seed-intersection")
+                    .expect("identity grammar");
+            let mut ir = cadmpeg_ir::document::CadIr::empty();
+            ir.model.surfaces.push(Surface {
+                id: surface_id.clone(),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+                    NurbsSurface::from_lanes(
+                        &cadmpeg_test_support::service_decode_context(),
+                        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                            1,
+                            vec![0.0, 0.0, 1.0, 1.0],
+                            false,
+                        ),
+                        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                            1,
+                            vec![0.0, 0.0, 1.0, 1.0],
+                            false,
+                        ),
+                        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
+                            vec![
+                                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 10.0, 0.0)],
+                                vec![Point3::new(10.0, 0.0, 0.0), Point3::new(10.0, 10.0, 0.0)],
+                            ],
+                            None,
+                        ),
                         false,
-                    ),
-                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-                        1,
-                        vec![0.0, 0.0, 1.0, 1.0],
-                        false,
-                    ),
-                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
-                        vec![
-                            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 10.0, 0.0)],
-                            vec![Point3::new(10.0, 0.0, 0.0), Point3::new(10.0, 10.0, 0.0)],
-                        ],
-                        None,
-                    ),
-                    false,
-                )
-                .expect("valid serialized-seed surface"),
-            )),
-            source_object: None,
-        });
-        ir.model.curves.push(Curve {
-            id: curve_id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                    Point3::new(0.0, 0.0, 0.0),
-                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-                )
-                .unwrap(),
-            )),
-            source_object: None,
-        });
-        let _attached = ir.model.add_procedural_curve(
-            &curve_id,
-            ProceduralCurve::new(
-                procedural_id.clone(),
-                ProceduralCurveDefinition::Intersection {
-                    context: IntcurveSupportContext::try_new(
-                        [
-                            IntcurveSupportSide {
-                                surface: Some(surface_id),
-                                pcurve: None,
-                            },
-                            IntcurveSupportSide {
-                                surface: None,
-                                pcurve: None,
-                            },
-                        ],
-                        [0.0, 1.0],
-                        [Vec::new(), Vec::new(), Vec::new()],
+                    )
+                    .expect("fixture constructor admission")
+                    .expect("valid serialized-seed surface"),
+                )),
+                source_object: None,
+            });
+            ir.model.curves.push(Curve {
+                id: curve_id.clone(),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
                     )
                     .unwrap(),
-                    discontinuity_flag: false,
-                    cache: None,
-                },
-            ),
-        );
-
-        let parameters = [Point2::new(0.2, 0.3), Point2::new(0.7, 0.8)];
-        let index = cadmpeg_ir::index::ModelIndex::new(&ir);
-        let points = parameters
-            .into_iter()
-            .map(|parameter| {
-                cadmpeg_ir::eval::model_surface_point_by_id(
-                    &index,
-                    &SurfaceId::mint("test:model:entity#synthetic:serialized-seed-surface")
-                        .expect("identity grammar"),
-                    parameter.u,
-                    parameter.v,
-                )
-                .expect("NURBS chart point")
-                .get()
-            })
-            .collect::<Vec<_>>();
-        let pending = vec![(
-            procedural_id,
-            crate::intersection::chart_samples::ChartSamples::from_test_values(
-                points,
-                vec![0.0, 1.0],
-            )
-            .unwrap(),
-            FIT_TOLERANCE,
-            SerializedSupportUv::from_values([
-                Some(
-                    parameters
-                        .map(|parameter| [parameter.u, parameter.v])
-                        .to_vec(),
+                )),
+                source_object: None,
+            });
+            let _attached = ir.model.add_procedural_curve(
+                &cadmpeg_ir::document::admission::StandardAdmission,
+                &curve_id,
+                ProceduralCurve::new(
+                    procedural_id.clone(),
+                    ProceduralCurveDefinition::Intersection {
+                        context: IntcurveSupportContext::try_new(
+                            [
+                                IntcurveSupportSide {
+                                    surface: Some(surface_id),
+                                    pcurve: None,
+                                },
+                                IntcurveSupportSide {
+                                    surface: None,
+                                    pcurve: None,
+                                },
+                            ],
+                            [0.0, 1.0],
+                            [Vec::new(), Vec::new(), Vec::new()],
+                        )
+                        .unwrap(),
+                        discontinuity_flag: false,
+                        cache: None,
+                    },
                 ),
-                None,
-            ]),
-        )];
-        let support_budget = cadmpeg_core::decode::WorkBudget::new(2);
-        let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
-            geometry_ctx,
-            cadmpeg_core::decode::u64_from_index(64),
-        );
-        let coupled_support_budget = cadmpeg_core::decode::WorkBudget::new(2);
+            );
 
-        crate::decode::support_uv::complete_support_uv_with_budget(
-            &mut ir,
-            &pending,
-            &support_budget,
-            &geometry_budget,
-            &coupled_support_budget,
-            &geometry_budget,
-        )
-        .unwrap();
+            let parameters = [Point2::new(0.2, 0.3), Point2::new(0.7, 0.8)];
+            let index = cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
+            let points = parameters
+                .into_iter()
+                .map(|parameter| {
+                    cadmpeg_ir::eval::model_surface_point_by_id(
+                        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                        &index,
+                        &SurfaceId::mint("test:model:entity#synthetic:serialized-seed-surface")
+                            .expect("identity grammar"),
+                        parameter.u,
+                        parameter.v,
+                    )
+                    .expect("NURBS chart point")
+                    .get()
+                })
+                .collect::<Vec<_>>();
+            let pending = vec![(
+                procedural_id,
+                crate::intersection::chart_samples::ChartSamples::from_test_values(
+                    points,
+                    vec![0.0, 1.0],
+                )
+                .unwrap(),
+                FIT_TOLERANCE,
+                SerializedSupportUv::from_values([
+                    Some(
+                        parameters
+                            .map(|parameter| [parameter.u, parameter.v])
+                            .to_vec(),
+                    ),
+                    None,
+                ]),
+            )];
+            let support_budget = cadmpeg_core::decode::WorkBudget::new(2);
+            let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
+                geometry_ctx,
+                cadmpeg_core::decode::u64_from_index(work_limit),
+            );
+            let coupled_support_budget = cadmpeg_core::decode::WorkBudget::new(2);
 
-        let ProceduralCurveDefinition::Intersection { context, .. } =
-            ir.model.procedural_curves[0].definition()
-        else {
-            panic!("intersection");
-        };
-        let Some(support) = context.sides()[0].pcurve.as_ref() else {
-            panic!("serialized seed completed the NURBS lane");
-        };
-        let PcurveGeometry::Nurbs { nurbs } = &support.geometry else {
-            panic!("serialized seed completed the NURBS lane");
-        };
-        assert_eq!(nurbs.control_points(), parameters);
-    });
+            let result = crate::decode::support_uv::complete_support_uv_with_budget(
+                &mut ir,
+                &pending,
+                &support_budget,
+                &geometry_budget,
+                &coupled_support_budget,
+                &geometry_budget,
+            );
+            if work_limit == 64 {
+                let cadmpeg_core::CodecError::ResourceLimit(first) = result.unwrap_err() else {
+                    panic!("resource refusal")
+                };
+                assert_eq!(geometry_ctx.resource_refusal(), Some(first));
+                return;
+            }
+            result.unwrap();
+
+            let ProceduralCurveDefinition::Intersection { context, .. } =
+                ir.model.procedural_curves[0].definition()
+            else {
+                panic!("intersection");
+            };
+            let Some(support) = context.sides()[0].pcurve.as_ref() else {
+                panic!("serialized seed completed the NURBS lane");
+            };
+            let PcurveGeometry::Nurbs { nurbs } = &support.geometry else {
+                panic!("serialized seed completed the NURBS lane");
+            };
+            assert_eq!(nurbs.control_points(), parameters);
+        });
+    }
 }
 
 #[test]
@@ -1357,6 +1415,7 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
             source_object: None,
         });
         let _attached = ir.model.add_procedural_curve(
+            &cadmpeg_ir::document::admission::StandardAdmission,
             &carrier,
             ProceduralCurve::new(
                 procedural_id.clone(),
@@ -1406,19 +1465,25 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
             panic!("intersection");
         };
         assert!(context.sides().iter().all(|side| side.pcurve.is_some()));
-        let index = cadmpeg_ir::index::ModelIndex::new(&ir);
+        let index = cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
         for (side, surface) in procedural_surfaces.iter().enumerate() {
             for (parameter, expected) in parameters.iter().zip(&points) {
-                let uv = cadmpeg_ir::eval::pcurve_uv(
+                let uv = cadmpeg_ir::eval::decode::pcurve_uv(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
                     &context.sides()[side].pcurve.as_ref().unwrap().geometry,
                     *parameter,
                 )
                 .unwrap()
                 .get();
-                let actual =
-                    cadmpeg_ir::eval::model_surface_point_by_id(&index, surface, uv.u, uv.v)
-                        .unwrap()
-                        .get();
+                let actual = cadmpeg_ir::eval::model_surface_point_by_id(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    &index,
+                    surface,
+                    uv.u,
+                    uv.v,
+                )
+                .unwrap()
+                .get();
                 assert!((actual.x - expected.x).abs() <= 1.0e-3);
                 assert!((actual.y - expected.y).abs() <= 1.0e-3);
                 assert!((actual.z - expected.z).abs() <= 1.0e-3);
@@ -1536,7 +1601,12 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
             .find(|curve| curve.id == spine_curve)
             .expect("blend spine carrier");
         assert!(
-            cadmpeg_ir::eval::curve_point(&spine_carrier.geometry, 0.0).is_ok(),
+            cadmpeg_ir::eval::decode::curve_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &spine_carrier.geometry,
+                0.0
+            )
+            .is_ok(),
             "spine carrier: {:?}",
             spine_carrier.geometry
         );

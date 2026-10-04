@@ -1526,11 +1526,21 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         native_ref: None,
     }];
     let mut builder = AnnotationBuilder::new();
-    let stream =
-        cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("test:support"));
+    let stream = cadmpeg_ir::annotations::StreamHandle::new(
+        &cadmpeg_test_support::service_decode_context(),
+        cadmpeg_ir::stream_name!("test:support"),
+        "fixture stream handle",
+    )
+    .unwrap();
     builder
-        .note(sketch_id.as_str(), &stream, 200)
-        .tag("support");
+        .note(
+            &cadmpeg_test_support::service_decode_context(),
+            sketch_id.as_str(),
+            &stream,
+            200,
+            Some("support"),
+        )
+        .unwrap();
     let mut annotations = builder.build();
     let mut builder = AnnotationBuilder::resume(annotations);
     for id in [
@@ -1538,7 +1548,13 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         entity_id.as_str(),
         constraint_id.as_str(),
     ] {
-        builder.exactness(id, cadmpeg_ir::Exactness::Derived);
+        builder
+            .exactness(
+                &cadmpeg_test_support::service_decode_context(),
+                id,
+                cadmpeg_ir::Exactness::Derived,
+            )
+            .unwrap();
     }
     annotations = builder.build();
 
@@ -1722,29 +1738,34 @@ fn assert_marker_circle_projection_refusal(dimension: cadmpeg_core::decode::Reso
     .unwrap();
     assert_eq!(entities, expected);
 
-    let DimensionedCircleFixture {
-        mut entities,
-        feature,
-        parameter,
-        lane,
-    } = dimensioned_circle_fixture();
-    let mut policy = DecodePolicy::service();
-    // Admit the fixture indexes, then refuse the first nonempty transform vote.
-    match dimension {
-        ResourceDimension::CollectionItems => policy.limits.max_collection_items = 26,
-        ResourceDimension::WorkUnits => policy.limits.max_work_units = 3518,
-        _ => panic!("unsupported marker circle projection dimension"),
-    }
-    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = crate::resolved_features::dimensions::project_marker_dimensioned_circles(
-        &limited,
-        &mut entities,
-        &mut [],
-        &[feature],
-        &[parameter],
-        &[lane],
-    )
-    .unwrap_err();
+    // Admit fixture indexes before the first nonempty transform vote.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        dimension,
+        "score SLDPRT compatible marker transforms",
+        |cap| {
+            let DimensionedCircleFixture {
+                mut entities,
+                feature,
+                parameter,
+                lane,
+            } = dimensioned_circle_fixture();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                _ => panic!("unsupported marker circle projection dimension"),
+            }
+            let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            crate::resolved_features::dimensions::project_marker_dimensioned_circles(
+                &limited,
+                &mut entities,
+                &mut [],
+                &[feature],
+                &[parameter],
+                &[lane],
+            )
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == dimension && limit.operation == "score SLDPRT compatible marker transforms")

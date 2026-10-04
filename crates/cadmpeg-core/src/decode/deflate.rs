@@ -29,11 +29,8 @@ impl DecodeContext<'_> {
             let before_out = decoder.total_out();
             let remaining = &source.window()[offset..];
             self.charge_work(u64_from_index(remaining.len()), "probe compressed input")?;
-            let Ok(status) = decoder.decompress(
-                remaining,
-                &mut chunk,
-                FlushDecompress::None,
-            ) else {
+            let Ok(status) = decoder.decompress(remaining, &mut chunk, FlushDecompress::None)
+            else {
                 return Ok(None);
             };
             let consumed = usize::try_from(decoder.total_in() - before_in)
@@ -48,7 +45,12 @@ impl DecodeContext<'_> {
                 return Ok(None);
             }
             let copied = &chunk[..produced];
-            self.reserve_scoped_vec(&mut storage, &mut output, copied.len(), "DEFLATE probe output")?;
+            self.reserve_scoped_vec(
+                &mut storage,
+                &mut output,
+                copied.len(),
+                "DEFLATE probe output",
+            )?;
             self.charge_work(u64_from_index(copied.len()), "DEFLATE probe copy")?;
             output.extend_from_slice(copied);
             if matches!(status, Status::StreamEnd) {

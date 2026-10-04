@@ -489,12 +489,11 @@ fn reference_axis_enrichment_refuses_work_limit() {
         configurations: Vec::new(),
         features: vec![feature],
     };
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::enrich_history_reference_axes(&ctx, &mut [history], &[]).unwrap_err();
+    // Admit source indexes before refusing candidate traversal.
+    let error = crate::test_support::work_refusal_at(
+        "scan SLDPRT reference axis triad candidates",
+        |ctx| super::enrich_history_reference_axes(ctx, &mut [history.clone()], &[]),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits

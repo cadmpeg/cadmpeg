@@ -63,7 +63,11 @@ struct XmlParserAdmission<'input, 'ctx> {
 /// Counts delimiters and element depth in one pass. Quoted values, comments,
 /// CDATA and processing instructions do not contribute element nesting.
 /// An unmatched closing tag stops depth counting; the parser rejects it.
-fn xml_bound(ctx: &DecodeContext<'_>, text: &str, operation: &'static str) -> Result<XmlBound, CodecError> {
+fn xml_bound(
+    ctx: &DecodeContext<'_>,
+    text: &str,
+    operation: &'static str,
+) -> Result<XmlBound, CodecError> {
     let bytes = text.as_bytes();
     let mut markers = 0;
     let mut attributes = 0;
@@ -212,18 +216,20 @@ impl DecodeContext<'_> {
     ) -> Result<AdmittedXml<'input, '_>, CodecError> {
         let admission = self.xml_parser_admission(text, operation)?;
         let document = roxmltree::Document::parse_with_options(
-                admission.text,
-                roxmltree::ParsingOptions {
-                    nodes_limit: admission.nodes_limit,
-                    ..roxmltree::ParsingOptions::default()
-                },
-            )
-            .map_err(|error| match error {
-                roxmltree::Error::NodesLimitReached => {
-                    self.refuse_codec_limit(operation, u64::from(admission.nodes_limit), admission.nodes)
-                }
-                other => self.tree_malformed(other, operation),
-            })?;
+            admission.text,
+            roxmltree::ParsingOptions {
+                nodes_limit: admission.nodes_limit,
+                ..roxmltree::ParsingOptions::default()
+            },
+        )
+        .map_err(|error| match error {
+            roxmltree::Error::NodesLimitReached => self.refuse_codec_limit(
+                operation,
+                u64::from(admission.nodes_limit),
+                admission.nodes,
+            ),
+            other => self.tree_malformed(other, operation),
+        })?;
         Ok(AdmittedXml {
             document,
             _reservation: admission.reservation,
@@ -413,7 +419,10 @@ impl<'de> serde::Deserialize<'de> for PlainJson {
                 }
                 Ok(serde_json::Value::Array(values))
             }
-            fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> Result<Self::Value, A::Error> {
                 let mut values = serde_json::Map::new();
                 while let Some(key) = map.next_key::<String>()? {
                     let value = map.next_value::<PlainJson>()?;
@@ -548,7 +557,9 @@ impl DecodeContext<'_> {
         self.charge_collection_items(bound.values, operation)?;
         let work = u64_from_index(text.len())
             .checked_mul(
-                bound.entries.checked_add(1)
+                bound
+                    .entries
+                    .checked_add(1)
                     .ok_or_else(|| self.tree_overflow(operation))?,
             )
             .and_then(|n| n.checked_mul(bound.depth.checked_add(1)?))
@@ -556,7 +567,12 @@ impl DecodeContext<'_> {
         self.charge_work(work, operation)?;
         let reservation = self.reserve_scoped(bound.bytes, operation)?;
         let depth = enter_tree_depth(self, bound.depth, operation)?;
-        Ok(JsonParserAdmission { text, bound, reservation, _depth: depth })
+        Ok(JsonParserAdmission {
+            text,
+            bound,
+            reservation,
+            _depth: depth,
+        })
     }
 
     fn parse_json_tree<'input>(
@@ -571,7 +587,8 @@ impl DecodeContext<'_> {
                 .map_err(|error| self.tree_malformed(error, operation))?
         } else {
             serde_json::from_str::<PlainJson>(admission.text)
-                .map_err(|error| self.tree_malformed(error, operation))?.0
+                .map_err(|error| self.tree_malformed(error, operation))?
+                .0
         };
         Ok(ParsedJson {
             text: admission.text,
@@ -581,8 +598,14 @@ impl DecodeContext<'_> {
         })
     }
 
-    fn typed_json_storage<T>(&self, bound: &JsonBound, operation: &'static str) -> Result<u64, CodecError> {
-        bound.bytes.checked_mul(2)
+    fn typed_json_storage<T>(
+        &self,
+        bound: &JsonBound,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        bound
+            .bytes
+            .checked_mul(2)
             .and_then(|n| n.checked_add(u64_from_index(std::mem::size_of::<T>())))
             .ok_or_else(|| self.tree_overflow(operation))
     }
@@ -714,8 +737,14 @@ mod tests {
         }
         let text = format!("<r{attributes}");
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
-        assert_eq!(super::xml_bound(&ctx, &text, "XML bound").expect("bound").max_attributes, 16);
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+        assert_eq!(
+            super::xml_bound(&ctx, &text, "XML bound")
+                .expect("bound")
+                .max_attributes,
+            16
+        );
     }
 
     #[test]

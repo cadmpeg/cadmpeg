@@ -233,13 +233,13 @@ pub(super) fn resolved_direct_face_selection(
     }
     ctx.stable_sort_by_key(
         &mut matching[..],
-            |value| {
-                let operand = value;
-                {
-                    operand.scope_reference_ordinal
-                }
-            },
-            Ord::cmp,
+        |value| {
+            let operand = value;
+            {
+                operand.scope_reference_ordinal
+            }
+        },
+        Ord::cmp,
         "sort f3d design face_resolve 1",
     )?;
     if matching.is_empty()
@@ -254,8 +254,8 @@ pub(super) fn resolved_direct_face_selection(
     };
     ctx.stable_sort_by(
         &mut faces[..],
-            |value| value.as_str(),
-            Ord::cmp,
+        |value| value.as_str(),
+        Ord::cmp,
         "sort f3d design face_resolve 2",
     )?;
     if faces.is_empty() {
@@ -457,13 +457,13 @@ pub(crate) fn extrude_profile_group_roots<'a>(
     }
     ctx.stable_sort_by_key(
         &mut profile_groups[..],
-            |value| {
-                let group = value;
-                {
-                    group.scope_reference_ordinal
-                }
-            },
-            Ord::cmp,
+        |value| {
+            let group = value;
+            {
+                group.scope_reference_ordinal
+            }
+        },
+        Ord::cmp,
         "sort f3d design face_resolve 4",
     )?;
     if profile_groups.windows(2).any(|groups| {
@@ -1168,7 +1168,7 @@ fn historical_face_selection_with_native(
     }
     let fallback_native = ctx.copy_retained_text(&native, "f3d historical face fallback id")?;
     Ok(Some(
-        cadmpeg_ir::features::FaceSelection::historical_for_decode(
+        cadmpeg_ir::features::FaceSelection::historical(
             crate::design::identity::feature_input_topology_id(ctx, &feature, previous_state_id)?,
             historical_faces,
             native,
@@ -1594,8 +1594,8 @@ fn explicit_bounded_face_candidates(
     }
     ctx.stable_sort_by(
         &mut ordered_lanes[..],
-            |value| value,
-            |left, right| right.len().cmp(&left.len()).then_with(|| left.cmp(right)),
+        |value| value,
+        |left, right| right.len().cmp(&left.len()).then_with(|| left.cmp(right)),
         "sort f3d design face_resolve 6",
     )?;
     let [lane, next @ ..] = ordered_lanes.as_slice() else {
@@ -1680,8 +1680,8 @@ pub(crate) fn legacy_face_recipe_reference_candidates(
     }
     ctx.stable_sort_by(
         &mut candidates[..],
-            |value| value.as_str(),
-            Ord::cmp,
+        |value| value.as_str(),
+        Ord::cmp,
         "sort f3d design face_resolve 7",
     )?;
     candidates.dedup();
@@ -1867,9 +1867,12 @@ fn unique_stable_face_slots(
     if slots.iter().any(|slot| *slot < 0) {
         return Ok(None);
     }
-    ctx.sort_unstable_by(&mut slots,
-            |value| value,
-            Ord::cmp, "f3d stable face slot sort")?;
+    ctx.sort_unstable_by(
+        &mut slots,
+        |value| value,
+        Ord::cmp,
+        "f3d stable face slot sort",
+    )?;
     let unique = slots.windows(2).all(|pair| pair[0] != pair[1]);
     Ok(unique.then_some(slots))
 }
@@ -1981,8 +1984,8 @@ fn effective_historical_face_slots(
     }
     ctx.sort_unstable_by(
         &mut candidate_slots,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "f3d effective candidate face sort",
     )?;
     candidate_slots.dedup();
@@ -1997,8 +2000,8 @@ fn effective_historical_face_slots(
     }
     ctx.sort_unstable_by(
         &mut active_faces,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "f3d effective active face sort",
     )?;
     active_faces.dedup();
@@ -2027,8 +2030,8 @@ fn convergent_face_support(
     }
     ctx.sort_unstable_by(
         &mut support,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "f3d convergent support face sort",
     )?;
     support.dedup();
@@ -2068,8 +2071,8 @@ fn convergent_face_support(
     }
     ctx.sort_unstable_by(
         &mut covered,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "f3d convergent covered face sort",
     )?;
     covered.dedup();
@@ -2125,9 +2128,12 @@ fn bounded_face_candidate_by_boundary_cardinality(
             )?;
         }
         if edge_count == Some(header_value) {
-            ctx.sort_unstable_by(&mut slots,
-            |value| value,
-            Ord::cmp, "f3d bounded face union sort")?;
+            ctx.sort_unstable_by(
+                &mut slots,
+                |value| value,
+                Ord::cmp,
+                "f3d bounded face union sort",
+            )?;
             if selected.as_ref().is_some_and(|first| first != &slots) {
                 return Ok(None);
             }
@@ -2365,8 +2371,8 @@ pub(crate) fn nested_bounded_face_history_candidates(
     }
     ctx.stable_sort_by(
         &mut candidates[..],
-            |value| value.as_str(),
-            Ord::cmp,
+        |value| value.as_str(),
+        Ord::cmp,
         "sort f3d design face_resolve 9",
     )?;
     candidates.dedup();
@@ -2536,8 +2542,8 @@ pub(crate) fn bind_extrude_start_planes(
                     }
                     ctx.stable_sort_by(
                         &mut candidates[..],
-            |value| value.as_str(),
-            Ord::cmp,
+                        |value| value.as_str(),
+                        Ord::cmp,
                         "sort f3d design face_resolve 10",
                     )?;
                     candidates.dedup();

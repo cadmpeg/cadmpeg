@@ -1322,8 +1322,10 @@ fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
                     .expect("identity grammar")
             ],
             vec!["operand-b".into()],
-            "group".into()
+            "group".into(),
+            &cadmpeg_test_support::service_decode_context()
         )
+        .expect("selection storage is admitted")
         .unwrap()
     );
     assert!(crate::test_support::with_decode_context(|decode_ctx| {

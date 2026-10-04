@@ -44,13 +44,13 @@ fn a_native_circle_range_reads_from_the_finite_support_when_its_partner_overflow
     let native = overflowing_cone_support([0.0, 1.5 * std::f64::consts::PI]);
     assert_eq!(
         native_support_circle_param_range(
+            &cadmpeg_test_support::service_decode_context(),
             &native,
             Point3::new(0.0, 0.0, 0.0),
             1.0,
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(0.0, -1.0, 0.0)
+            [Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, -1.0, 0.0)],
         )
         .expect("evaluator allocation succeeds"),
         Some([0.0, 1.5 * std::f64::consts::PI])
@@ -74,8 +74,14 @@ fn a_native_endpoint_pair_reads_from_the_finite_support_when_its_partner_overflo
         })
         .collect::<Vec<_>>();
     assert_eq!(
-        standard_native_support_endpoint_pair(&native, &points, &[0, 1], None)
-            .expect("evaluator allocation succeeds"),
+        standard_native_support_endpoint_pair(
+            &cadmpeg_test_support::service_decode_context(),
+            &native,
+            &points,
+            &[0, 1],
+            None
+        )
+        .expect("evaluator allocation succeeds"),
         Some([0, 1])
     );
 }
@@ -111,8 +117,62 @@ fn a_native_endpoint_pair_reads_from_the_finite_support_when_its_placed_partner_
         })
         .collect::<Vec<_>>();
     assert_eq!(
-        standard_native_support_endpoint_pair(&native, &points, &[0, 1], None)
-            .expect("evaluator allocation succeeds"),
+        standard_native_support_endpoint_pair(
+            &cadmpeg_test_support::service_decode_context(),
+            &native,
+            &points,
+            &[0, 1],
+            None
+        )
+        .expect("evaluator allocation succeeds"),
         Some([0, 1])
     );
+}
+
+#[test]
+fn native_support_helpers_preserve_session_depth_refusal() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let native = overflowing_cone_support([0.0, 1.5 * std::f64::consts::PI]);
+    crate::test_support::with_depth_limit(0, |ctx| {
+        assert_eq!(
+            standard_native_support_endpoint_pair(ctx, &native, &[], &[], None),
+            Ok(None)
+        );
+        assert_eq!(ctx.resource_refusal(), None);
+    });
+    let points = [Point::new(
+        PointId::mint("catia:test:point#depth-trigger").expect("identity grammar"),
+        cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+            .expect("finite depth-trigger point"),
+        None,
+    )];
+    for circle in [false, true] {
+        crate::test_support::with_depth_limit(0, |ctx| {
+            let limit = if circle {
+                native_support_circle_param_range(
+                    ctx,
+                    &native,
+                    Point3::new(0.0, 0.0, 0.0),
+                    1.0,
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    [Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, -1.0, 0.0)],
+                )
+                .expect_err("first evaluator frame refuses")
+            } else {
+                standard_native_support_endpoint_pair(ctx, &native, &points, &[0], None)
+                    .expect_err("first evaluator frame refuses")
+            };
+            assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
+            assert_eq!((limit.limit, limit.used, limit.additional), (0, 0, 1));
+            assert_eq!(
+                ctx.charge_work_limit(0, "observe native support refusal"),
+                Err(limit)
+            );
+            assert_eq!(
+                standard_native_support_endpoint_pair(ctx, &native, &[], &[], None),
+                Err(limit)
+            );
+        });
+    }
 }

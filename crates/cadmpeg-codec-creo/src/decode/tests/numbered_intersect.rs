@@ -957,13 +957,17 @@ fn generated_surface_faces_require_unique_rows_and_materialized_producers() {
         Some(vec![
             GeneratedFaceRef::new(
                 IrFeatureId::mint("creo:model:feature#97".to_string()).expect("identity grammar"),
-                "surface#98".to_string()
+                "surface#98".to_string(),
+                &cadmpeg_test_support::service_decode_context(),
             )
+            .expect("selection reference admission")
             .expect("valid test fixture"),
             GeneratedFaceRef::new(
                 IrFeatureId::mint("creo:model:feature#144".to_string()).expect("identity grammar"),
-                "surface#145".to_string()
+                "surface#145".to_string(),
+                &cadmpeg_test_support::service_decode_context(),
             )
+            .expect("selection reference admission")
             .expect("valid test fixture"),
         ])
     );
@@ -1092,13 +1096,17 @@ fn generated_curve_edges_require_unique_rows_and_materialized_producers() {
         Some(vec![
             GeneratedEdgeRef::new(
                 IrFeatureId::mint("creo:model:feature#12".to_string()).expect("identity grammar"),
-                "curve#45".to_string()
+                "curve#45".to_string(),
+                &cadmpeg_test_support::service_decode_context(),
             )
+            .expect("selection reference admission")
             .expect("valid test fixture"),
             GeneratedEdgeRef::new(
                 IrFeatureId::mint("creo:model:feature#18".to_string()).expect("identity grammar"),
-                "curve#46".to_string()
+                "curve#46".to_string(),
+                &cadmpeg_test_support::service_decode_context(),
             )
+            .expect("selection reference admission")
             .expect("valid test fixture"),
         ])
     );
@@ -1347,8 +1355,10 @@ fn model_feature_ids_include_row_backed_generated_producers() {
         ),
         Some(vec![GeneratedFaceRef::new(
             IrFeatureId::mint("creo:model:feature#50".to_string()).expect("identity grammar"),
-            "surface#61".to_string()
+            "surface#61".to_string(),
+            &cadmpeg_test_support::service_decode_context(),
         )
+        .expect("selection reference admission")
         .expect("valid test fixture")])
     );
     assert_eq!(
@@ -1360,8 +1370,10 @@ fn model_feature_ids_include_row_backed_generated_producers() {
         ),
         Some(vec![GeneratedEdgeRef::new(
             IrFeatureId::mint("creo:model:feature#50".to_string()).expect("identity grammar"),
-            "curve#59".to_string()
+            "curve#59".to_string(),
+            &cadmpeg_test_support::service_decode_context(),
         )
+        .expect("selection reference admission")
         .expect("valid test fixture")])
     );
     scan.features
@@ -1379,11 +1391,15 @@ fn model_feature_ids_include_row_backed_generated_producers() {
                 vec![GeneratedEdgeRef::new(
                     IrFeatureId::mint("creo:model:feature#50".to_string())
                         .expect("identity grammar"),
-                    "curve#59".to_string()
+                    "curve#59".to_string(),
+                    &cadmpeg_test_support::service_decode_context(),
                 )
+                .expect("selection reference admission")
                 .expect("valid test fixture")],
-                "creo:allfeatur:edgs_affected#10:59".to_string()
+                "creo:allfeatur:edgs_affected#10:59".to_string(),
+                &cadmpeg_test_support::service_decode_context(),
             )
+            .expect("selection reference admission")
             .expect("valid test fixture")
         )
     );
@@ -1495,6 +1511,7 @@ fn geometry_signal_excludes_opaque_carriers() {
     assert!(!has_transferred_geometry(&ir));
 
     let _attached = ir.model.add_procedural_surface(
+        &cadmpeg_ir::document::admission::StandardAdmission,
         &surface_id,
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:entity#procedural".to_string())

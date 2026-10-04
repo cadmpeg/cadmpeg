@@ -51,6 +51,7 @@ fn shared_extrusion_generator_curve(
 #[test]
 fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
     let surface = NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(3, vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -70,6 +71,7 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
         ),
         false,
     )
+    .expect("fixture constructor admission")
     .expect("valid extrusion surface");
     let boundary = nurbs_plane_boundary_curve(
         &surface,
@@ -133,15 +135,19 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
     .is_none());
     let mut coplanar = surface.clone();
     coplanar
-        .try_map_control_points(|_, point| {
-            let mut point = point.get();
-            point.z = 0.0;
-            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                    "control_points contains a non-finite point".into(),
-                )
-            })
-        })
+        .try_map_control_points(
+            |_, point| {
+                let mut point = point.get();
+                point.z = 0.0;
+                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("pole edit admission")
         .expect("finite fixture geometry preserves NURBS invariants");
     assert!(nurbs_plane_boundary_curve(
         &coplanar,
@@ -155,28 +161,37 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
     .is_none());
     let restored = surface.poles();
     coplanar
-        .try_map_control_points(|index, point| {
-            let mut point = point.get();
-            if let Some(value) = restored.get(index) {
-                point = value.get();
-            }
-            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                    "control_points contains a non-finite point".into(),
-                )
-            })
-        })
+        .try_map_control_points(
+            |index, point| {
+                let mut point = point.get();
+                if let Some(value) = restored.get(index) {
+                    point = value.get();
+                }
+                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("pole edit admission")
         .expect("finite fixture geometry preserves NURBS invariants");
     let mut zero_weights = coplanar.pole_grid().weights().expect("rational fixture");
     zero_weights[0][0] = 0.0;
-    assert!(
-        NurbsPoleGrid::from_lanes(coplanar.pole_grid().raw_points(), Some(zero_weights)).is_err()
-    );
+    assert!(NurbsPoleGrid::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        coplanar.pole_grid().raw_points(),
+        Some(zero_weights)
+    )
+    .expect("fixture pole pairing admission")
+    .is_err());
 }
 
 #[test]
 fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets() {
     let first = NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -189,8 +204,10 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
         ),
         false,
     )
+    .expect("fixture constructor admission")
     .expect("valid first extrusion surface");
     let second = NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![4.0, 4.0, 8.0, 8.0], false),
         NurbsSurfaceLanes::new(
@@ -203,6 +220,7 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
         ),
         false,
     )
+    .expect("fixture constructor admission")
     .expect("valid second extrusion surface");
     let shared = shared_extrusion_generator_curve(
         &first,
@@ -233,10 +251,16 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
         rows[1].swap(0, 1);
     }
     {
-        let replacement = NurbsPoleGrid::from_lanes(reversed_grid, reversed_weights)
-            .expect("finite fixture geometry preserves NURBS invariants");
+        let replacement = NurbsPoleGrid::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            reversed_grid,
+            reversed_weights,
+        )
+        .expect("fixture pole pairing admission")
+        .expect("finite fixture geometry preserves NURBS invariants");
         edit::replace(&mut reversed, |previous| {
             NurbsSurface::new(
+                &cadmpeg_test_support::service_decode_context(),
                 NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
@@ -250,6 +274,7 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
                 replacement,
                 previous.normal_reversed(),
             )
+            .expect("fixture final NURBS admission")
         })
     }
     .expect("finite fixture geometry preserves NURBS invariants");
@@ -268,10 +293,16 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
     same_side_grid[1][1] = Point3::new(-2.0, 0.0, 1.0);
     let same_side_weights = same_side.pole_grid().weights();
     {
-        let replacement = NurbsPoleGrid::from_lanes(same_side_grid, same_side_weights)
-            .expect("finite fixture geometry preserves NURBS invariants");
+        let replacement = NurbsPoleGrid::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            same_side_grid,
+            same_side_weights,
+        )
+        .expect("fixture pole pairing admission")
+        .expect("finite fixture geometry preserves NURBS invariants");
         edit::replace(&mut same_side, |previous| {
             NurbsSurface::new(
+                &cadmpeg_test_support::service_decode_context(),
                 NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
@@ -285,6 +316,7 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
                 replacement,
                 previous.normal_reversed(),
             )
+            .expect("fixture final NURBS admission")
         })
     }
     .expect("finite fixture geometry preserves NURBS invariants");
@@ -302,6 +334,7 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
         let replacement = true;
         edit::replace(&mut periodic_transverse, |previous| {
             NurbsSurface::new(
+                &cadmpeg_test_support::service_decode_context(),
                 NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
@@ -315,6 +348,7 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
                 previous.pole_grid().clone(),
                 previous.normal_reversed(),
             )
+            .expect("fixture final NURBS admission")
         })
         .expect("admitted periodic fixture");
     };
@@ -332,10 +366,16 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
     different_grid[0][1].x = 0.1;
     let different_weights = different_boundary.pole_grid().weights();
     {
-        let replacement = NurbsPoleGrid::from_lanes(different_grid, different_weights)
-            .expect("finite fixture geometry preserves NURBS invariants");
+        let replacement = NurbsPoleGrid::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            different_grid,
+            different_weights,
+        )
+        .expect("fixture pole pairing admission")
+        .expect("finite fixture geometry preserves NURBS invariants");
         edit::replace(&mut different_boundary, |previous| {
             NurbsSurface::new(
+                &cadmpeg_test_support::service_decode_context(),
                 NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
@@ -349,6 +389,7 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
                 replacement,
                 previous.normal_reversed(),
             )
+            .expect("fixture final NURBS admission")
         })
     }
     .expect("finite fixture geometry preserves NURBS invariants");
@@ -365,6 +406,7 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
 #[test]
 fn cubic_extrusion_plane_generator_requires_one_directrix_root() {
     let surface = NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(3, vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -380,6 +422,7 @@ fn cubic_extrusion_plane_generator_requires_one_directrix_root() {
         ),
         false,
     )
+    .expect("fixture constructor admission")
     .expect("valid cubic extrusion surface");
     let generator = with_decode_ctx(|ctx| {
         cubic_extrusion_plane_generator_curve(

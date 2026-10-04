@@ -242,7 +242,7 @@ pub(crate) fn bind_unique_sketch_feature(
         };
         let native_ref = copy_binding_text(ctx, native_ref)?;
         if !features[*index].dependencies.contains(&base_dependency) {
-            features[*index].dependencies.insert_for_decode(
+            features[*index].dependencies.insert(
                 ctx,
                 copy_binding_feature_id(ctx, &base_dependency)?,
                 "bind SLDPRT sketch alias dependency",
@@ -290,7 +290,7 @@ pub(crate) fn bind_unique_sketch_feature(
                         binding.has_profile,
                     )? && !dependencies.contains(&binding.feature_id)
                     {
-                        dependencies.insert_for_decode(
+                        dependencies.insert(
                             ctx,
                             copy_binding_feature_id(ctx, &binding.feature_id)?,
                             "bind SLDPRT sketch dependency",
@@ -344,7 +344,11 @@ fn regeneration_order(
     features: &[cadmpeg_ir::features::Feature],
     model: Option<&cadmpeg_ir::document::Model>,
 ) -> Result<Option<Vec<usize>>, cadmpeg_core::CodecError> {
-    let mut outgoing = ctx.collect_indexed_vec(features.len(), "sldprt feature regeneration adjacency", |_| Ok(Vec::<usize>::new()))?;
+    let mut outgoing = ctx.collect_indexed_vec(
+        features.len(),
+        "sldprt feature regeneration adjacency",
+        |_| Ok(Vec::<usize>::new()),
+    )?;
     let mut indegree = ctx.alloc_filled(
         features.len(),
         0usize,
@@ -651,9 +655,11 @@ pub(crate) fn derive_feature_outputs(
                     outputs.push(copy_output_body_id(ctx, output.as_str())?);
                 }
                 outputs.push(body);
-                feature.evaluation.set_outputs(
-                    cadmpeg_ir::features::DistinctMembers::try_from_for_decode(outputs, ctx)?,
-                );
+                feature
+                    .evaluation
+                    .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(
+                        outputs, ctx,
+                    )?);
             }
         }
     }
@@ -700,9 +706,11 @@ pub(crate) fn derive_feature_outputs(
             for body in bodies {
                 outputs.push(copy_output_body_id(ctx, body.as_str())?);
             }
-            feature.evaluation.set_outputs(
-                cadmpeg_ir::features::DistinctMembers::try_from_for_decode(outputs, ctx)?,
-            );
+            feature
+                .evaluation
+                .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(
+                    outputs, ctx,
+                )?);
         }
     }
     Ok(())
@@ -858,14 +866,11 @@ mod tests {
 
     #[test]
     fn feature_regeneration_index_refuses_work_limit() {
-        let mut features = [ordering_feature()];
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .unwrap_or_else(|error| panic!("test context failed: {error}"));
-        let error = order_features_for_regeneration(&ctx, &mut features)
-            .expect_err("one feature must exceed the work limit");
+        // Admit adjacency fills and key copies before the selected graph gate.
+        let error =
+            crate::test_support::work_refusal_at("index SLDPRT feature regeneration IDs", |ctx| {
+                order_features_for_regeneration(ctx, &mut [ordering_feature()])
+            });
         assert!(matches!(
             error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -876,15 +881,12 @@ mod tests {
 
     #[test]
     fn model_regeneration_parent_scan_refuses_work_limit() {
-        let mut ir = cadmpeg_ir::CadIr::empty();
-        ir.model.features.push(ordering_feature());
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_work_units = 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .unwrap_or_else(|error| panic!("test context failed: {error}"));
-        let error = order_model_features_for_regeneration(&ctx, &mut ir)
-            .expect_err("the parent scan must exceed the remaining work limit");
+        // Admit adjacency fills and key copies before the selected graph gate.
+        let error = crate::test_support::work_refusal_at("scan SLDPRT feature parents", |ctx| {
+            let mut ir = cadmpeg_ir::CadIr::empty();
+            ir.model.features.push(ordering_feature());
+            order_model_features_for_regeneration(ctx, &mut ir)
+        });
         assert!(matches!(
             error,
             cadmpeg_core::CodecError::ResourceLimit(limit)

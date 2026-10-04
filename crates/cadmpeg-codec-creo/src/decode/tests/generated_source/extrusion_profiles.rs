@@ -23,6 +23,7 @@ fn spline_extrusion_preserves_directrix_basis_and_weights() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("test decode context");
     let directrix = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![
@@ -33,6 +34,7 @@ fn spline_extrusion_preserves_directrix_basis_and_weights() {
         Some(vec![1.0, 0.5, 1.0]),
         false,
     )
+    .expect("fixture constructor admission")
     .expect("valid directrix");
     let surface = extruded_nurbs_surface(
         &ctx,
@@ -102,9 +104,24 @@ fn extrusion_arc_pcurve_is_exact_in_both_directions() {
         })
         .expect("resource admission")
         .expect("circular pcurve fixture");
-        let first = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.0).expect("first endpoint");
-        let middle = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.5).expect("arc midpoint");
-        let last = cadmpeg_ir::eval::pcurve_uv(&pcurve, 1.0).expect("last endpoint");
+        let first = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &pcurve,
+            0.0,
+        )
+        .expect("first endpoint");
+        let middle = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &pcurve,
+            0.5,
+        )
+        .expect("arc midpoint");
+        let last = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &pcurve,
+            1.0,
+        )
+        .expect("last endpoint");
         assert!((first.u - (2.0 + 3.0 * start.cos())).abs() < 1.0e-12);
         assert!((first.v - (2.0 + 3.0 * start.sin())).abs() < 1.0e-12);
         assert!((middle.u - expected_middle.u).abs() < 1.0e-12);
@@ -289,9 +306,24 @@ fn circle_remains_a_closed_extrusion_profile() {
         })
         .expect("resource admission")
         .expect("extrusion cap pcurve fixture");
-        let first = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.0).expect("circle seam");
-        let middle = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.5).expect("circle midpoint");
-        let last = cadmpeg_ir::eval::pcurve_uv(&pcurve, 1.0).expect("circle seam");
+        let first = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &pcurve,
+            0.0,
+        )
+        .expect("circle seam");
+        let middle = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &pcurve,
+            0.5,
+        )
+        .expect("circle midpoint");
+        let last = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &pcurve,
+            1.0,
+        )
+        .expect("circle seam");
         assert!((first.u - seam[0]).abs() < 1.0e-12);
         assert!((first.v - seam[1]).abs() < 1.0e-12);
         assert!((middle.u - (1.0 - 3.0)).abs() < 1.0e-12);

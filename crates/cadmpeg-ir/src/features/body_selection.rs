@@ -7,26 +7,14 @@ use super::{
 use crate::ids::{FeatureInputTopologyId, HistoricalBodyId};
 
 impl BodySelection {
-    /// Checked local body operands with their native reference.
-    pub fn local(bodies: Vec<String>, native: String) -> Result<Self, BodySelectionError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes_limit(&[], &arena, &policy)?;
-        Self::local_for_decode(bodies, native, &ctx)?
-    }
-
     /// Admit decoded local operands with a charged uniqueness index.
-    pub fn local_for_decode(
+    pub fn local(
         bodies: Vec<String>,
         native: String,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        let bodies = NativeSelections::try_from_for_decode(
-            bodies,
-            ctx,
-            "validate distinct decoded native selections",
-        )?;
+        let bodies =
+            NativeSelections::new(bodies, ctx, "validate distinct decoded native selections")?;
         ctx.charge_work_limit(
             cadmpeg_core::decode::u64_from_index(native.len()),
             "validate local selection reference",
@@ -39,27 +27,14 @@ impl BodySelection {
         }))
     }
 
-    /// Checked historical body operands with their native reference.
-    pub fn historical(
-        state: FeatureInputTopologyId,
-        bodies: Vec<HistoricalBodyId>,
-        native: String,
-    ) -> Result<Self, BodySelectionError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes_limit(&[], &arena, &policy)?;
-        Self::historical_for_decode(state, bodies, native, &ctx)?
-    }
-
     /// Admit selection members with the decode context.
-    pub fn historical_for_decode(
+    pub fn historical(
         state: FeatureInputTopologyId,
         bodies: Vec<HistoricalBodyId>,
         native: String,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        let bodies = match SelectionMembers::try_from_for_decode(
+        let bodies = match SelectionMembers::new(
             bodies,
             ctx,
             "validate BodySelection historical members",
@@ -82,32 +57,17 @@ impl BodySelection {
         }))
     }
 
-    /// Checked generated body operands with their native reference.
-    pub fn generated(
-        bodies: Vec<GeneratedBodyRef>,
-        native: String,
-    ) -> Result<Self, BodySelectionError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes_limit(&[], &arena, &policy)?;
-        Self::generated_for_decode(bodies, native, &ctx)?
-    }
-
     /// Admit selection members with the decode context.
-    pub fn generated_for_decode(
+    pub fn generated(
         bodies: Vec<GeneratedBodyRef>,
         native: String,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        let bodies = match SelectionMembers::try_from_for_decode(
-            bodies,
-            ctx,
-            "validate BodySelection generated members",
-        )? {
-            Ok(members) => members,
-            Err(error) => return Ok(Err(error)),
-        };
+        let bodies =
+            match SelectionMembers::new(bodies, ctx, "validate BodySelection generated members")? {
+                Ok(members) => members,
+                Err(error) => return Ok(Err(error)),
+            };
         ctx.charge_work_limit(
             cadmpeg_core::decode::u64_from_index(native.len()),
             "validate selection native reference",

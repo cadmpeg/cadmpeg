@@ -1006,6 +1006,7 @@ fn collapsed_pcurve_ranges_are_unbounded() {
 fn adjacent_pcurve_domain_rounding_is_canonicalized() {
     let geometry = PcurveGeometry::Nurbs {
         nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![2.0, 2.0, 4.0, 4.0],
             vec![
@@ -1015,6 +1016,7 @@ fn adjacent_pcurve_domain_rounding_is_canonicalized() {
             None,
             false,
         )
+        .expect("fixture pcurve construction admission")
         .unwrap(),
     };
 
@@ -1743,8 +1745,13 @@ Co 1001000 +2 1 +2 3 *
     assert!(matches!(placed.basis(), SolvedSurfaceGeometry::Plane(_)));
     assert_eq!(placed.transform().rows()[0][0], -2.0);
     assert_eq!(placed.transform().rows()[1][1], 2.0);
-    let origin =
-        cadmpeg_ir::eval::surface_point(&surface.geometry, 0.0, 0.0).expect("required invariant");
+    let origin = cadmpeg_ir::eval::decode::surface_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &surface.geometry,
+        0.0,
+        0.0,
+    )
+    .expect("required invariant");
     assert_eq!([origin.x, origin.y], [10.0, 5.0]);
     for edge in &result.ir().model.edges {
         let curve = result
@@ -1755,10 +1762,18 @@ Co 1001000 +2 1 +2 3 *
             .find(|curve| Some(&curve.id) == edge.curve())
             .expect("required invariant");
         let range = edge.param_range().expect("located edge parameter range");
-        let start =
-            cadmpeg_ir::eval::curve_point(&curve.geometry, range[0]).expect("required invariant");
-        let end =
-            cadmpeg_ir::eval::curve_point(&curve.geometry, range[1]).expect("required invariant");
+        let start = cadmpeg_ir::eval::decode::curve_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &curve.geometry,
+            range[0],
+        )
+        .expect("required invariant");
+        let end = cadmpeg_ir::eval::decode::curve_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &curve.geometry,
+            range[1],
+        )
+        .expect("required invariant");
         assert_eq!((start.x - end.x).abs(), 2.0);
     }
     let report = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
@@ -1890,12 +1905,19 @@ fn numerical_seventh_pcurve_snapping_preserves_distinct_endpoints() {
     use cadmpeg_ir::math::Point2;
     for domain in [[0.0, SMALL_PCURVE_DOMAIN], [1.0e8, 1.0e8 + 0.01]] {
         let nurbs = PcurveNurbs::new(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![domain[0], domain[0], domain[1], domain[1]],
-            PcurveNurbsPoles::from_lanes(vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)], None)
-                .unwrap(),
+            PcurveNurbsPoles::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+                None,
+            )
+            .expect("fixture pcurve construction admission")
+            .unwrap(),
             false,
         )
+        .expect("fixture pcurve construction admission")
         .unwrap();
         let geometry = PcurveGeometry::Nurbs { nurbs };
         assert_eq!(

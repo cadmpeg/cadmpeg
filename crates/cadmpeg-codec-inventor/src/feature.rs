@@ -1573,7 +1573,7 @@ fn project_extrusion(
     if let Err(error) = admit_projected_feature(ctx, source, label, "extrude") {
         return Some(Err(error));
     }
-    let profile = match PlanarProfileRef::sketch_selection_for_decode(sketch_id, selections, ctx) {
+    let profile = match PlanarProfileRef::sketch_selection(sketch_id, selections, ctx) {
         Ok(Ok(profile)) => profile,
         Ok(Err(_)) => return None,
         Err(limit) => return Some(Err(CodecError::ResourceLimit(limit))),
@@ -2055,19 +2055,18 @@ fn feature_result(
     if bodies.is_empty() {
         return None;
     }
-    let (body_ids, _body_ids_storage) =
-        match ctx.with_scoped_storage("precheck distinct Inventor feature result bodies", || {
-            ctx.collect_hash_set(
-                bodies.iter().map(NonBlankString::as_str),
-                "precheck distinct Inventor feature result bodies",
-            )
-        }) {
-            Ok(value) => value,
-            Err(error) => return Some(Err(error)),
-        };
-    if body_ids.len() != bodies.len() {
-        return None;
-    }
+    let members = match cadmpeg_ir::features::FeatureResultMembers::new(
+        bodies,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        ctx,
+        "precheck distinct Inventor feature result bodies",
+    ) {
+        Ok(Ok(members)) => members,
+        Ok(Err(_)) => return None,
+        Err(limit) => return Some(Err(limit.into())),
+    };
     const FEATURE_ID_PREFIX: &str = "inventor:design:feature#";
     const RESULT_ID_PREFIX: &str = "inventor:design:feature-result#";
     let mut key_storage = match ctx.reserve_scoped(0, "compose Inventor feature result key") {
@@ -2183,13 +2182,9 @@ fn feature_result(
             Ok(value) => value,
             Err(error) => return Some(Err(error)),
         },
-        bodies,
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
+        members,
         Some(option_result_value!(collection.id(ctx))),
-    )
-    .ok()?;
+    );
     Some(Ok((feature_id, result)))
 }
 

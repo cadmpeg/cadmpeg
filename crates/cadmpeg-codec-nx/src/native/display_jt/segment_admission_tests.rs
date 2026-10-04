@@ -71,8 +71,10 @@ fn display_jt_inflate_propagates_retained_copy_limit() {
 #[test]
 fn display_jt_owned_inflate_omits_payload_copy_work() {
     let member = compressed_member();
-    let work =
-        cadmpeg_core::decode::u64_from_index(member.len() + 8192 + b"DisplayJT payload".len());
+    // One expansion visit, compressed bytes, chunk step, output copy and writer copy.
+    let work = cadmpeg_core::decode::u64_from_index(
+        1 + member.len() + 8192 + 2 * b"DisplayJT payload".len(),
+    );
     crate::test_support::with_decode_context_over(
         &[],
         |policy| {

@@ -216,8 +216,10 @@ fn single_target_cycle_detection_handles_long_file_controlled_chains_iteratively
     // The target table supplies the byte envelope for the traversal node storage.
     let input = serde_json::to_vec(&targets).unwrap();
     let arena = DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&input, &arena, &DecodePolicy::service()).unwrap();
+    let mut policy = DecodePolicy::service();
+    // The graph traversal assertion admits all complete-key and node-movement work.
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&input, &arena, &policy).unwrap();
 
     assert!(
         !crate::entities::structure::single_target_cycle(1, &targets, &mut visited, &ctx,).unwrap()

@@ -143,7 +143,9 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
     let expected_projected = decoded.ir().model.configurations.clone();
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -353,7 +355,9 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         .expect("generated planar triangle decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     source_less.model.bodies[0].visible = Some(false);
     source_less.model.vertices[0].tolerance =
         Some(cadmpeg_ir::scalar::PositiveReal::new(0.025).expect("positive finite tolerance"));
@@ -658,7 +662,9 @@ fn tolerant_edge_and_vertex_tails_round_trip_all_trailing_forms() {
             .expect("generated planar triangle decode");
         let (mut source_less, _, _) = decoded.into_parts();
         source_less.source = None;
-        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        source_less
+            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .unwrap();
         source_less.model.vertices[0].tolerance =
             Some(cadmpeg_ir::scalar::PositiveReal::new(0.025).expect("positive finite tolerance"));
         source_less.model.edges[0].tolerance =
@@ -723,7 +729,9 @@ fn an_unset_tolerant_vertex_sentinel_round_trips_without_a_neutral_tolerance() {
         .expect("generated planar triangle decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let tolerant_vertex = source_less.model.vertices[0].id.clone();
     assert_eq!(source_less.model.vertices[0].tolerance, None);
     {
@@ -782,7 +790,9 @@ fn an_absent_tolerant_vertex_slot_round_trips_without_a_neutral_tolerance() {
         .expect("generated planar triangle decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let tolerant_vertex = source_less.model.vertices[0].id.clone();
     assert_eq!(source_less.model.vertices[0].tolerance, None);
     {
@@ -838,7 +848,9 @@ fn generated_source_less_f3d_rejects_subds() {
         .unwrap();
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     source_less.model.subds.push(cadmpeg_ir::SubdSurface {
         id: cadmpeg_ir::ids::SubdId::mint("test:f3d:subd#0").expect("identity grammar"),
         scheme: cadmpeg_ir::SubdScheme::CatmullClark,
@@ -865,7 +877,9 @@ fn generated_source_less_f3d_rejects_unbacked_design_parameters() {
         .unwrap();
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     source_less
         .model
         .parameters
@@ -1022,7 +1036,9 @@ fn generated_source_less_writes_document_tolerance_contract() {
         .expect("generated planar triangle decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     source_less.tolerances.linear =
         cadmpeg_ir::scalar::PositiveLength::new(2.5e-7).expect("positive finite tolerance");
     source_less.tolerances.angular =
@@ -1047,7 +1063,9 @@ fn generated_source_less_preserves_supported_topology_tolerances_or_refuses_loss
         .expect("generated planar triangle decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
 
     source_less.model.faces[0].tolerance =
         Some(cadmpeg_ir::scalar::PositiveReal::new(0.02).expect("positive finite tolerance"));
@@ -1109,7 +1127,9 @@ fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
         .expect("generated planar triangle decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let association = SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Step,
         object_id: cadmpeg_core::text::NonBlankString::try_from("object-1")
@@ -1186,7 +1206,9 @@ fn generated_source_less_rejects_body_kind_that_conflicts_with_incidence() {
         .expect("generated planar triangle decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     assert_eq!(
         source_less.model.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Sheet
@@ -1210,7 +1232,9 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
         .expect("generated planar triangle decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
 
     let point_id = PointId::mint("generated:test:point#3").expect("identity grammar");
     source_less
@@ -1259,7 +1283,11 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
     coedges.push(coedge_id);
     let vertex_uses = source_less.model.loops[0].anchored_vertex_uses().to_vec();
     source_less.model.loops[0]
-        .replace_ring(coedges, vertex_uses)
+        .replace_ring(
+            &cadmpeg_test_support::service_decode_context(),
+            coedges,
+            vertex_uses,
+        )
         .expect("source-less fixture loop remains a valid ring");
 
     let mut encoded = Vec::new();
@@ -1303,7 +1331,9 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
         .expect("generated planar triangle decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
 
     for index in 0..source_less.model.edges.len() {
         let edge = &source_less.model.edges[index];
@@ -1409,7 +1439,9 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
         .expect("generated planar triangle decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let curve_id = CurveId::mint("generated:test:circle#0").expect("identity grammar");
     let expected = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
         cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
@@ -1488,7 +1520,9 @@ fn generated_source_less_planar_face_writes_ellipse_edge_carrier() {
         .expect("generated planar triangle decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let curve_id = CurveId::mint("generated:test:ellipse#0").expect("identity grammar");
     let expected = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
         cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
@@ -1548,7 +1582,9 @@ fn generated_source_less_face_writes_cylinder_surface_carrier() {
         .expect("generated planar triangle decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let expected = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
         cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
             cadmpeg_ir::math::Point3::new(2.0, -4.0, 6.0),
@@ -1664,8 +1700,13 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
             id: loops[index].clone(),
             face: face.clone(),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                cadmpeg_ir::topology::LoopRing::new(vec![coedges[index].clone()], Vec::new())
-                    .expect("valid loop ring"),
+                cadmpeg_ir::topology::LoopRing::new(
+                    &cadmpeg_test_support::service_decode_context(),
+                    vec![coedges[index].clone()],
+                    Vec::new(),
+                )
+                .expect("fixture ring admission")
+                .expect("valid loop ring"),
             ),
         });
         source_less.model.coedges.push(Coedge {
@@ -1717,7 +1758,9 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
             None,
         ));
     }
-    source_less.finalize();
+    source_less
+        .finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -1765,7 +1808,9 @@ fn generated_source_less_face_writes_signed_sphere_surface_carrier() {
         .expect("generated planar triangle decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let expected = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
         cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
             cadmpeg_ir::math::Point3::new(-2.0, 4.0, 8.0),
@@ -1798,7 +1843,9 @@ fn generated_source_less_face_writes_cone_surface_carrier() {
         .expect("generated planar triangle decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let expected = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
         cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
             cadmpeg_ir::math::Point3::new(1.0, 3.0, -5.0),
@@ -1835,7 +1882,9 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
         .expect("generated planar triangle decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     source_less.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
         cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
             cadmpeg_ir::math::Point3::new(1.0, 3.0, -5.0),
@@ -1894,68 +1943,4 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
     );
 }
 
-#[test]
-fn generated_f3d_rewrites_plane_frame() {
-    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
-
-    let decoded = EditableDecodeResult::from(
-        F3dCodec
-            .decode(
-                &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_smbh())),
-                &DecodeOptions::default(),
-            )
-            .expect("generated planar triangle decode"),
-    );
-    let mut edited = decoded.ir().clone();
-    let expected = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-            cadmpeg_ir::math::Point3::new(10.0, -20.0, 30.0),
-            cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
-            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-        )
-        .unwrap(),
-    ));
-    edited.model.surfaces[0].geometry = expected.clone();
-
-    let mut regenerated = Vec::new();
-    crate::test_support::plan_inherited_write(&edited, decoded.source_fidelity(), &mut regenerated)
-        .expect("plane frame regeneration");
-    let round_trip = F3dCodec
-        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
-        .expect("regenerated plane decode");
-    assert_eq!(round_trip.ir().model.surfaces[0].geometry, expected);
-}
-
-#[test]
-fn generated_f3d_rejects_analytic_surface_family_changes() {
-    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
-
-    let decoded = EditableDecodeResult::from(
-        F3dCodec
-            .decode(
-                &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_smbh())),
-                &DecodeOptions::default(),
-            )
-            .expect("generated planar triangle decode"),
-    );
-    let mut edited = decoded.ir().clone();
-    edited.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-        cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-            5.0,
-        )
-        .unwrap(),
-    ));
-
-    let error = crate::test_support::plan_inherited_write(
-        &edited,
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .expect_err("native plane record cannot silently retain a sphere edit");
-    assert!(error
-        .to_string()
-        .contains("does not support edits to surface"));
-}
+mod family_changes;

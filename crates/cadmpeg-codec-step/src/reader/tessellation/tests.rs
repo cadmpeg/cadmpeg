@@ -184,17 +184,25 @@ fn tessellation_source_object_id_is_charged_before_formatting() {
     let service = DecodePolicy::service();
     decode_tessellation_under_policy(ONE_TRIANGLE, service)
         .expect("service admits detached source association");
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes,
-        "step_tessellation_source_object_id",
-        |limit| {
-            let mut policy = service;
-            policy.limits.max_retained_bytes = limit;
-            decode_tessellation_under_policy(ONE_TRIANGLE, policy)
-        },
-    );
+    // Each positive refusal advances past the preceding retained request.
+    let mut cap = 0;
+    let error = loop {
+        let mut policy = service;
+        policy.limits.max_retained_bytes = cap;
+        let error = decode_tessellation_under_policy(ONE_TRIANGLE, policy).unwrap_err();
+        let CodecError::ResourceLimit(limit) = &error else {
+            panic!("unexpected tessellation refusal");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+        assert!(limit.used + limit.additional > cap);
+        if limit.operation == "format nonblank text" {
+            policy.limits.max_retained_bytes = limit.used + limit.additional - 1;
+            break decode_tessellation_under_policy(ONE_TRIANGLE, policy).unwrap_err();
+        }
+        cap = limit.used + limit.additional;
+    };
     assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "step_tessellation_source_object_id")
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "format nonblank text")
     );
 }
 const PLACED_ANNOTATION: &str = "#1=COORDINATES_LIST('',3,((0.,0.,0.),(1.,0.,0.),(0.,1.,0.)));

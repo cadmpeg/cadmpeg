@@ -52,16 +52,76 @@ fn historical_selection_admission_preserves_partial_and_reference_semantics() {
 #[test]
 fn generated_selection_admission_rejects_blank_identities_and_preserves_duplicates() {
     let feature = crate::features::FeatureId::mint("test:model:feature#1").unwrap();
-    assert!(GeneratedEdgeRef::new(feature.clone(), " ".into()).is_err());
-    assert!(GeneratedFaceRef::new(feature.clone(), String::new()).is_err());
-    let edge = GeneratedEdgeRef::new(feature.clone(), "edge".into()).unwrap();
-    let face = GeneratedFaceRef::new(feature, "face".into()).unwrap();
-    assert!(EdgeSelection::generated(vec![], "native".into()).is_err());
-    assert!(FaceSelection::generated(vec![], "native".into()).is_err());
-    assert!(EdgeSelection::generated(vec![edge.clone()], " ".into()).is_err());
-    assert!(FaceSelection::generated(vec![face.clone()], " ".into()).is_err());
-    assert!(EdgeSelection::generated(vec![edge.clone(), edge], "native".into()).is_ok());
-    assert!(FaceSelection::generated(vec![face.clone(), face], "native".into()).is_ok());
+    assert!(GeneratedEdgeRef::new(
+        feature.clone(),
+        " ".into(),
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("selection reference admission")
+    .is_err());
+    assert!(GeneratedFaceRef::new(
+        feature.clone(),
+        String::new(),
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("selection reference admission")
+    .is_err());
+    let edge = GeneratedEdgeRef::new(
+        feature.clone(),
+        "edge".into(),
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("selection reference admission")
+    .unwrap();
+    let face = GeneratedFaceRef::new(
+        feature,
+        "face".into(),
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("selection reference admission")
+    .unwrap();
+    assert!(EdgeSelection::generated(
+        vec![],
+        "native".into(),
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("selection reference admission")
+    .is_err());
+    assert!(FaceSelection::generated(
+        vec![],
+        "native".into(),
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("selection reference admission")
+    .is_err());
+    assert!(EdgeSelection::generated(
+        vec![edge.clone()],
+        " ".into(),
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("selection reference admission")
+    .is_err());
+    assert!(FaceSelection::generated(
+        vec![face.clone()],
+        " ".into(),
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("selection reference admission")
+    .is_err());
+    assert!(EdgeSelection::generated(
+        vec![edge.clone(), edge],
+        "native".into(),
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("selection reference admission")
+    .is_ok());
+    assert!(FaceSelection::generated(
+        vec![face.clone(), face],
+        "native".into(),
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("selection reference admission")
+    .is_ok());
     for (field, local_id) in [("edges", "edge"), ("faces", "face")] {
         let wire = json!({"kind":"generated","value":{
             field:[{"feature":"test:model:feature#1","local_id":local_id}],"native":"native"
@@ -81,7 +141,12 @@ fn generated_selection_admission_rejects_blank_identities_and_preserves_duplicat
         }
     }
     for native in ["", " "] {
-        assert!(VertexSelection::native(native.into()).is_err());
+        assert!(VertexSelection::native(
+            native.into(),
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("selection reference admission")
+        .is_err());
         assert!(
             serde_json::from_value::<VertexSelection>(json!({"kind":"native","value":native}))
                 .is_err()
