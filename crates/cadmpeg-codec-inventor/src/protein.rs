@@ -62,11 +62,7 @@ pub(crate) fn parse<'a>(
         }),
         Err(error) => ProteinState::Malformed {
             stream: stream.id(),
-            detail: crate::issue_detail(
-                ctx,
-                error,
-                "retain Inventor malformed Protein detail",
-            )?,
+            detail: crate::issue_detail(ctx, error, "retain Inventor malformed Protein detail")?,
         },
     })
 }
@@ -162,29 +158,26 @@ fn decode_instances_from(
     let Some(mut catalog) = cadmpeg_protein::SchemaCatalog::load(ctx, payload)? else {
         return Ok(Vec::new());
     };
-    let (entries, entries_storage) = ctx.with_scoped_storage(
-        "collect Inventor Protein instance streams",
-        || {
+    let (entries, entries_storage) =
+        ctx.with_scoped_storage("collect Inventor Protein instance streams", || {
             ctx.collect_vec(
-                ctx.admit_iter(archive.entries(), "collect Inventor Protein instance streams")?
-                    .filter(|entry| entry.name.ends_with("InstanceProperties.bin")),
+                ctx.admit_iter(
+                    archive.entries(),
+                    "collect Inventor Protein instance streams",
+                )?
+                .filter(|entry| entry.name.ends_with("InstanceProperties.bin")),
                 "collect Inventor Protein instance streams",
             )
-        },
-    )?;
+        })?;
     let instances = ctx.try_collect_vec(
-        entries
-        .into_iter()
-        .map(|entry| {
+        entries.into_iter().map(|entry| {
             let instance = archive.open(ctx, &entry.name)?;
             let frames = cadmpeg_protein::framing::record_frames_admitted(ctx, instance.window())?;
             let outcome =
                 cadmpeg_protein::decode_frames_admitted(ctx, &mut catalog, frames.frames())?;
             Ok::<ProteinInstanceRecords, CodecError>(ProteinInstanceRecords {
-                entry_name: ctx.copy_retained_text(
-                    &entry.name,
-                    "Inventor Protein instance entry name",
-                )?,
+                entry_name: ctx
+                    .copy_retained_text(&entry.name, "Inventor Protein instance entry name")?,
                 records: outcome.records,
                 rejected: outcome.rejected,
             })
@@ -428,26 +421,22 @@ mod tests {
                     .len(),
                 1
             );
-            let mut result_vec_refused = false;
-            for cap in 0..128 {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_collection_items = cap;
-                let (limited, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                    .expect("synthetic Protein input fits policy");
-                if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
-                    decode_instances_from(&limited, &archive, payload)
-                {
-                    if limit.dimension == ResourceDimension::CollectionItems
-                        && limit.operation == "admit Inventor Protein instance records"
-                    {
-                        result_vec_refused = true;
-                        break;
-                    }
-                }
-            }
+            // Prior slots: ZIP index 10 + schema view 1 + XML tree/depth 58 + schema maps 2 + entry/view 2 + frames 213 + outcome 1 + inheritance 4 + property 1 = 292; the outer result slot is next.
+            const RESULT_COLLECTION_PRIOR_ITEMS: u64 = 292;
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = RESULT_COLLECTION_PRIOR_ITEMS;
+            let (limited, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("synthetic Protein input fits policy");
             assert!(
-                result_vec_refused,
+                matches!(
+                    decode_instances_from(&limited, &archive, payload),
+                    Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                        if limit.dimension == ResourceDimension::CollectionItems
+                            && limit.operation == "admit Inventor Protein instance records"
+                            && limit.used == RESULT_COLLECTION_PRIOR_ITEMS
+                            && limit.additional == 1
+                ),
                 "result collection must refuse at its own admission"
             );
         });
@@ -482,7 +471,8 @@ mod tests {
                 .expect("compound context");
         let snapshot = CompoundSnapshot::new(&cfb_ctx, cfb_root).expect("compound fixture");
         let stream = snapshot
-            .stream(&cfb_ctx, "RSeStorage/RSeSegInfo").expect("lookup admission")
+            .stream(&cfb_ctx, "RSeStorage/RSeSegInfo")
+            .expect("lookup admission")
             .expect("fixture stream")
             .id();
         let package = ProteinEnvelope {
@@ -590,12 +580,21 @@ mod tests {
                     let alignment = key_alignment
                         .max(value_alignment)
                         .max(std::mem::align_of::<usize>());
-                    let nodes = if len == 0 { 1 } else { usize::try_from(len.ilog2()).expect("fixture tree height fits usize") + 2 };
+                    let nodes = if len == 0 {
+                        1
+                    } else {
+                        usize::try_from(len.ilog2()).expect("fixture tree height fits usize") + 2
+                    };
                     let node_bytes = (key_size + value_size) * 11
                         + 16 * std::mem::size_of::<usize>()
                         + 2 * alignment;
                     let tree_mutation_work = 4 * node_bytes * nodes;
-                    let comparisons = if len == 0 { 0 } else { 11 * (usize::try_from(len.ilog2()).expect("fixture tree height fits usize") + 1) };
+                    let comparisons = if len == 0 {
+                        0
+                    } else {
+                        11 * (usize::try_from(len.ilog2()).expect("fixture tree height fits usize")
+                            + 1)
+                    };
                     let key_comparison_work = 2 * *key_bytes * comparisons;
                     let slot_visit_work = if scoped_set { 2 * len } else { 0 };
                     tree_mutation_work + key_comparison_work + slot_visit_work
@@ -626,7 +625,10 @@ mod tests {
         let archive_snapshot_work = cadmpeg_core::decode::u64_from_index(
             archive_tree_work + 3 * archive_name_bytes + 3 * archive_entry_count,
         );
-        let archive_map_comparisons = 11 * (usize::try_from(archive_entry_count.ilog2()).expect("fixture tree height fits usize") + 1);
+        let archive_map_comparisons = 11
+            * (usize::try_from(archive_entry_count.ilog2())
+                .expect("fixture tree height fits usize")
+                + 1);
         // The schema lookup is inside its calibrated load; two instance opens
         // each look up one key in the three-entry Protein name map.
         let instance_open_lookup_work = cadmpeg_core::decode::u64_from_index(
@@ -636,9 +638,8 @@ mod tests {
                 .map(|key_bytes| *key_bytes * archive_map_comparisons)
                 .sum::<usize>(),
         );
-        let archive_name_validation_work = cadmpeg_core::decode::u64_from_index(
-            5 * archive_name_bytes + 3 * 4,
-        );
+        let archive_name_validation_work =
+            cadmpeg_core::decode::u64_from_index(5 * archive_name_bytes + 3 * 4);
         // Calibrate one complete schema load followed by both exact framing
         // and decode calls, using the same catalog as the production path.
         let schema_and_instance_decode_succeeds = |limit| {
@@ -657,17 +658,15 @@ mod tests {
                 Err(error) => panic!("schema fixture failed below its work bound: {error}"),
             };
             for instance_bytes in [instance.as_slice(), instance.as_slice()] {
-                let frames = match cadmpeg_protein::framing::record_frames_admitted(
-                    &ctx,
-                    instance_bytes,
-                ) {
-                    Ok(frames) => frames,
-                    Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
-                        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-                        return false;
-                    }
-                    Err(error) => panic!("instance framing failed: {error}"),
-                };
+                let frames =
+                    match cadmpeg_protein::framing::record_frames_admitted(&ctx, instance_bytes) {
+                        Ok(frames) => frames,
+                        Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+                            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+                            return false;
+                        }
+                        Err(error) => panic!("instance framing failed: {error}"),
+                    };
                 let outcome = match cadmpeg_protein::decode_frames_admitted(
                     &ctx,
                     &mut catalog,
@@ -701,12 +700,11 @@ mod tests {
         let instance_entry_name_bytes =
             "First/InstanceProperties.bin".len() + "Second/InstanceProperties.bin".len();
         // Opening both stored instance entries charges their payload CRC scans.
-        let instance_crc_work =
-            2 * cadmpeg_core::decode::u64_from_index(instance.len());
+        let instance_crc_work = 2 * cadmpeg_core::decode::u64_from_index(instance.len());
         // Validation and selection admit each entry. Both the filtered stream
         // collection and the fallible record collection charge two yields + end.
-        let archive_entry_work = 2 * cadmpeg_core::decode::u64_from_index(archive_entry_count)
-            + 2 * (2 + 1);
+        let archive_entry_work =
+            2 * cadmpeg_core::decode::u64_from_index(archive_entry_count) + 2 * (2 + 1);
         // Counts the outer ZIP snapshot/name checks, one catalog load and both frame/decode paths, instance CRCs/lookups/name copies, and archive traversals/collections.
         policy.limits.max_work_units = inventory_work
             + archive_snapshot_work
