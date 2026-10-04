@@ -1162,8 +1162,7 @@ fn variable_fillet_radius_groups<'a>(
             .all(|(expected, (actual, _))| expected == *actual)
         {
             let mut selections_copy = Vec::new();
-            ctx.reserve_vec(&mut selections_copy, selections.len(), OPERATION)?;
-            selections_copy.extend_from_slice(selections);
+            ctx.extend_from_slice(&mut selections_copy, selections, OPERATION)?;
             let mut selections = selections_copy;
             ctx.sort_unstable_by(&mut selections, |value| &value.ordinal, Ord::cmp, OPERATION)?;
             let mut sample_storage =
@@ -1333,8 +1332,7 @@ fn variable_fillet_radius_groups<'a>(
             }
         }
         let mut selections_copy = Vec::new();
-        ctx.reserve_vec(&mut selections_copy, selections.len(), OPERATION)?;
-        selections_copy.extend_from_slice(selections);
+        ctx.extend_from_slice(&mut selections_copy, selections, OPERATION)?;
         let mut selections = selections_copy;
         ctx.sort_unstable_by(&mut selections, |value| &value.ordinal, Ord::cmp, OPERATION)?;
         let mut sample_storage = ctx.reserve_scoped(0, "SLDPRT variable radius source samples")?;

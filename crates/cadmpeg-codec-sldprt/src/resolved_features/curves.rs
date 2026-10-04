@@ -1771,12 +1771,7 @@ pub(super) fn indexed_rectangle_from_line_cycle(
     }
 
     let mut roster = Vec::new();
-    ctx.reserve_vec(
-        &mut roster,
-        markers.len(),
-        "collect SLDPRT rectangle marker roster",
-    )?;
-    roster.extend_from_slice(markers);
+    ctx.extend_from_slice(&mut roster, markers, "collect SLDPRT rectangle marker roster")?;
     ctx.sort_unstable_by_key(
         &mut roster,
         |value| value.offset(),

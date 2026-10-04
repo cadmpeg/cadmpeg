@@ -2186,20 +2186,16 @@ pub(super) fn inferred_point_coordinates_by_index(
     }
     let mut domains = HashMap::new();
     for index in indices {
-        charge_endpoint_work(ctx, candidates.len(), 4, POINT_SOLVER_OPERATION)?;
         let mut domain = Vec::new();
-        reserve_point_solver_vec(ctx, &mut domain, candidates.len())?;
-        domain.extend_from_slice(&candidates);
+        ctx.extend_from_slice(&mut domain, &candidates, POINT_SOLVER_OPERATION)?;
         reserve_point_solver_map(ctx, &mut domains)?;
         domains.insert(index, domain);
     }
     loop {
         let mut previous = HashMap::new();
         for (&index, domain) in &domains {
-            charge_endpoint_work(ctx, domain.len(), 4, POINT_SOLVER_OPERATION)?;
             let mut copied = Vec::new();
-            reserve_point_solver_vec(ctx, &mut copied, domain.len())?;
-            copied.extend_from_slice(domain);
+            ctx.extend_from_slice(&mut copied, domain, POINT_SOLVER_OPERATION)?;
             reserve_point_solver_map(ctx, &mut previous)?;
             previous.insert(index, copied);
         }
@@ -4493,10 +4489,8 @@ pub(super) fn copy_endpoint_markers<'a>(
     markers: &[&'a SketchInputEntity],
 ) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
     const OPERATION: &str = "copy SLDPRT resolved curve endpoints";
-    charge_endpoint_work(ctx, markers.len(), 4, OPERATION)?;
     let mut copied = Vec::new();
-    ctx.reserve_vec(&mut copied, markers.len(), OPERATION)?;
-    copied.extend_from_slice(markers);
+    ctx.extend_from_slice(&mut copied, markers, OPERATION)?;
     Ok(copied)
 }
 
