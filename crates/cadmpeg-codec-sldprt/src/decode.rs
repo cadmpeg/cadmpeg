@@ -4534,10 +4534,12 @@ fn parameter_identity_lanes<'a>(
 fn stamp_parameter_baseline(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
     let hash = crate::history::hash::parameter_hash(ctx, &ir.model.parameters)?;
     if let Some(source) = &mut ir.source {
-        source.attributes.insert(
+        ctx.insert_btree_map(
+            &mut source.attributes,
             cadmpeg_core::nonblank_literal!("sldprt_neutral_parameter_local_sha256"),
             hash,
-        );
+            "insert SLDPRT parameter baseline digest",
+        )?;
     }
     Ok(())
 }
