@@ -181,7 +181,7 @@ fn an_unverified_acis_binary_band_is_decoded_and_marked() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == SatLossCode::SourceDialectUnverified.kind()));
+        .any(|loss| loss.code == SatLossCode::SourceDialectUnverified.kind(&cadmpeg_test_support::service_decode_context()).expect("service loss code")));
     let source = result.ir().source.as_ref().expect("source metadata");
     assert_eq!(source.attributes["kernel_family"], "acis");
     assert_eq!(
@@ -200,7 +200,7 @@ fn an_unverified_acis_text_band_is_decoded_and_marked() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == SatLossCode::SourceDialectUnverified.kind()));
+        .any(|loss| loss.code == SatLossCode::SourceDialectUnverified.kind(&cadmpeg_test_support::service_decode_context()).expect("service loss code")));
     let source = result.ir().source.as_ref().expect("source metadata");
     assert_eq!(source.attributes["kernel_family"], "acis");
     assert_eq!(source.dialect().unwrap().declared()["encoding"], "text");
@@ -228,8 +228,8 @@ fn an_unverified_band_that_decodes_nothing_reports_honest_coverage() {
         .iter()
         .map(|loss| loss.code.clone())
         .collect::<Vec<_>>();
-    assert!(codes.contains(&SatLossCode::SourceDialectUnverified.kind()));
-    assert!(codes.contains(&SatLossCode::GeometryFramedWithoutCarriers.kind()));
+    assert!(codes.contains(&SatLossCode::SourceDialectUnverified.kind(&cadmpeg_test_support::service_decode_context()).expect("service loss code")));
+    assert!(codes.contains(&SatLossCode::GeometryFramedWithoutCarriers.kind(&cadmpeg_test_support::service_decode_context()).expect("service loss code")));
 }
 
 #[test]
@@ -337,7 +337,7 @@ fn a_geometry_less_text_stream_reports_uncovered_coverage() {
         .report()
         .losses
         .iter()
-        .find(|loss| loss.code == SatLossCode::GeometryFramedWithoutCarriers.kind())
+        .find(|loss| loss.code == SatLossCode::GeometryFramedWithoutCarriers.kind(&cadmpeg_test_support::service_decode_context()).expect("service loss code"))
         .expect("coverage loss");
     assert!(loss.message.contains("End-of-ACIS-data"));
 }
@@ -464,8 +464,8 @@ fn sat_annotation_storage_uses_the_callers_collection_budget() {
     )
     .unwrap();
     let mut policy = DecodePolicy::service();
-    // One dialect layer, twelve native arenas and two coverage nodes precede the handle.
-    policy.limits.max_collection_items = 15;
+    // One dialect layer, twelve native arenas, one loss and two coverage nodes precede the handle.
+    policy.limits.max_collection_items = 16;
     let error = with_context(&[], &policy, |ctx| {
         super::build_result(
             ctx,

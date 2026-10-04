@@ -60,10 +60,10 @@ fn take_lp_utf8_capped(
     let Some(end) = at.checked_add(count) else {
         return Ok(None);
     };
-    let Some(value) = bytes
-        .get(*at..end)
-        .and_then(|bytes| std::str::from_utf8(bytes).ok())
-    else {
+    let Some(value_bytes) = bytes.get(*at..end) else {
+        return Ok(None);
+    };
+    let Ok(value) = ctx.validate_utf8(value_bytes, "Protein decoded string UTF-8")? else {
         return Ok(None);
     };
     let value = ctx.copy_retained_text(value, "Protein decoded string")?;
@@ -160,8 +160,8 @@ impl SchemaCatalog {
     ) -> Result<Option<Self>, CodecError> {
         let archive = ArchiveSnapshot::new(ctx, protein)?;
         let mut schemas = HashMap::new();
-        for entry in archive.entries() {
-            if !is_schema_entry(&entry.name) {
+        for entry in ctx.admit_iter(archive.entries(), "Protein schema entries")? {
+            if !is_schema_entry(ctx, &entry.name)? {
                 continue;
             }
             if entry.uncompressed_size > MAX_SCHEMA_BYTES {
@@ -200,7 +200,7 @@ impl SchemaCatalog {
         name: &str,
     ) -> Result<&BTreeMap<String, Property>, CodecError> {
         resolve_inheritance(ctx, &self.schemas, &mut self.properties, name)?;
-        self.properties.get(name).ok_or_else(|| {
+        ctx.get_hash_map(&self.properties, name, "Protein resolved schema lookup")?.ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "Protein instance references absent schema {name}"
             ))
@@ -214,65 +214,68 @@ fn resolve_inheritance(
     resolved: &mut HashMap<String, BTreeMap<String, Property>>,
     name: &str,
 ) -> Result<(), CodecError> {
+    let mut path_storage = ctx.reserve_scoped(0, "Protein schema inheritance path")?;
+    let mut active_storage = ctx.reserve_scoped(0, "Protein schema inheritance active set")?;
+    let mut guard_storage = ctx.reserve_scoped(0, "Protein schema inheritance guards")?;
     let mut path = Vec::new();
     let mut active = BTreeSet::new();
     let mut depth_guards = Vec::new();
     let mut current = name;
-    while !resolved.contains_key(current) {
-        if active.contains(current) {
+    loop {
+        ctx.charge_work(1, "Protein schema inheritance traversal")?;
+        if ctx.contains_key_hash_map(resolved, current, "Protein resolved schema lookup")? {
+            break;
+        }
+        if ctx.contains_btree_set(&active, current, "Protein inheritance cycle lookup")? {
             return Err(CodecError::malformed(format_args!(
                 "Protein schema inheritance contains a cycle at {current}"
             )));
         }
-        let schema = schemas.get(current).ok_or_else(|| {
+        let schema = ctx.get_hash_map(schemas, current, "Protein inherited schema lookup")?.ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "Protein instance references absent schema {current}"
             ))
         })?;
-        depth_guards.push(ctx.enter_nested("Protein schema inheritance")?);
-        ctx.charge_work(1, "Protein schema inheritance traversal")?;
-        ctx.charge_collection_items(2, "Protein schema inheritance path")?;
-        active.insert(current);
-        path.push(current);
+        ctx.push_scoped_vec(&mut guard_storage, &mut depth_guards,
+            ctx.enter_nested("Protein schema inheritance")?, "Protein schema inheritance guards")?;
+        active_storage.with_storage(|| ctx.insert_btree_set(&mut active, current, "Protein schema inheritance active set"))?;
+        ctx.push_scoped_vec(&mut path_storage, &mut path, current, "Protein schema inheritance path")?;
         let Some(base) = schema.base.as_deref() else {
             break;
         };
         current = base;
     }
-    while let Some(current) = path.pop() {
-        let schema = schemas.get(current).ok_or_else(|| {
+    loop {
+        ctx.charge_work(1, "Protein schema inheritance closure traversal")?;
+        let Some(current) = path.pop() else {
+            break;
+        };
+        let schema = ctx.get_hash_map(schemas, current, "Protein inherited schema lookup")?.ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "Protein instance references absent schema {current}"
             ))
         })?;
-        let inherited = schema.base.as_deref().and_then(|base| resolved.get(base));
-        let inherited_count = inherited.map_or(0, BTreeMap::len);
-        let copied_count = inherited_count
-            .checked_add(schema.properties.len())
-            .ok_or_else(|| CodecError::Malformed("Protein closure size overflows".into()))?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(copied_count),
-            "Protein inherited property closure",
-        )?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(copied_count) + 1,
-            "Protein inherited property closure",
-        )?;
-        let copied_name_bytes = inherited
-            .into_iter()
-            .flat_map(|properties| properties.keys())
-            .chain(schema.properties.keys())
-            .try_fold(
-                cadmpeg_core::decode::u64_from_index(current.len()),
-                |total, id| total.checked_add(cadmpeg_core::decode::u64_from_index(id.len())),
-            )
-            .ok_or_else(|| {
-                CodecError::Malformed("Protein closure names length overflows".into())
-            })?;
-        ctx.charge_retained(copied_name_bytes, "Protein inherited property names")?;
-        let mut properties = inherited.cloned().unwrap_or_default();
-        properties.extend(schema.properties.clone());
-        resolved.insert(current.to_owned(), properties);
+        let inherited = match schema.base.as_deref() {
+            Some(base) => ctx.get_hash_map(resolved, base, "Protein inherited closure lookup")?,
+            None => None,
+        };
+        let mut properties = BTreeMap::new();
+        if let Some(inherited) = inherited {
+            for (id, property) in ctx.admit_iter(inherited, "Protein inherited property closure")? {
+                let id = ctx.copy_retained_text(id, "Protein inherited property names")?;
+                ctx.insert_btree_map(&mut properties, id, property.clone(), "Protein inherited property closure")?;
+            }
+        }
+        for (id, property) in ctx.admit_iter(&schema.properties, "Protein inherited property closure")? {
+            if let Some(value) = ctx.get_mut_btree_map(&mut properties, id, "Protein local property override")? {
+                *value = property.clone();
+            } else {
+                let id = ctx.copy_retained_text(id, "Protein inherited property names")?;
+                ctx.insert_btree_map(&mut properties, id, property.clone(), "Protein inherited property closure")?;
+            }
+        }
+        let name = ctx.copy_retained_text(current, "Protein inherited property names")?;
+        ctx.insert_hash_map(resolved, name, properties, "Protein resolved schema")?;
         drop(depth_guards.pop());
     }
     Ok(())
@@ -362,7 +365,7 @@ fn decode_frames(
     frames: &[framing::RecordFrame],
 ) -> Result<DecodeOutcome, CodecError> {
     let mut outcome = DecodeOutcome::default();
-    for (ordinal, frame) in frames.iter().enumerate() {
+    for (ordinal, frame) in ctx.admit_iter(frames, "Protein record outcome traversal")?.enumerate() {
         let ordinal = cadmpeg_core::decode::u64_from_index(ordinal);
         ctx.charge_collection_items(1, "Protein record outcome")?;
         match decode_record(ctx, frame.bytes(), catalog, ordinal, frame.logical_offset()) {
@@ -389,19 +392,24 @@ fn decode_frames(
 }
 
 /// Whether the Protein archive packages schema XML documents.
-pub fn has_schemas(protein: &[u8]) -> bool {
+pub fn has_schemas(ctx: &DecodeContext<'_>, protein: &[u8]) -> Result<bool, CodecError> {
     let Ok(mut archive) = zip::ZipArchive::new(Cursor::new(protein)) else {
-        return false;
+        return Ok(false);
     };
-    (0..archive.len()).any(|index| {
-        archive
-            .by_index(index)
-            .is_ok_and(|entry| is_schema_entry(entry.name()))
-    })
+    for index in 0..archive.len() {
+        let Ok(entry) = archive.by_index(index) else {
+            continue;
+        };
+        if is_schema_entry(ctx, entry.name())? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
-fn is_schema_entry(name: &str) -> bool {
-    (name.starts_with("Schemas/") || name.contains("/Schemas/")) && name.ends_with("Schema.xml")
+fn is_schema_entry(ctx: &DecodeContext<'_>, name: &str) -> Result<bool, CodecError> {
+    Ok((name.starts_with("Schemas/") || ctx.contains_text(name, "/Schemas/", "Protein schema entry path search")?)
+        && name.ends_with("Schema.xml"))
 }
 
 fn schemas(ctx: &DecodeContext<'_>, protein: &[u8]) -> Result<HashMap<String, Schema>, CodecError> {
@@ -420,7 +428,7 @@ fn schemas(ctx: &DecodeContext<'_>, protein: &[u8]) -> Result<HashMap<String, Sc
                 entry.name()
             )));
         }
-        if !is_schema_entry(entry.name()) {
+        if !is_schema_entry(ctx, entry.name())? {
             continue;
         }
         let size = entry.size();
@@ -455,15 +463,21 @@ fn parse_schema_document(
             ))
         })?;
     let document = admitted_document.document();
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(document.descendants().len()), "Protein schema root search")?;
     let root = document.root_element();
-    let uid = root
-        .children()
-        .find(|node| node.has_tag_name("UID"))
-        .and_then(|node| node.attribute("val"))
+    let uid_node = root.children().find(|node| node.has_tag_name("UID"))
+        .ok_or_else(|| CodecError::malformed(format_args!("Protein schema {name} has no UID")))?;
+    let uid_work = cadmpeg_core::decode::u64_from_index(uid_node.attributes().len()).checked_mul(4)
+        .ok_or_else(|| ctx.refuse_codec_limit("Protein schema UID search", u64::MAX, u64::MAX))?;
+    ctx.charge_work(uid_work, "Protein schema UID search")?;
+    let uid = uid_node.attribute("val")
         .ok_or_else(|| CodecError::malformed(format_args!("Protein schema {name} has no UID")))?;
     let mut schema = Schema::default();
     for node in root.children().filter(roxmltree::Node::is_element) {
         if node.has_tag_name("Base") {
+            let work = cadmpeg_core::decode::u64_from_index(node.attributes().len()).checked_mul(4)
+                .ok_or_else(|| ctx.refuse_codec_limit("Protein schema base search", u64::MAX, u64::MAX))?;
+            ctx.charge_work(work, "Protein schema base search")?;
             if let Some(value) = node.attribute("val") {
                 ctx.charge_retained(
                     cadmpeg_core::decode::u64_from_index(value.len()),
@@ -476,29 +490,25 @@ fn parse_schema_document(
         if node.has_tag_name("PropertyAlias") {
             continue;
         }
-        if node.attribute("readonly") == Some("true")
-            || node.attribute("definitionIteratorData") == Some("true")
-        {
-            continue;
-        }
-        let Some(property) = schema_property(node) else {
+        let attribute_count = cadmpeg_core::decode::u64_from_index(node.attributes().len());
+        let readonly_work = attribute_count.checked_mul(9)
+            .ok_or_else(|| ctx.refuse_codec_limit("Protein readonly attribute search", u64::MAX, u64::MAX))?;
+        ctx.charge_work(readonly_work, "Protein readonly attribute search")?;
+        if node.attribute("readonly") == Some("true") { continue; }
+        let definition_work = attribute_count.checked_mul(23)
+            .ok_or_else(|| ctx.refuse_codec_limit("Protein definition attribute search", u64::MAX, u64::MAX))?;
+        ctx.charge_work(definition_work, "Protein definition attribute search")?;
+        if node.attribute("definitionIteratorData") == Some("true") { continue; }
+        let Some(property) = schema_property(ctx, node)? else {
             continue;
         };
+        let id_work = attribute_count.checked_mul(3)
+            .ok_or_else(|| ctx.refuse_codec_limit("Protein property id search", u64::MAX, u64::MAX))?;
+        ctx.charge_work(id_work, "Protein property id search")?;
         let Some(id) = node.attribute("id") else {
             continue;
         };
-        let lookup_work = id
-            .len()
-            .checked_add(1)
-            .and_then(|width| width.checked_mul(schema.properties.len()))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("Protein local property uniqueness", u64::MAX, u64::MAX)
-            })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(lookup_work),
-            "Protein local property uniqueness",
-        )?;
-        if schema.properties.contains_key(id) {
+        if ctx.contains_key_btree_map(&schema.properties, id, "Protein local property uniqueness")? {
             return Err(CodecError::malformed(format_args!(
                 "Protein schema {uid} declares property {id} more than once"
             )));
@@ -514,7 +524,7 @@ fn parse_schema_document(
             "Protein schema property",
         )?;
     }
-    if schemas.contains_key(uid) {
+    if ctx.contains_key_hash_map(schemas, uid, "Protein schema uniqueness")? {
         return Err(CodecError::malformed(format_args!(
             "Protein archive defines schema {uid} more than once"
         )));
@@ -527,34 +537,45 @@ fn parse_schema_document(
     Ok(())
 }
 
-fn schema_property(node: roxmltree::Node<'_, '_>) -> Option<Property> {
+fn schema_property(ctx: &DecodeContext<'_>, node: roxmltree::Node<'_, '_>) -> Result<Option<Property>, CodecError> {
+    let attribute_count = cadmpeg_core::decode::u64_from_index(node.attributes().len());
+    let multiple_work = attribute_count.checked_mul(20)
+        .ok_or_else(|| ctx.refuse_codec_limit("Protein multiple-values attribute search", u64::MAX, u64::MAX))?;
+    ctx.charge_work(multiple_work, "Protein multiple-values attribute search")?;
     let multiple = node.attribute("allowmultiplevalues") == Some("true");
+    let connected_work = attribute_count.checked_mul(21)
+        .ok_or_else(|| ctx.refuse_codec_limit("Protein connected-assets attribute search", u64::MAX, u64::MAX))?;
+    ctx.charge_work(connected_work, "Protein connected-assets attribute search")?;
     let connectable = node.attribute("allowconnectedassets").is_some();
     let carrier = match node.tag_name().name() {
-        "Reference" => return Some(Property::Reference { multiple }),
+        "Reference" => return Ok(Some(Property::Reference { multiple })),
         "TextureURI" => {
-            return Some(Property::Value {
+            return Ok(Some(Property::Value {
                 layout: ValueLayout::TextureUri,
                 connectable,
-            });
+            }));
         }
         "Boolean" => ValueCarrier::Boolean,
         "Integer" | "Choice" => ValueCarrier::Integer,
-        "Float" if node.attribute("unit").is_some() => ValueCarrier::UnitFloat,
-        "Float" => ValueCarrier::Float,
+        "Float" => {
+            let work = attribute_count.checked_mul(5)
+                .ok_or_else(|| ctx.refuse_codec_limit("Protein unit attribute search", u64::MAX, u64::MAX))?;
+            ctx.charge_work(work, "Protein unit attribute search")?;
+            if node.attribute("unit").is_some() { ValueCarrier::UnitFloat } else { ValueCarrier::Float }
+        },
         "Distance" => ValueCarrier::Distance,
         "String" | "Uuid" | "URL" => ValueCarrier::String,
         "Color" => ValueCarrier::Color,
-        _ => return None,
+        _ => return Ok(None),
     };
-    Some(Property::Value {
+    Ok(Some(Property::Value {
         layout: if multiple {
             ValueLayout::Multiple(carrier)
         } else {
             ValueLayout::Single(carrier)
         },
         connectable,
-    })
+    }))
 }
 
 fn decode_record(
@@ -586,7 +607,7 @@ fn decode_record(
     };
     let properties = catalog.properties_for(ctx, &schema)?;
     let mut values = BTreeMap::new();
-    for (id, property) in properties {
+    for (id, property) in ctx.admit_iter(properties, "Protein decoded properties")? {
         if !instance_property_serializes(id) {
             continue;
         }
@@ -657,13 +678,9 @@ fn decode_record(
                 PropertyContent::Value { value, connections }
             }
         };
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(id.len()),
-            "Protein decoded property name",
-        )?;
         ctx.insert_btree_map(
             &mut values,
-            id.clone(),
+            ctx.copy_retained_text(id, "Protein decoded property name")?,
             DecodedProperty {
                 value_offset,
                 content,
@@ -1268,7 +1285,11 @@ mod tests {
         )]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 2;
+        // Three six-byte lookups, two visits and four active-set node passes precede the closure.
+        let active_node_bytes = 11 * std::mem::size_of::<&str>()
+            + 16 * std::mem::size_of::<usize>()
+            + 2 * std::mem::align_of::<usize>();
+        policy.limits.max_work_units = 20 + cadmpeg_core::decode::u64_from_index(4 * active_node_bytes);
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("fixture fits input limit");
         assert!(matches!(
