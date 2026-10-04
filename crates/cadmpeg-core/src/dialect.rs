@@ -565,7 +565,12 @@ impl DialectLayers {
     }
 
     /// Iterates over the primary layer followed by every extra layer.
-    pub fn iter(
+    pub fn iter(&self) -> impl Iterator<Item = &DialectMatch> {
+        self.layers()
+    }
+
+    /// The primary layer followed by every extra layer, as a concrete iterator.
+    pub(crate) fn layers(
         &self,
     ) -> std::iter::Chain<std::iter::Once<&DialectMatch>, std::slice::Iter<'_, DialectMatch>> {
         std::iter::once(&self.primary).chain(&self.extra)

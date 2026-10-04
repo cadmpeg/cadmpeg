@@ -214,9 +214,9 @@ impl DecodeContext<'_> {
     }
 
     /// Finds the first attribute with this local name, independent of namespace.
-    pub fn xml_attribute<'node, 'input>(
+    pub fn xml_attribute<'node>(
         &self,
-        node: roxmltree::Node<'node, 'input>,
+        node: roxmltree::Node<'node, '_>,
         name: &str,
         operation: &'static str,
     ) -> Result<Option<&'node str>, CodecError> {

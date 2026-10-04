@@ -103,7 +103,7 @@ impl<'a> IterSource for &'a crate::dialect::DialectLayers {
         checked_u64_bound(u128::from(u64_from_index(self.extra_layer_count())) + 1)
     }
     fn source_iter(self) -> Self::Iter {
-        self.iter()
+        self.layers()
     }
 }
 
