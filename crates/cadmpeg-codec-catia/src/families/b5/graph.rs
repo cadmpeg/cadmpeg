@@ -1586,7 +1586,7 @@ fn parse_from_records_with_class21(
                 }) && loop_chain_closes(loop_, &edge_vertices)
             })
         });
-    let Some(vertices) = B5Vertices::try_new(vertex_points, logical_vertices, edge_vertices).ok()
+    let Some(vertices) = B5Vertices::try_new(ctx, vertex_points, logical_vertices, edge_vertices)?
     else {
         return Ok(None);
     };
