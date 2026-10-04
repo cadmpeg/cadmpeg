@@ -20,6 +20,7 @@ use crate::{StepCodec, StepSchema, StepWriteOptions};
 
 mod collection_limits;
 mod string_limits;
+mod case_equality;
 
 #[test]
 pub(crate) fn decode_transfers_ap242_semantic_pmi() {

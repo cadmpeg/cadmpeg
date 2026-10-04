@@ -317,26 +317,26 @@ fn has_uri_scheme(ctx: &DecodeContext<'_>, uri: &str) -> Result<bool, CodecError
 }
 
 /// Classifies a physical ZIP member for the STEP container report.
-pub(crate) fn classify_entry(name: &str) -> ContainerRole {
-    match name {
+pub(crate) fn classify_entry(ctx: &DecodeContext<'_>, name: &str) -> Result<ContainerRole, CodecError> {
+    Ok(match name {
         ROOT_NAME => ContainerRole::RootExchange,
         _ if name.ends_with('/') => ContainerRole::Directory,
-        _ if extension_is(name, "p21")
-            || extension_is(name, "step")
-            || extension_is(name, "stp") =>
+        _ if extension_is(ctx, name, "p21")?
+            || extension_is(ctx, name, "step")?
+            || extension_is(ctx, name, "stp")? =>
         {
             ContainerRole::SubsidiaryExchange
         }
-        _ if extension_is(name, "zip") => ContainerRole::NestedArchive,
+        _ if extension_is(ctx, name, "zip")? => ContainerRole::NestedArchive,
         _ => ContainerRole::Ancillary,
-    }
+    })
 }
 
-fn extension_is(name: &str, expected: &str) -> bool {
-    Path::new(name)
+fn extension_is(ctx: &DecodeContext<'_>, name: &str, expected: &str) -> Result<bool, CodecError> {
+    Ok(Path::new(name)
         .extension()
         .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| extension.eq_ignore_ascii_case(expected))
+        .map(|extension| ctx.eq_ignore_ascii_case(extension, expected, "STEP ZIP entry extension case equality")).transpose()?.unwrap_or(false))
 }
 
 fn validate_entry_name(name: &str) -> Result<(), CodecError> {

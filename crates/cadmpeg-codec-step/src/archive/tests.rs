@@ -1214,3 +1214,18 @@ fn zip_detection_reads_names_without_payload_admission() {
         );
     }
 }
+
+#[test]
+fn zip_entry_extension_case_equality_preserves_refusal() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+    let error = super::classify_entry(&ctx, "child.STEP").unwrap_err();
+    let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else { panic!("entry classification must return the refusal"); };
+    assert_eq!(refusal.operation, "STEP ZIP entry extension case equality");
+    assert_eq!(ctx.resource_refusal(), Some(refusal));
+    let service = cadmpeg_test_support::service_decode_context();
+    assert_eq!(super::classify_entry(&service, "child.STEP").unwrap(), cadmpeg_core::container::ContainerRole::SubsidiaryExchange);
+    assert_eq!(super::classify_entry(&service, "child.ZIP").unwrap(), cadmpeg_core::container::ContainerRole::NestedArchive);
+}

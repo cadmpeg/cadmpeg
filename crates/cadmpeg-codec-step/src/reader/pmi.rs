@@ -333,9 +333,9 @@ pub(super) fn decode(
                 None
             };
             let category = category.as_deref().or(name.as_deref());
-            kind = if category.is_some_and(|value| value.eq_ignore_ascii_case("diameter")) {
+            kind = if category.map(|value| ctx.eq_ignore_ascii_case(value, "diameter", "STEP dimension category case equality")).transpose()?.unwrap_or(false) {
                 DimensionKind::Diameter
-            } else if category.is_some_and(|value| value.eq_ignore_ascii_case("radius")) {
+            } else if category.map(|value| ctx.eq_ignore_ascii_case(value, "radius", "STEP dimension category case equality")).transpose()?.unwrap_or(false) {
                 DimensionKind::Radius
             } else {
                 kind
@@ -1757,15 +1757,15 @@ fn copy_pmi_target(
 
 fn datum_target_form(value: &str, ctx: &DecodeContext<'_>) -> Result<DatumTargetForm, CodecError> {
     let form = value.trim();
-    if form.eq_ignore_ascii_case("point") {
+    if ctx.eq_ignore_ascii_case(form, "point", "STEP datum target form case equality")? {
         Ok(DatumTargetForm::Point)
-    } else if form.eq_ignore_ascii_case("line") {
+    } else if ctx.eq_ignore_ascii_case(form, "line", "STEP datum target form case equality")? {
         Ok(DatumTargetForm::Line)
-    } else if form.eq_ignore_ascii_case("rectangle") {
+    } else if ctx.eq_ignore_ascii_case(form, "rectangle", "STEP datum target form case equality")? {
         Ok(DatumTargetForm::Rectangle)
-    } else if form.eq_ignore_ascii_case("circle") {
+    } else if ctx.eq_ignore_ascii_case(form, "circle", "STEP datum target form case equality")? {
         Ok(DatumTargetForm::Circle)
-    } else if form.eq_ignore_ascii_case("circular curve") {
+    } else if ctx.eq_ignore_ascii_case(form, "circular curve", "STEP datum target form case equality")? {
         Ok(DatumTargetForm::CircularCurve)
     } else {
         Ok(DatumTargetForm::Other(ctx.copy_retained_text(
@@ -2082,7 +2082,7 @@ fn characteristic_values(
         for (name, value) in ctx.admit_iter(&(values)[..], "STEP characteristic values traversal").map_err(cadmpeg_core::CodecError::from)? {
             if name
                 .as_deref()
-                .is_some_and(|name| name.eq_ignore_ascii_case("nominal value"))
+                .map(|name| ctx.eq_ignore_ascii_case(name, "nominal value", "STEP characteristic name case equality")).transpose()?.unwrap_or(false)
             {
                 named_count += 1;
                 if named_count == 1 {

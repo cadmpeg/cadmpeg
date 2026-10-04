@@ -528,13 +528,13 @@ fn parse_xml(
             )})?;
     let document = admitted_document.document();
     let root = document.root_element();
-    if !same_name(root, "xml") {
+    if !same_name(ctx, root, "xml")? {
         return Err(FramingError::unpositioned(ctx.format_retained(format_args!(
             "displacement XML root is `{}`, expected `xml`",
             root.tag_name().name()
         ), "Rhino parse_xml text")?));
     }
-    let displacement = direct_child(root, DISPLACEMENT_ROOT).ok_or_else(|| {
+    let displacement = direct_child(ctx, root, DISPLACEMENT_ROOT)?.ok_or_else(|| {
         FramingError::unpositioned(format!(
             "displacement XML has no `{DISPLACEMENT_ROOT}` child"
         ))
@@ -544,14 +544,14 @@ fn parse_xml(
     let sub_items = ctx.try_collect_retained_with(
         displacement
             .children()
-            .filter(|node| node.is_element() && same_name(*node, DISPLACEMENT_SUB)),
+            .map(|node| -> Result<_, cadmpeg_core::CodecError> { Ok((node.is_element() && same_name(ctx, node, DISPLACEMENT_SUB)?).then_some(node)) }).filter_map(Result::transpose),
         "Rhino displacement sub-items",
-        |node| parse_sub_item(ctx, node),
+        |node| parse_sub_item(ctx, node?),
     )?;
     Ok(DisplacementModifier {
         xml_version,
         on: field_bool(ctx, displacement, "on", false)?,
-        texture: field_uuid(displacement, "texture"),
+        texture: field_uuid(ctx, displacement, "texture")?,
         channel: field_i32(ctx, displacement, "channel", 0)?,
         black_point: field_f64(ctx, displacement, "black-point", 0.0)?,
         white_point: field_f64(ctx, displacement, "white-point", 1.0)?,
@@ -585,13 +585,13 @@ fn parse_edge_softening_xml(
             )})?;
     let document = admitted_document.document();
     let root = document.root_element();
-    if !same_name(root, "xml") {
+    if !same_name(ctx, root, "xml")? {
         return Err(FramingError::unpositioned(ctx.format_retained(format_args!(
             "edge-softening XML root is `{}`, expected `xml`",
             root.tag_name().name()
         ), "Rhino parse_edge_softening_xml text")?));
     }
-    let edge_softening = direct_child(root, EDGE_SOFTENING_ROOT).ok_or_else(|| {
+    let edge_softening = direct_child(ctx, root, EDGE_SOFTENING_ROOT)?.ok_or_else(|| {
         FramingError::unpositioned(format!(
             "edge-softening XML has no `{EDGE_SOFTENING_ROOT}` child"
         ))
@@ -624,13 +624,13 @@ fn parse_thickening_xml(
             )})?;
     let document = admitted_document.document();
     let root = document.root_element();
-    if !same_name(root, "xml") {
+    if !same_name(ctx, root, "xml")? {
         return Err(FramingError::unpositioned(ctx.format_retained(format_args!(
             "thickening XML root is `{}`, expected `xml`",
             root.tag_name().name()
         ), "Rhino parse_thickening_xml text")?));
     }
-    let thickening = direct_child(root, THICKENING_ROOT).ok_or_else(|| {
+    let thickening = direct_child(ctx, root, THICKENING_ROOT)?.ok_or_else(|| {
         FramingError::unpositioned(format!("thickening XML has no `{THICKENING_ROOT}` child"))
     })?;
     Ok(ThickeningModifier {
@@ -660,13 +660,13 @@ fn parse_curve_piping_xml(
             )})?;
     let document = admitted_document.document();
     let root = document.root_element();
-    if !same_name(root, "xml") {
+    if !same_name(ctx, root, "xml")? {
         return Err(FramingError::unpositioned(ctx.format_retained(format_args!(
             "curve-piping XML root is `{}`, expected `xml`",
             root.tag_name().name()
         ), "Rhino parse_curve_piping_xml text")?));
     }
-    let curve_piping = direct_child(root, CURVE_PIPING_ROOT).ok_or_else(|| {
+    let curve_piping = direct_child(ctx, root, CURVE_PIPING_ROOT)?.ok_or_else(|| {
         FramingError::unpositioned(format!(
             "curve-piping XML has no `{CURVE_PIPING_ROOT}` child"
         ))
@@ -678,7 +678,7 @@ fn parse_curve_piping_xml(
         segments: field_i32(ctx, curve_piping, "segments", 16)?,
         faceted: !field_bool(ctx, curve_piping, "weld", true)?,
         accuracy: field_i32(ctx, curve_piping, "accuracy", 50)?,
-        cap_type: field_cap_type(curve_piping, "cap-type"),
+        cap_type: field_cap_type(ctx, curve_piping, "cap-type")?,
     })
 }
 
@@ -697,19 +697,19 @@ fn parse_shut_lining_xml(
             )})?;
     let document = admitted_document.document();
     let root = document.root_element();
-    if !same_name(root, "xml") {
+    if !same_name(ctx, root, "xml")? {
         return Err(FramingError::unpositioned(ctx.format_retained(format_args!(
             "shut-lining XML root is `{}`, expected `xml`",
             root.tag_name().name()
         ), "Rhino parse_shut_lining_xml text")?));
     }
-    let shut_lining = direct_child(root, SHUT_LINING_ROOT).ok_or_else(|| {
+    let shut_lining = direct_child(ctx, root, SHUT_LINING_ROOT)?.ok_or_else(|| {
         FramingError::unpositioned(format!("shut-lining XML has no `{SHUT_LINING_ROOT}` child"))
     })?;
     let curves = shut_lining
         .children()
-        .filter(|node| node.is_element() && same_name(*node, "curve"))
-        .map(|node| parse_shut_lining_curve(ctx, node))
+        .map(|node| -> Result<_, cadmpeg_core::CodecError> { Ok((node.is_element() && same_name(ctx, node, "curve")?).then_some(node)) }).filter_map(Result::transpose)
+        .map(|node| parse_shut_lining_curve(ctx, node?))
         .collect::<Result<_, _>>()?;
     Ok(ShutLiningModifier {
         xml_version,
@@ -725,12 +725,12 @@ fn parse_shut_lining_xml(
 
 fn parse_shut_lining_curve(ctx: &cadmpeg_core::decode::DecodeContext<'_>, node: roxmltree::Node<'_, '_>) -> Result<ShutLiningCurve, FramingError> {
     Ok(ShutLiningCurve {
-        uuid: field_uuid_untyped(node, "uuid"),
-        radius: field_f64_untyped(node, "radius", FiniteReal::ONE),
+        uuid: field_uuid_untyped(ctx, node, "uuid")?,
+        radius: field_f64_untyped(ctx, node, "radius", FiniteReal::ONE)?,
         profile: field_i32_untyped(ctx, node, "profile", 0)?,
-        enabled: field_bool_untyped(node, "enabled", false),
-        pull: field_bool_untyped(node, "pull", false),
-        is_bump: field_bool_untyped(node, "is-bump", false),
+        enabled: field_bool_untyped(ctx, node, "enabled", false)?,
+        pull: field_bool_untyped(ctx, node, "pull", false)?,
+        is_bump: field_bool_untyped(ctx, node, "is-bump", false)?,
     })
 }
 
@@ -738,49 +738,44 @@ fn parse_sub_item(ctx: &cadmpeg_core::decode::DecodeContext<'_>, node: roxmltree
     Ok(DisplacementSubItem {
         face_index: field_i32(ctx, node, "sub-index", -1)?,
         on: field_bool(ctx, node, "sub-on", false)?,
-        texture: field_uuid(node, "sub-texture"),
+        texture: field_uuid(ctx, node, "sub-texture")?,
         channel: field_i32(ctx, node, "sub-channel", 0)?,
         black_point: field_f64(ctx, node, "sub-black-point", 0.0)?,
         white_point: field_f64(ctx, node, "sub-white-point", 1.0)?,
     })
 }
 
-fn direct_child<'a, 'input>(
-    parent: roxmltree::Node<'a, 'input>,
-    name: &str,
-) -> Option<roxmltree::Node<'a, 'input>> {
-    parent
-        .children()
-        .find(|node| node.is_element() && same_name(*node, name))
+fn direct_child<'a, 'input>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, parent: roxmltree::Node<'a, 'input>, name: &str) -> Result<Option<roxmltree::Node<'a, 'input>>, cadmpeg_core::CodecError> {
+    parent.children()
+        .map(|node| -> Result<_, cadmpeg_core::CodecError> { Ok((node.is_element() && same_name(ctx, node, name)?).then_some(node)) })
+        .find_map(Result::transpose).transpose()
 }
 
-fn typed_child<'a, 'input>(
-    parent: roxmltree::Node<'a, 'input>,
-    name: &str,
-) -> Option<roxmltree::Node<'a, 'input>> {
-    let node = direct_child(parent, name)?;
-    attribute(node, "type")?;
-    Some(node)
+fn typed_child<'a, 'input>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, parent: roxmltree::Node<'a, 'input>, name: &str) -> Result<Option<roxmltree::Node<'a, 'input>>, cadmpeg_core::CodecError> {
+    let Some(node) = direct_child(ctx, parent, name)? else { return Ok(None); };
+    if attribute(ctx, node, "type")?.is_none() { return Ok(None); }
+    Ok(Some(node))
 }
 
-fn attribute<'a>(node: roxmltree::Node<'a, '_>, name: &str) -> Option<&'a str> {
+fn attribute<'a>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, node: roxmltree::Node<'a, '_>, name: &str) -> Result<Option<&'a str>, cadmpeg_core::CodecError> {
     node.attributes()
-        .find(|attribute| attribute.name().eq_ignore_ascii_case(name))
-        .map(|attribute| attribute.value())
+        .map(|attribute| -> Result<_, cadmpeg_core::CodecError> {
+            Ok(ctx.eq_ignore_ascii_case(attribute.name(), name, "Rhino XML attribute name case equality")?.then_some(attribute.value()))
+        }).find_map(Result::transpose).transpose()
 }
 
 fn malformed_typed_field(ctx: &cadmpeg_core::decode::DecodeContext<'_>, name: &str, kind: &str) -> Result<FramingError, cadmpeg_core::CodecError> { Ok(
     FramingError::unpositioned(ctx.format_retained(format_args!("XML field `{name}` has invalid {kind} value"), "Rhino malformed_typed_field text")?)
 ) }
 
-fn parse_bool_text(text: &str) -> Option<bool> {
-    if text.eq_ignore_ascii_case("true") || text.eq_ignore_ascii_case("t") || text == "1" {
+fn parse_bool_text(ctx: &cadmpeg_core::decode::DecodeContext<'_>, text: &str) -> Result<Option<bool>, cadmpeg_core::CodecError> {
+    Ok(if ctx.eq_ignore_ascii_case(text, "true", "Rhino parse bool text case equality")? || ctx.eq_ignore_ascii_case(text, "t", "Rhino parse bool text case equality")? || text == "1" {
         Some(true)
-    } else if text.eq_ignore_ascii_case("false") || text.eq_ignore_ascii_case("f") || text == "0" {
+    } else if ctx.eq_ignore_ascii_case(text, "false", "Rhino parse bool text case equality")? || ctx.eq_ignore_ascii_case(text, "f", "Rhino parse bool text case equality")? || text == "0" {
         Some(false)
     } else {
         None
-    }
+    })
 }
 
 fn field_bool(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
@@ -788,15 +783,15 @@ fn field_bool(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     name: &str,
     default: bool,
 ) -> Result<bool, FramingError> {
-    let Some(node) = typed_child(parent, name) else {
+    let Some(node) = typed_child(ctx, parent, name)? else {
         return Ok(default);
     };
     let text = node.text().unwrap_or_default().trim();
-    let kind = attribute(node, "type").unwrap_or_default();
-    let value = if kind.eq_ignore_ascii_case("string") {
-        parse_bool_text(text).or_else(|| text.parse::<i32>().ok().map(|value| value != 0))
-    } else if kind.eq_ignore_ascii_case("bool") {
-        parse_bool_text(text)
+    let kind = attribute(ctx, node, "type")?.unwrap_or_default();
+    let value = if ctx.eq_ignore_ascii_case(kind, "string", "Rhino field bool case equality")? {
+        parse_bool_text(ctx, text)?.or_else(|| text.parse::<i32>().ok().map(|value| value != 0))
+    } else if ctx.eq_ignore_ascii_case(kind, "bool", "Rhino field bool case equality")? {
+        parse_bool_text(ctx, text)?
     } else if matches!(
         kind.to_ascii_lowercase().as_str(),
         "int" | "short" | "char" | "long" | "float" | "double" | "real"
@@ -823,13 +818,13 @@ fn field_i32_optional(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     parent: roxmltree::Node<'_, '_>,
     name: &str,
 ) -> Result<Option<i32>, FramingError> {
-    let Some(node) = typed_child(parent, name) else {
+    let Some(node) = typed_child(ctx, parent, name)? else {
         return Ok(None);
     };
     let text = node.text().unwrap_or_default().trim();
-    let kind = attribute(node, "type").unwrap_or_default();
-    let value = if kind.eq_ignore_ascii_case("bool") {
-        parse_bool_text(text).map(i32::from)
+    let kind = attribute(ctx, node, "type")?.unwrap_or_default();
+    let value = if ctx.eq_ignore_ascii_case(kind, "bool", "Rhino field i32 optional case equality")? {
+        parse_bool_text(ctx, text)?.map(i32::from)
     } else if matches!(
         kind.to_ascii_lowercase().as_str(),
         "float" | "double" | "real"
@@ -844,10 +839,10 @@ fn field_i32_optional(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
                 None
             }
         })
-    } else if kind.eq_ignore_ascii_case("string") {
-        if text.eq_ignore_ascii_case("true") || text.eq_ignore_ascii_case("t") {
+    } else if ctx.eq_ignore_ascii_case(kind, "string", "Rhino field i32 optional case equality")? {
+        if ctx.eq_ignore_ascii_case(text, "true", "Rhino field i32 optional case equality")? || ctx.eq_ignore_ascii_case(text, "t", "Rhino field i32 optional case equality")? {
             Some(1)
-        } else if text.eq_ignore_ascii_case("false") || text.eq_ignore_ascii_case("f") {
+        } else if ctx.eq_ignore_ascii_case(text, "false", "Rhino field i32 optional case equality")? || ctx.eq_ignore_ascii_case(text, "f", "Rhino field i32 optional case equality")? {
             Some(0)
         } else {
             text.parse::<i32>().ok()
@@ -870,17 +865,17 @@ fn field_f64(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     name: &str,
     default: f64,
 ) -> Result<FiniteReal, FramingError> {
-    let Some(node) = typed_child(parent, name) else {
+    let Some(node) = typed_child(ctx, parent, name)? else {
         return FiniteReal::new(default).map_or_else(|| Err(malformed_typed_field(ctx, name, "default")?), Ok);
     };
     let text = node.text().unwrap_or_default().trim();
-    let kind = attribute(node, "type").unwrap_or_default();
-    let value = if kind.eq_ignore_ascii_case("bool") {
-        parse_bool_text(text).map(|value| f64::from(u8::from(value)))
+    let kind = attribute(ctx, node, "type")?.unwrap_or_default();
+    let value = if ctx.eq_ignore_ascii_case(kind, "bool", "Rhino field f64 case equality")? {
+        parse_bool_text(ctx, text)?.map(|value| f64::from(u8::from(value)))
     } else if matches!(
         kind.to_ascii_lowercase().as_str(),
         "int" | "short" | "char" | "long" | "float" | "double" | "real"
-    ) || kind.eq_ignore_ascii_case("string")
+    ) || ctx.eq_ignore_ascii_case(kind, "string", "Rhino field f64 case equality")?
     {
         text.parse::<f64>().ok()
     } else {
@@ -891,28 +886,28 @@ fn field_f64(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         .map_or_else(|| Err(malformed_typed_field(ctx, name, kind)?), Ok)
 }
 
-fn field_uuid(parent: roxmltree::Node<'_, '_>, name: &str) -> Option<Uuid> {
-    let node = typed_child(parent, name)?;
-    let kind = attribute(node, "type").unwrap_or_default();
-    if !(kind.eq_ignore_ascii_case("uuid") || kind.eq_ignore_ascii_case("string")) {
-        return None;
+fn field_uuid(ctx: &cadmpeg_core::decode::DecodeContext<'_>, parent: roxmltree::Node<'_, '_>, name: &str) -> Result<Option<Uuid>, cadmpeg_core::CodecError> {
+    let Some(node) = typed_child(ctx, parent, name)? else { return Ok(None); };
+    let kind = attribute(ctx, node, "type")?.unwrap_or_default();
+    if !(ctx.eq_ignore_ascii_case(kind, "uuid", "Rhino field uuid case equality")? || ctx.eq_ignore_ascii_case(kind, "string", "Rhino field uuid case equality")?) {
+        return Ok(None);
     }
-    parse_uuid(node.text().unwrap_or_default().trim()).filter(|uuid| !uuid.is_nil())
+    Ok(parse_uuid(node.text().unwrap_or_default().trim()).filter(|uuid| !uuid.is_nil()))
 }
 
-fn field_uuid_untyped(parent: roxmltree::Node<'_, '_>, name: &str) -> Option<Uuid> {
-    let node = direct_child(parent, name)?;
-    parse_uuid(node.text().unwrap_or_default().trim()).filter(|uuid| !uuid.is_nil())
+fn field_uuid_untyped(ctx: &cadmpeg_core::decode::DecodeContext<'_>, parent: roxmltree::Node<'_, '_>, name: &str) -> Result<Option<Uuid>, cadmpeg_core::CodecError> {
+    let Some(node) = direct_child(ctx, parent, name)? else { return Ok(None); };
+    Ok(parse_uuid(node.text().unwrap_or_default().trim()).filter(|uuid| !uuid.is_nil()))
 }
 
-fn field_bool_untyped(parent: roxmltree::Node<'_, '_>, name: &str, default: bool) -> bool {
-    let Some(node) = direct_child(parent, name) else {
-        return default;
+fn field_bool_untyped(ctx: &cadmpeg_core::decode::DecodeContext<'_>, parent: roxmltree::Node<'_, '_>, name: &str, default: bool) -> Result<bool, cadmpeg_core::CodecError> {
+    let Some(node) = direct_child(ctx, parent, name)? else {
+        return Ok(default);
     };
     let text = node.text().unwrap_or_default().trim();
-    text.eq_ignore_ascii_case("true")
-        || text.eq_ignore_ascii_case("t")
-        || text.parse::<i32>().is_ok_and(|value| value != 0)
+    Ok(ctx.eq_ignore_ascii_case(text, "true", "Rhino field bool untyped case equality")?
+        || ctx.eq_ignore_ascii_case(text, "t", "Rhino field bool untyped case equality")?
+        || text.parse::<i32>().is_ok_and(|value| value != 0))
 }
 
 fn field_i32_untyped(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
@@ -920,11 +915,11 @@ fn field_i32_untyped(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     name: &str,
     default: i32,
 ) -> Result<i32, FramingError> {
-    let Some(node) = direct_child(parent, name) else {
+    let Some(node) = direct_child(ctx, parent, name)? else {
         return Ok(default);
     };
     let text = node.text().unwrap_or_default().trim();
-    if text.eq_ignore_ascii_case("true") || text.eq_ignore_ascii_case("t") {
+    if ctx.eq_ignore_ascii_case(text, "true", "Rhino field i32 untyped case equality")? || ctx.eq_ignore_ascii_case(text, "t", "Rhino field i32 untyped case equality")? {
         Ok(1)
     } else {
         match text.parse::<f64>() {
@@ -935,35 +930,35 @@ fn field_i32_untyped(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     }
 }
 
-fn field_f64_untyped(
+fn field_f64_untyped(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     parent: roxmltree::Node<'_, '_>,
     name: &str,
     default: FiniteReal,
-) -> FiniteReal {
-    let Some(node) = direct_child(parent, name) else {
-        return default;
+) -> Result<FiniteReal, cadmpeg_core::CodecError> {
+    let Some(node) = direct_child(ctx, parent, name)? else {
+        return Ok(default);
     };
     let text = node.text().unwrap_or_default().trim();
-    text.parse::<f64>()
+    Ok(text.parse::<f64>()
         .ok()
         .and_then(FiniteReal::new)
-        .unwrap_or(FiniteReal::ZERO)
+        .unwrap_or(FiniteReal::ZERO))
 }
 
-fn field_cap_type(parent: roxmltree::Node<'_, '_>, name: &str) -> CapType {
-    let Some(node) = typed_child(parent, name) else {
-        return CapType::None;
+fn field_cap_type(ctx: &cadmpeg_core::decode::DecodeContext<'_>, parent: roxmltree::Node<'_, '_>, name: &str) -> Result<CapType, cadmpeg_core::CodecError> {
+    let Some(node) = typed_child(ctx, parent, name)? else {
+        return Ok(CapType::None);
     };
-    let kind = attribute(node, "type").unwrap_or_default();
-    if !kind.eq_ignore_ascii_case("string") {
-        return CapType::None;
+    let kind = attribute(ctx, node, "type")?.unwrap_or_default();
+    if !ctx.eq_ignore_ascii_case(kind, "string", "Rhino field cap type case equality")? {
+        return Ok(CapType::None);
     }
-    match node.text().unwrap_or_default().trim() {
+    Ok(match node.text().unwrap_or_default().trim() {
         "flat" => CapType::Flat,
         "box" => CapType::Box,
         "dome" => CapType::Dome,
         _ => CapType::None,
-    }
+    })
 }
 
 fn parse_uuid(value: &str) -> Option<Uuid> {
@@ -980,12 +975,13 @@ fn parse_uuid(value: &str) -> Option<Uuid> {
     digits.next().is_none().then(|| Uuid::from_canonical(bytes))
 }
 
-fn same_name(node: roxmltree::Node<'_, '_>, name: &str) -> bool {
-    node.tag_name().name().eq_ignore_ascii_case(name)
+fn same_name(ctx: &cadmpeg_core::decode::DecodeContext<'_>, node: roxmltree::Node<'_, '_>, name: &str) -> Result<bool, cadmpeg_core::CodecError> {
+    ctx.eq_ignore_ascii_case(node.tag_name().name(), name, "Rhino XML node name case equality")
 }
 
 #[cfg(test)]
 mod tests {
+    mod case_equality;
     #[test]
     fn shut_lining_profile_refuses_positive_overflow() {
         let xml = "<xml><shut-lining-object-data><curve><profile>2147483648</profile></curve></shut-lining-object-data></xml>";
@@ -1747,7 +1743,7 @@ mod tests {
         )
         .expect("texture XML");
         assert_eq!(
-            field_uuid(document.root_element(), "texture"),
+            field_uuid(&cadmpeg_test_support::service_decode_context(), document.root_element(), "texture").unwrap(),
             Some(Uuid::from_canonical([
                 0x12, 0x34, 0x56, 0x78, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x01, 0x23,
                 0x45, 0x67,

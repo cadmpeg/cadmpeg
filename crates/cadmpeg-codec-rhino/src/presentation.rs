@@ -1329,7 +1329,7 @@ fn first_user_string_records(
         losses,
     )?;
     if let Some(index) = ctx.admit_iter(&(attributes)[..], "Rhino first user string records traversal").map_err(cadmpeg_core::CodecError::from)?
-        .position(|value| value.key.eq_ignore_ascii_case("$temp_object$"))
+        .enumerate().map(|(index, value)| -> Result<_, CodecError> { Ok(ctx.eq_ignore_ascii_case(value.key.as_str(), "$temp_object$", "Rhino temporary user string key case equality")?.then_some(index)) }).find_map(Result::transpose).transpose()?
     {
         attributes.remove(index);
     }
@@ -4794,7 +4794,7 @@ fn parse_text_style(
         let windows_logfont_name =
             ctx.utf16le_lossy_text(face_bytes, 64, true, "Rhino legacy font face")?;
         let named_description =
-            !description.is_empty() && !description.eq_ignore_ascii_case("Default");
+            !description.is_empty() && !ctx.eq_ignore_ascii_case(description.as_str(), "Default", "Rhino text style description case equality")?;
         let postscript_name = if named_description
             && (apple_runtime || writer_version.is_some_and(|version| version > 201_802_230))
         {

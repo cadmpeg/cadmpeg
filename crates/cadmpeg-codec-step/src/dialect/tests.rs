@@ -404,3 +404,15 @@ fn the_implementation_level_is_recorded_and_never_classified_on() {
         assert_eq!(matched.declared()[DECLARED_IMPLEMENTATION_LEVEL], level);
     }
 }
+
+#[test]
+fn schema_identifier_case_equality_preserves_refusal() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+    let error = StepDialect::from_schema_identifier(&ctx, "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF", None).unwrap_err();
+    let CodecError::ResourceLimit(refusal) = error else { panic!("schema classification must return the refusal"); };
+    assert_eq!(refusal.operation, "STEP schema identifier case equality");
+    assert_eq!(ctx.resource_refusal(), Some(refusal));
+}

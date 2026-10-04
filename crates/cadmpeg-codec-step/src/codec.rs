@@ -463,7 +463,19 @@ fn inspect_zip(
         ",",
         "step_inspect_logical_sections",
     )?;
-    let mut entries = archive.container_entries(ctx, archive::classify_entry)?;
+    let (role_buffer, mut role_storage) = ctx.scoped_vector_storage::<ContainerRole>(archive.entries().len(), "STEP ZIP entry role storage")?;
+    let mut roles = role_buffer;
+    for entry in ctx.admit_iter(archive.entries(), "STEP ZIP role classification visits")? {
+        let role = archive::classify_entry(ctx, entry.name.as_str())?;
+        ctx.push_scoped_vec(&mut role_storage, &mut roles, role, "STEP ZIP entry role slots")?;
+    }
+    let mut entries = archive.container_entries(ctx, |_| ContainerRole::Ancillary)?;
+    for (index, role) in ctx.admit_iter(roles.as_slice(), "STEP ZIP summary role assignment visits")?.enumerate() {
+        let entry = entries.get_mut(index).map_or_else(|| Err(CodecError::Malformed(ctx.copy_retained_text("ZIP summary entry count differs from archive entry count", "STEP ZIP role assignment invariant")?)), Ok)?;
+        entry.role = *role;
+    }
+    drop(roles);
+    drop(role_storage);
     if let Some(root_entry) = entries
         .iter_mut()
         .find(|entry| entry.name == archive::ROOT_NAME)
