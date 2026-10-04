@@ -85,13 +85,16 @@ fn parent_feature_arrays_reject_truncated_counts_and_entries() {
 fn legacy_toc_count_prefix_refuses_work() {
     let bytes = b"\n@Toc 1 0\n0 1 ->\n@entry 2 10\n1 2 [1]\n";
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "creo legacy TOC count prefix",
         |ctx| super::super::legacy_toc_sections(ctx, bytes, 0),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo legacy TOC count prefix"));
+            && resource.operation == "creo legacy TOC count prefix")
+    );
 }
 
 #[test]
@@ -99,22 +102,38 @@ fn feature_identity_family_prefix_refuses_work() {
     let row = crate::feature::rows::FeatureRow {
         feature_id: 87,
         root_schema_class: Some(crate::feature::schema::SchemaClass::DatumPlane),
-        stream_offset: 0, body: vec![0; 2].try_into().expect("row body"),
-        body_offset: 0, offset: 0,
+        stream_offset: 0,
+        body: vec![0; 2].try_into().expect("row body"),
+        body_offset: 0,
+        offset: 0,
     };
     let reference = crate::feature::operations::FeatureReferenceName {
-        feature_id: 87, name_bytes: b"Datum Plane id 87".to_vec(),
-        own_reference_id: 10, reference_type: 1, offset: 0,
+        feature_id: 87,
+        name_bytes: b"Datum Plane id 87".to_vec(),
+        own_reference_id: 10,
+        reference_type: 1,
+        offset: 0,
     };
     let structural = std::collections::BTreeSet::new();
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "creo feature identity family prefix",
-        |ctx| super::super::feature_row_has_model_identity(ctx, &row, &structural, &[], std::slice::from_ref(&reference)),
+        |ctx| {
+            super::super::feature_row_has_model_identity(
+                ctx,
+                &row,
+                &structural,
+                &[],
+                std::slice::from_ref(&reference),
+            )
+        },
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo feature identity family prefix"));
+            && resource.operation == "creo feature identity family prefix")
+    );
 }
 
 #[test]
@@ -122,22 +141,38 @@ fn feature_identity_ordinal_prefix_refuses_work() {
     let row = crate::feature::rows::FeatureRow {
         feature_id: 87,
         root_schema_class: Some(crate::feature::schema::SchemaClass::DatumPlane),
-        stream_offset: 0, body: vec![0; 2].try_into().expect("row body"),
-        body_offset: 0, offset: 0,
+        stream_offset: 0,
+        body: vec![0; 2].try_into().expect("row body"),
+        body_offset: 0,
+        offset: 0,
     };
     let reference = crate::feature::operations::FeatureReferenceName {
-        feature_id: 87, name_bytes: b"Datum Plane id 87".to_vec(),
-        own_reference_id: 10, reference_type: 1, offset: 0,
+        feature_id: 87,
+        name_bytes: b"Datum Plane id 87".to_vec(),
+        own_reference_id: 10,
+        reference_type: 1,
+        offset: 0,
     };
     let structural = std::collections::BTreeSet::new();
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "creo feature identity ordinal prefix",
-        |ctx| super::super::feature_row_has_model_identity(ctx, &row, &structural, &[], std::slice::from_ref(&reference)),
+        |ctx| {
+            super::super::feature_row_has_model_identity(
+                ctx,
+                &row,
+                &structural,
+                &[],
+                std::slice::from_ref(&reference),
+            )
+        },
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo feature identity ordinal prefix"));
+            && resource.operation == "creo feature identity ordinal prefix")
+    );
 }
 
 #[test]
@@ -145,22 +180,38 @@ fn feature_identity_datum_prefix_refuses_work() {
     let row = crate::feature::rows::FeatureRow {
         feature_id: 87,
         root_schema_class: Some(crate::feature::schema::SchemaClass::DatumPlane),
-        stream_offset: 0, body: vec![0; 2].try_into().expect("row body"),
-        body_offset: 0, offset: 0,
+        stream_offset: 0,
+        body: vec![0; 2].try_into().expect("row body"),
+        body_offset: 0,
+        offset: 0,
     };
     let reference = crate::feature::operations::FeatureReferenceName {
-        feature_id: 87, name_bytes: b"DTM87".to_vec(),
-        own_reference_id: 10, reference_type: 1, offset: 0,
+        feature_id: 87,
+        name_bytes: b"DTM87".to_vec(),
+        own_reference_id: 10,
+        reference_type: 1,
+        offset: 0,
     };
     let structural = std::collections::BTreeSet::new();
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "creo feature identity datum prefix",
-        |ctx| super::super::feature_row_has_model_identity(ctx, &row, &structural, &[], std::slice::from_ref(&reference)),
+        |ctx| {
+            super::super::feature_row_has_model_identity(
+                ctx,
+                &row,
+                &structural,
+                &[],
+                std::slice::from_ref(&reference),
+            )
+        },
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo feature identity datum prefix"));
+            && resource.operation == "creo feature identity datum prefix")
+    );
 }
 
 #[test]
@@ -168,47 +219,104 @@ fn loop_array_section_deduplication_refuses_work() {
     let data = b"loop_array\0";
     let sections = [Section::scan("VisibGeom".into(), 0, data.len(), None, data).expect("section")];
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "creo loop array sections selected deduplication", |ctx| super::super::loop_array_sections(ctx, &sections, &[], &[]),
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo loop array sections selected deduplication",
+        |ctx| super::super::loop_array_sections(ctx, &sections, &[], &[]),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo loop array sections selected deduplication"));
+            && resource.operation == "creo loop array sections selected deduplication")
+    );
 }
 
 #[test]
 fn appended_topology_row_deduplication_refuses_work() {
-    
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "creo append topology rows rows deduplication", |ctx| {
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo append topology rows rows deduplication",
+        |ctx| {
             let mut rows = vec![crate::curve::CurveTopologyRow {
-        id: 1, type_byte: 8, feature_id: 4, directions: [1, 1],
-        faces: [None; 2], next_edges: [0; 2], offset: 0,
-    }];
-            super::super::append_topology_rows(ctx, &mut rows, std::iter::empty(), "creo test topology aggregation")
+                id: 1,
+                type_byte: 8,
+                feature_id: 4,
+                directions: [1, 1],
+                faces: [None; 2],
+                next_edges: [0; 2],
+                offset: 0,
+            }];
+            super::super::append_topology_rows(
+                ctx,
+                &mut rows,
+                std::iter::empty(),
+                "creo test topology aggregation",
+            )
         },
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo append topology rows rows deduplication"));
+            && resource.operation == "creo append topology rows rows deduplication")
+    );
 }
 
 #[test]
 fn appended_legacy_pcurve_deduplication_refuses_work() {
-    
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "creo append legacy curve witnesses pcurves deduplication", |ctx| {
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo append legacy curve witnesses pcurves deduplication",
+        |ctx| {
             let mut topology = Vec::new();
             let mut pcurves = vec![crate::curve::PcurveEndpoints {
-                curve_id: 1, faces: [None; 2], face_0_endpoints: [[0.0; 2]; 2],
-                face_1_endpoints: [[0.0; 2]; 2], offset: 0,
+                curve_id: 1,
+                faces: [None; 2],
+                face_0_endpoints: [[0.0; 2]; 2],
+                face_1_endpoints: [[0.0; 2]; 2],
+                offset: 0,
             }];
             super::super::append_legacy_curve_witnesses(ctx, &mut topology, &mut pcurves, &[], &[])
         },
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo append legacy curve witnesses pcurves deduplication"));
+            && resource.operation == "creo append legacy curve witnesses pcurves deduplication")
+    );
+}
+
+#[test]
+fn cmnm_forbidden_name_byte_refuses_before_invalid_name() {
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "creo CMNM forbidden name byte traversal",
+        |ctx| super::super::cmnm_model_name(ctx, b"#- CMNM 001\0"),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo CMNM forbidden name byte traversal"));
+}
+
+#[test]
+fn cmnm_forbidden_name_search_charges_only_visited_bytes() {
+    let refusal = |input: &[u8]| {
+        let error = crate::test_support::last_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            "creo CMNM forbidden name byte traversal",
+            |ctx| super::super::cmnm_model_name(ctx, input),
+        );
+        let CodecError::ResourceLimit(resource) = error else {
+            panic!("expected visited-byte refusal");
+        };
+        assert_eq!(resource.additional, 1);
+        resource
+    };
+    let first = refusal(b"#- CMNM 003\0ab");
+    let last = refusal(b"#- CMNM 003ab\0");
+    // Both routes have identical setup; the later match visits two more bytes.
+    assert_eq!(last.used, first.used + 2);
 }
