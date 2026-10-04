@@ -2006,9 +2006,11 @@ pub(super) fn solve_pcurve_vertex_domains_with_authoritative_points(
                 entry.insert(domain);
             }
             std::collections::btree_map::Entry::Occupied(mut entry) => {
-                entry
-                    .get_mut()
-                    .retain(|candidate| agree(*candidate, *point));
+                ctx.retain_vec(
+                    entry.get_mut(),
+                    |candidate| Ok(agree(*candidate, *point)),
+                    "creo fixed pcurve domain retention",
+                )?;
             }
         }
     }

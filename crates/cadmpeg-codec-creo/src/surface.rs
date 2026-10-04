@@ -161,6 +161,24 @@ impl BoundaryType {
     }
 }
 
+impl DecodeCost for BoundaryType {
+    const FIXED_BYTES: Option<u64> = Some(1);
+
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        match self {
+            Self::Code00 => (0_u8,).decode_cost(ctx, operation),
+            Self::Code01 => (1_u8,).decode_cost(ctx, operation),
+            Self::Code06 => (2_u8,).decode_cost(ctx, operation),
+            Self::Code08 => (3_u8,).decode_cost(ctx, operation),
+            Self::CodeF6 => (4_u8,).decode_cost(ctx, operation),
+        }
+    }
+}
+
 /// One `srf_array` row whose fixed prefix passed the row grammar.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SurfaceRow {
@@ -184,6 +202,27 @@ pub(crate) struct SurfaceRow {
     pub(crate) next_surface: u32,
     /// Byte offset of the row's `geom_id` field in the original stream.
     pub(crate) offset: usize,
+}
+
+impl DecodeCost for SurfaceRow {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        let fields = (
+            self.id,
+            self.kind,
+            self.feature_id,
+            self.reversed,
+            self.boundary_type,
+            self.next_surface,
+        )
+            .decode_cost(ctx, operation)?;
+        fields
+            .checked_add(self.offset.decode_cost(ctx, operation)?)
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))
+    }
 }
 
 /// Return the surface row for `id` only when the namespace contains one match.
@@ -242,6 +281,31 @@ pub(crate) enum ExtrusionLabel {
     Extrusion,
     TabulatedCylinder,
     RuledSurface,
+}
+
+impl DecodeCost for SurfacePrototypeFamily {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        match self {
+            Self::Plane => (0_u8,).decode_cost(ctx, operation),
+            Self::Cylinder => (1_u8,).decode_cost(ctx, operation),
+            Self::Cone => (2_u8,).decode_cost(ctx, operation),
+            Self::Torus(TorusLabel::Torus) => (3_u8, 0_u8).decode_cost(ctx, operation),
+            Self::Torus(TorusLabel::Sphere) => (3_u8, 1_u8).decode_cost(ctx, operation),
+            Self::Spline(SplineLabel::Spline) => (4_u8, 0_u8).decode_cost(ctx, operation),
+            Self::Spline(SplineLabel::Splsrf) => (4_u8, 1_u8).decode_cost(ctx, operation),
+            Self::Fillet(FilletLabel::Fillet) => (5_u8, 0_u8).decode_cost(ctx, operation),
+            Self::Fillet(FilletLabel::FilletSrf) => (5_u8, 1_u8).decode_cost(ctx, operation),
+            Self::Extrusion(ExtrusionLabel::SurfaceOfExtrusion) => (6_u8, 0_u8).decode_cost(ctx, operation),
+            Self::Extrusion(ExtrusionLabel::Extrusion) => (6_u8, 1_u8).decode_cost(ctx, operation),
+            Self::Extrusion(ExtrusionLabel::TabulatedCylinder) => (6_u8, 2_u8).decode_cost(ctx, operation),
+            Self::Extrusion(ExtrusionLabel::RuledSurface) => (6_u8, 3_u8).decode_cost(ctx, operation),
+            Self::Other(name) => (7_u8, name).decode_cost(ctx, operation),
+        }
+    }
 }
 
 impl SurfacePrototypeFamily {
@@ -306,6 +370,25 @@ pub(crate) enum SurfaceNamedValue {
     Opaque(Vec<u8>),
 }
 
+impl DecodeCost for SurfaceNamedValue {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        match self {
+            Self::Empty => (0_u8,).decode_cost(ctx, operation),
+            Self::CompactInt(value) => (1_u8, value).decode_cost(ctx, operation),
+            Self::CompactIntArray(values) => (2_u8, values).decode_cost(ctx, operation),
+            Self::ContiguousEntityReferences(values) => (3_u8, values).decode_cost(ctx, operation),
+            Self::ScalarArray(values) => (4_u8, values).decode_cost(ctx, operation),
+            Self::CountedScalarArray(values) => (5_u8, values).decode_cost(ctx, operation),
+            Self::ScalarSequence(values) => (6_u8, values).decode_cost(ctx, operation),
+            Self::Opaque(bytes) => (7_u8, bytes).decode_cost(ctx, operation),
+        }
+    }
+}
+
 /// One selected named parameter inside a surface prototype.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SurfaceNamedParameter {
@@ -330,6 +413,33 @@ pub(crate) struct SurfacePrototypeRecord {
     pub(crate) parameters: Vec<SurfaceNamedParameter>,
     /// Byte offset of the prototype label.
     pub(crate) offset: usize,
+}
+
+impl DecodeCost for SurfaceNamedParameter {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (
+            &self.name,
+            &self.value,
+            &self.body,
+            self.offset,
+            self.value_offset,
+        )
+            .decode_cost(ctx, operation)
+    }
+}
+
+impl DecodeCost for SurfacePrototypeRecord {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (&self.family, &self.parameters, self.offset).decode_cost(ctx, operation)
+    }
 }
 
 impl SurfacePrototypeRecord {

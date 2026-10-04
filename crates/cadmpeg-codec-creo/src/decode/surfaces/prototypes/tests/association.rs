@@ -73,7 +73,7 @@ fn prototype_row_selection_refuses_before_preceding_scan() {
             && resource.operation == "creo preceding prototype row selection"));
 }
 
-fn association_result(limit: u64) -> Result<usize, CodecError> {
+fn prototype_association_scan() -> crate::container::ContainerScan<'static> {
     let mut payload = b"srf_array\0\xf8\x01".to_vec();
     payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);
     payload.extend_from_slice(&[
@@ -86,10 +86,14 @@ fn association_result(limit: u64) -> Result<usize, CodecError> {
         &[("radius1", 1.0), ("radius2", 2.0)],
     );
     payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
-    let scan = crate::container::scan_bytes_ok(crate::test_support::build_prt(
+    crate::container::scan_bytes_ok(crate::test_support::build_prt(
         "prototype-association-limit",
         &[("ND:0:VisibGeom:0", payload)],
-    ));
+    ))
+}
+
+fn association_result(limit: u64) -> Result<usize, CodecError> {
+    let scan = prototype_association_scan();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
@@ -122,4 +126,19 @@ fn prototype_association_row_count_refuses_before_node_insertion() {
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "creo surface prototype row counts"
     ));
+}
+
+#[test]
+fn prototype_association_retention_refuses_work_and_preserves_result() {
+    let scan = prototype_association_scan();
+    let associated_rows = crate::test_support::assert_work_boundaries(
+        &["creo unique surface prototype associations retention"],
+        |ctx| {
+            Ok(super::super::unique_surface_prototype_associations(ctx, &scan)?
+                .iter()
+                .map(|(_, row, _)| row.id)
+                .collect::<Vec<_>>())
+        },
+    );
+    assert_eq!(associated_rows, [7]);
 }

@@ -3,6 +3,7 @@ mod contours;
 mod dump;
 mod inline;
 mod planes;
+mod prototype_cost;
 mod positional;
 mod resource_cache;
 mod round_envelopes;

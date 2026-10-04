@@ -769,6 +769,35 @@ fn line_conic_candidates_cover_periodic_and_nonperiodic_families() {
 }
 
 #[test]
+fn line_conic_candidate_retention_refuses_work_and_preserves_service_result() {
+    let circle = |axis: [f64; 3]| {
+        let reference = if axis[0].abs() > 0.5 {
+            [0.0, 1.0, 0.0]
+        } else {
+            [1.0, 0.0, 0.0]
+        };
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::from(axis),
+                Vector3::from(reference),
+                2.0,
+            )
+            .expect("valid CircleCurve fixture"),
+        ))
+    };
+    let first = circle([0.0, 0.0, 1.0]);
+    let transverse = circle([1.0, 0.0, 0.0]);
+    let points = crate::test_support::assert_work_boundaries(
+        &["creo line-conic candidate retention"],
+        |ctx| conic_conic_intersections(ctx, &first, &transverse),
+    );
+    assert_eq!(points.len(), 2);
+    assert!(points.iter().any(|point| agree(*point, [0.0, 2.0, 0.0])));
+    assert!(points.iter().any(|point| agree(*point, [0.0, -2.0, 0.0])));
+}
+
+#[test]
 fn conic_pair_candidates_cover_coplanar_and_transverse_planes() {
     let circle = |center: [f64; 3], axis: [f64; 3], radius| {
         let reference = if axis[0].abs() > 0.5 {
