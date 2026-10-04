@@ -3363,7 +3363,7 @@ fn operation_state_group_table_before_counter_map(
         path.push(candidate_index);
         candidate = predecessors[candidate_index];
     }
-    path.reverse();
+    ctx.reverse(&mut path, "NX operation-state group path reversal")?;
     let Some(&last) = path.last() else {
         return Ok(None);
     };
