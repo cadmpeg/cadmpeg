@@ -92,8 +92,7 @@ pub(super) fn exact_extrude_prologue(
                 true,
             );
         }
-        return legacy_class_415::exact_one_sided_extrude_prologue(
-            ctx,
+        return Ok(legacy_class_415::exact_one_sided_extrude_prologue(
             bytes,
             start,
             paired_at,
@@ -101,7 +100,7 @@ pub(super) fn exact_extrude_prologue(
             paired_class_tag,
             reference_count_at,
             reference_members,
-        );
+        ));
     }
     if let Some(prologue) = exact_current_extrude_prologue(
         ctx,

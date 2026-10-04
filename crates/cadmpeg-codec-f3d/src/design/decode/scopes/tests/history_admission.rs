@@ -92,7 +92,7 @@ fn history_bound_scope_admission_reports_collection_limit() {
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && limit.operation == "f3d scope admission")
+            && limit.operation == "f3d scope admission flags")
     );
 }
 
@@ -101,9 +101,8 @@ fn history_bound_scope_admission_refuses_group_and_output_limits() {
     use cadmpeg_core::decode::ResourceDimension;
 
     for (cap, operation) in [
-        (1, "f3d scope admission groups"),
-        (2, "f3d scope admission group indices"),
-        (3, "f3d scope admission retained output"),
+        (1, "f3d scope admission identities"),
+        (2, "f3d scope admission retained output"),
     ] {
         let mut scopes = vec![scope(42, 100, 7, 6)];
         let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -216,17 +215,15 @@ fn equivalent_scope_json_refuses_nested_collection_depth_and_text_limits() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     for (dimension, operation) in [
+        (ResourceDimension::CollectionItems, "f3d scope variant JSON"),
+        (ResourceDimension::RecursionDepth, "f3d scope variant JSON"),
         (
-            ResourceDimension::CollectionItems,
-            "f3d configuration JSON object entry",
+            ResourceDimension::MaterializedBytes,
+            "f3d scope variant JSON",
         ),
         (
             ResourceDimension::RecursionDepth,
-            "f3d configuration JSON depth",
-        ),
-        (
-            ResourceDimension::MaterializedBytes,
-            "f3d configuration JSON key",
+            "f3d scope variant comparison depth",
         ),
     ] {
         let arena = DecodeArena::new();
@@ -420,13 +417,16 @@ fn history_scope_admission_iterators_refuse_at_each_source_boundary() {
     assert_eq!(scopes[0].byte_offset(), 200);
 
     for (operation, additional) in [
-        ("scan F3D scope admission identities", Some(2)),
-        ("scan F3D scope admission groups", None),
-        ("scan F3D scope admission history candidates", Some(2)),
+        ("f3d scope admission flags", Some(1)),
+        ("f3d scope admission identities", Some(1)),
+        ("sort F3D scope admission identities", None),
+        ("group F3D scope admission identities", Some(1)),
+        ("scan F3D scope admission history candidates", Some(1)),
         ("scan F3D equivalent scope admission candidates", Some(1)),
         ("select F3D latest equivalent scope envelope", Some(1)),
         ("mark F3D retained scope admission candidate", Some(2)),
         ("count F3D retained scope admission candidates", Some(2)),
+        ("move F3D retained scope admission candidates", Some(2)),
     ] {
         let error = crate::test_support::resource_refusal_at(
             ResourceDimension::WorkUnits,
@@ -442,7 +442,7 @@ fn history_scope_admission_iterators_refuse_at_each_source_boundary() {
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::WorkUnits
                     && limit.operation == operation
-                    && additional.map_or(true, |expected| limit.additional == expected)
+                    && additional.is_none_or(|expected| limit.additional == expected)
         ));
     }
 }
