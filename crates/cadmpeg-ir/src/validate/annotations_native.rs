@@ -188,11 +188,7 @@ pub(super) fn check_annotations<'ir>(
                     field_path_resolves(ctx, value, path.as_str())?
                 }
                 AnnotatedEntity::Source(source) => {
-                    ctx.charge_work(
-                        u64_from_index(path.as_str().len()),
-                        "annotation source field path scan",
-                    )?;
-                    source_field_path_resolves(source, path.as_str())
+                    source_field_path_resolves(ctx, source, path.as_str())?
                 }
             };
             if !resolves {
@@ -210,19 +206,28 @@ pub(super) fn check_annotations<'ir>(
     Ok(())
 }
 
-fn source_field_path_resolves(record: &crate::unknown::UnknownRecord, path: &str) -> bool {
+fn source_field_path_resolves(
+    ctx: &DecodeContext<'_>,
+    record: &crate::unknown::UnknownRecord,
+    path: &str,
+) -> Result<bool, CodecError> {
     if path == "id" {
-        return true;
+        return Ok(true);
     }
     if record.links().is_empty() {
-        return false;
+        return Ok(false);
     }
     if path == "links" {
-        return true;
+        return Ok(true);
     }
-    path.strip_prefix("links.")
-        .and_then(|index| index.parse::<usize>().ok())
-        .is_some_and(|index| index < record.links().len())
+    let Some(index) = ctx.strip_prefix(path, "links.", "annotation source field path scan")? else {
+        return Ok(false);
+    };
+    let index = match ctx.parse_text::<usize>(index, "annotation source field path scan")? {
+        Ok(index) => index,
+        Err(_) => return Ok(false),
+    };
+    Ok(index < record.links().len())
 }
 
 fn field_path_resolves(

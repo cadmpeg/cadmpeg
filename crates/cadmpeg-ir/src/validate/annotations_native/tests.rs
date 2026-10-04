@@ -290,3 +290,67 @@ fn annotation_path_scan_preserves_original_refusal() {
     assert_eq!(limit.operation, "annotation field path scan");
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
 }
+
+#[test]
+fn source_annotation_paths_preserve_index_grammar_and_bounds() {
+    let record = crate::unknown::UnknownRecord::retained(
+        "test:native:record#paths".try_into().unwrap(),
+        0,
+        Vec::new(),
+        vec!["test:model:point#first".into(), "test:model:point#second".into()],
+    );
+    let ctx = cadmpeg_test_support::service_decode_context();
+    for (path, expected) in [
+        ("id", true),
+        ("links", true),
+        ("links.0", true),
+        ("links.1", true),
+        ("links.2", false),
+        ("links.+0", true),
+        ("links.00", true),
+        ("links.", false),
+        ("links.-1", false),
+        ("links. 0", false),
+        ("links.β", false),
+        ("links.foo", false),
+        ("links.0.extra", false),
+        ("link.0", false),
+    ] {
+        assert_eq!(super::source_field_path_resolves(&ctx, &record, path).unwrap(), expected, "{path}");
+    }
+    let empty = crate::unknown::UnknownRecord::retained(
+        "test:native:record#empty".try_into().unwrap(),
+        0,
+        Vec::new(),
+        Vec::new(),
+    );
+    assert!(super::source_field_path_resolves(&ctx, &empty, "id").unwrap());
+    assert!(!super::source_field_path_resolves(&ctx, &empty, "links").unwrap());
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn source_annotation_path_refusal_preserves_original_error() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let record = crate::unknown::UnknownRecord::retained(
+        "test:native:record#paths".try_into().unwrap(),
+        0,
+        Vec::new(),
+        vec!["test:model:point#first".into()],
+    );
+    // Zero refuses the prefix scan; six admits the prefix and refuses suffix parsing.
+    for max_work_units in [0, 6] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = max_work_units;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+            super::source_field_path_resolves(&ctx, &record, "links.0")
+        else {
+            panic!("source path must refuse");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "annotation source field path scan");
+        assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit));
+    }
+}
