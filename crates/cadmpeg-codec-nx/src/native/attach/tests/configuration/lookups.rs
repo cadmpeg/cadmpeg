@@ -52,3 +52,44 @@ fn hole_package_member_lookup_refusals_propagate() {
             if limit.dimension == ResourceDimension::WorkUnits && limit.operation == operation));
     }
 }
+
+fn parameter_property_membership_result(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<(), CodecError> {
+    use crate::native::attach::feature_projection::insert_parameter_property;
+    use cadmpeg_core::text::NonBlankString;
+
+    let query = "property-name-".repeat(512);
+    let key = NonBlankString::from_ascii_leading(query.clone()).unwrap();
+    let mut properties = BTreeMap::from([(key, "old".to_string())]);
+    crate::test_support::with_decode_context_over(&[], configure, |ctx| {
+        let result = insert_parameter_property(ctx, &mut properties, format_args!("{query}"), "new".to_string());
+        if let Err(CodecError::ResourceLimit(limit)) = &result {
+            assert_eq!(ctx.resource_refusal(), Some(*limit));
+            assert_eq!(properties.values().next().map(String::as_str), Some("old"));
+        }
+        result?;
+        assert_eq!(properties.len(), 1);
+        let (key, value) = properties.iter().next().unwrap();
+        assert_eq!(key.as_str(), query);
+        assert_eq!(value, "new");
+        Ok(())
+    })
+}
+
+#[test]
+fn parameter_property_membership_preserves_existing_key() {
+    parameter_property_membership_result(|_| {}).unwrap();
+}
+
+#[test]
+fn parameter_property_membership_refuses_work() {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "NX parameter property membership",
+        |cap| parameter_property_membership_result(|policy| policy.limits.max_work_units = cap),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+        && limit.operation == "NX parameter property membership"));
+}
