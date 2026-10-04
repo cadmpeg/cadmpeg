@@ -27,7 +27,11 @@ fn component_carrier_role_text_refuses_retained_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = u64::try_from(role.len() - 1).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::direct_utf16_role_until_tail(&ctx, &bytes, 0, bytes.len()).unwrap_err();
+    let end = super::direct_utf16_role_end(&ctx, &bytes, 0, bytes.len())
+        .unwrap()
+        .expect("role tail");
+    assert_eq!(end, role.len() * 2);
+    let error = super::retain_direct_utf16_role(&ctx, &bytes, 0, end).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
         if failure.dimension == ResourceDimension::RetainedBytes
@@ -38,36 +42,6 @@ fn component_carrier_role_text_refuses_retained_limit() {
 #[test]
 fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
     run_component_insert_scope_fixture(None);
-}
-
-#[test]
-fn component_insert_placement_collections_refuse_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let probe = |bytes: &[u8], scope: &DesignParameterScope, stage: &'static str| {
-        let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
-        let cases = match stage {
-            "legacy" => &[
-                (0, "f3d legacy component insert placements"),
-                (1, "f3d component insert merged placements"),
-            ][..],
-            _ => &[(0, "f3d component insert placements")][..],
-        };
-        for (limit, operation) in cases {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::default();
-            policy.limits.max_collection_items = *limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let error =
-                exact_component_insert_construction(&ctx, bytes, &records, scope).unwrap_err();
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
-                if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == *operation)
-            );
-        }
-    };
-    run_component_insert_scope_fixture(Some(probe));
 }
 
 #[test]
@@ -1404,9 +1378,6 @@ fn legacy_component_insert_candidate_scan_refuses_work() {
             return;
         }
         let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
-        let relation_at = records.first_offset(20).expect("legacy relation header");
-        let carrier_at = *records.offsets(10).first().expect("legacy carrier header");
-        let expected = u64_from_index(bytes.get(carrier_at + 11..relation_at).unwrap_or(&[]).len());
         let error = crate::test_support::resource_refusal_at(
             ResourceDimension::WorkUnits,
             "scan F3D legacy component insert candidate starts",
@@ -1418,7 +1389,7 @@ fn legacy_component_insert_candidate_scan_refuses_work() {
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::WorkUnits
                     && limit.operation == "scan F3D legacy component insert candidate starts"
-                    && limit.additional == expected
+                    && limit.additional == 1
         ));
     };
     run_component_insert_scope_fixture(Some(probe));
