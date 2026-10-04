@@ -46,10 +46,12 @@ fn insert_id(
         return Ok(false);
     };
     ctx.reserve_vec(values, 1, operation)?;
-    ctx.charge_work(
-        u64_from_index(values.len() - index),
-        "move F3D BREP graph IDs",
-    )?;
+    let moved_slots = u64_from_index(values.len() - index);
+    let move_work = moved_slots
+        .checked_mul(u64_from_index(std::mem::size_of::<String>()))
+        .and_then(|bytes| bytes.checked_add(moved_slots))
+        .ok_or_else(|| ctx.refuse_codec_limit("move F3D BREP graph IDs", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(move_work, "move F3D BREP graph IDs")?;
     values.insert(index, value);
     Ok(true)
 }
@@ -63,8 +65,7 @@ fn entity_id<'a>(
     let Value::Map(fields) = value else {
         return Ok(None);
     };
-    for (key, value) in fields {
-        ctx.charge_work(1, operation)?;
+    for (key, value) in ctx.admit_iter(fields, operation)? {
         if let Value::String(key) = key {
             if equal(ctx, key, "id", operation)? {
                 return text_value(ctx, value, operation);
@@ -103,13 +104,13 @@ pub(super) fn collect_owned_ids(
     }
     match value {
         Value::Map(fields) => {
-            for (key, item) in fields {
+            for (key, item) in ctx.admit_iter(fields, "walk F3D BREP owned IDs")? {
                 collect_owned_ids(ctx, key, owned)?;
                 collect_owned_ids(ctx, item, owned)?;
             }
         }
         Value::Seq(items) => {
-            for item in items {
+            for item in ctx.admit_iter(items, "walk F3D BREP owned IDs")? {
                 collect_owned_ids(ctx, item, owned)?;
             }
         }
@@ -137,13 +138,13 @@ pub(super) fn collect_brep_references(
             }
         }
         Value::Map(fields) => {
-            for (key, item) in fields {
+            for (key, item) in ctx.admit_iter(fields, "walk F3D BREP references")? {
                 collect_brep_references(ctx, key, owned, references)?;
                 collect_brep_references(ctx, item, owned, references)?;
             }
         }
         Value::Seq(items) => {
-            for item in items {
+            for item in ctx.admit_iter(items, "walk F3D BREP references")? {
                 collect_brep_references(ctx, item, owned, references)?;
             }
         }
@@ -167,10 +168,12 @@ pub(super) fn insert_brep_adjacency(
         Err(index) => {
             let source = ctx.copy_retained_text(source, "copy F3D BREP adjacency source")?;
             ctx.reserve_vec(adjacency, 1, "index F3D BREP adjacency")?;
-            ctx.charge_work(
-                u64_from_index(adjacency.len() - index),
-                "move F3D BREP adjacency rows",
-            )?;
+            let moved_slots = u64_from_index(adjacency.len() - index);
+            let move_work = moved_slots
+                .checked_mul(u64_from_index(std::mem::size_of::<AdjacencyRow>()))
+                .and_then(|bytes| bytes.checked_add(moved_slots))
+                .ok_or_else(|| ctx.refuse_codec_limit("move F3D BREP adjacency rows", u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(move_work, "move F3D BREP adjacency rows")?;
             adjacency.insert(
                 index,
                 AdjacencyRow {
@@ -209,8 +212,7 @@ fn adjacency(
         let Value::Seq(items) = value else {
             continue;
         };
-        for item in items {
-            ctx.charge_work(1, "walk F3D BREP adjacency rows")?;
+        for item in ctx.admit_iter(items, "walk F3D BREP adjacency rows")? {
             let Some(id) = entity_id(ctx, item, "find F3D BREP adjacency owner")? else {
                 continue;
             };
@@ -218,10 +220,12 @@ fn adjacency(
             collect_brep_references(ctx, item, owned, &mut references)?;
             ctx.charge_work(0, "remove F3D BREP self reference")?;
             if let Ok(index) = position(ctx, &references, id, String::as_str)? {
-                ctx.charge_work(
-                    u64_from_index(references.len() - index - 1),
-                    "remove F3D BREP self reference",
-                )?;
+                let moved_slots = u64_from_index(references.len() - index - 1);
+                let move_work = moved_slots
+                    .checked_mul(u64_from_index(std::mem::size_of::<String>()))
+                    .and_then(|bytes| bytes.checked_add(moved_slots))
+                    .ok_or_else(|| ctx.refuse_codec_limit("remove F3D BREP self reference", u64::MAX - 1, u64::MAX))?;
+                ctx.charge_work(move_work, "remove F3D BREP self reference")?;
                 references.remove(index);
             }
             ctx.charge_work(0, "remove F3D BREP self reference")?;
@@ -298,8 +302,7 @@ fn arena<'a>(
     let Value::Map(fields) = value else {
         return Err(CodecError::malformed("BREP projection must be an object"));
     };
-    for (key, value) in fields {
-        ctx.charge_work(1, "find F3D retained arena")?;
+    for (key, value) in ctx.admit_iter(fields, "find F3D retained arena")? {
         if let Value::String(key) = key {
             if equal(ctx, key, name, "find F3D retained arena")? {
                 return match value {
@@ -438,9 +441,10 @@ impl Brep {
                 let adjacent_ids = position(ctx, &adjacency, &id, |row| row.source.as_str())?
                     .ok()
                     .map(|index| &adjacency[index].targets);
-                ctx.charge_work(0, "find F3D BREP adjacent IDs")?;
-                for adjacent in adjacent_ids.into_iter().flatten() {
-                    ctx.charge_work(1, "walk F3D BREP adjacent IDs")?;
+                for adjacent in ctx.admit_iter(
+                    adjacent_ids.map_or(&[][..], Vec::as_slice),
+                    "walk F3D BREP adjacent IDs",
+                )? {
                     let adjacent = adjacent.as_ref();
                     if !contains(ctx, &reachable, adjacent, "find F3D reachable BREP ID")? {
                         insert_id(
@@ -646,7 +650,7 @@ impl RewriteIdentities for Brep {
 
 #[cfg(test)]
 mod tests {
-    use super::{collect_owned_ids, Brep};
+    use super::{adjacency, collect_owned_ids, insert_brep_adjacency, insert_id, AdjacencyRow, Brep};
     use cadmpeg_asm::brep::AsmBrep;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
@@ -793,6 +797,66 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn brep_id_insertion_refuses_before_moving_slots() {
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            "move F3D BREP graph IDs",
+            0,
+            |ctx| {
+                let mut values = vec!["b".to_owned(), "c".to_owned()];
+                let result = insert_id(ctx, &mut values, "a".to_owned(), "index test IDs");
+                assert_eq!(values, ["b", "c"]);
+                result
+            },
+        );
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("slot movement must refuse");
+        };
+        // Two shifted slots each cost one visit and their inline String bytes.
+        assert_eq!(limit.additional, 2 * (1 + u64::try_from(std::mem::size_of::<String>()).unwrap()));
+    }
+
+    #[test]
+    fn brep_adjacency_insertion_refuses_before_moving_rows() {
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            "move F3D BREP adjacency rows",
+            0,
+            |ctx| {
+                let mut rows = vec![
+                    AdjacencyRow { source: "b".to_owned(), targets: Vec::new() },
+                    AdjacencyRow { source: "c".to_owned(), targets: Vec::new() },
+                ];
+                let result = insert_brep_adjacency(ctx, &mut rows, "a", "x");
+                assert_eq!(rows.iter().map(|row| row.source.as_str()).collect::<Vec<_>>(), ["b", "c"]);
+                result
+            },
+        );
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("row movement must refuse");
+        };
+        // Two shifted rows each cost one visit and their inline AdjacencyRow bytes.
+        assert_eq!(limit.additional, 2 * (1 + u64::try_from(std::mem::size_of::<AdjacencyRow>()).unwrap()));
+    }
+
+    #[test]
+    fn brep_self_reference_removal_preserves_move_refusal() {
+        let value = serde_value::to_value(serde_json::json!({"bodies":[{"id":"a","link":"b"}]})).unwrap();
+        let owned = vec!["a".to_owned(), "b".to_owned()];
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            "remove F3D BREP self reference",
+            0,
+            |ctx| adjacency(ctx, &value, &owned),
+        );
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("self-reference removal must refuse");
+        };
+        // One shifted slot costs one visit and its inline String bytes.
+        assert_eq!(limit.additional, 1 + u64::try_from(std::mem::size_of::<String>()).unwrap());
     }
 
     #[test]
