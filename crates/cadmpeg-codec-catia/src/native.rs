@@ -10108,12 +10108,11 @@ impl CatiaNative {
                 .transpose()?;
             let (graph, mut entities) =
                 native_object_graph(ctx, graph, entities, finjpl_segment, outer_container)?;
-            ctx.reserve_vec(
+            ctx.append_vec(
                 &mut entity_records,
-                entities.len(),
+                &mut entities,
                 "catia_native_entity_records",
             )?;
-            entity_records.append(&mut entities);
             ctx.push_vec(&mut object_graphs, graph, "catia_native_object_graphs")?;
         }
         for graph in &mut object_graphs {
