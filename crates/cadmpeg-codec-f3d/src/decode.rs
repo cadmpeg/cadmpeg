@@ -3179,9 +3179,10 @@ impl<'a> F3dDecodeSession<'a> {
             "append F3D local occurrences",
         )?;
         crate::design::components::project_derived_instance_features(
+            self.ctx,
             &mut self.ir.model.features,
             &self.native.design_parameter_scopes,
-        );
+        )?;
         let unresolved_component_inserts =
             crate::design::components::project_unresolved_component_insert_occurrences(
                 self.ctx,
