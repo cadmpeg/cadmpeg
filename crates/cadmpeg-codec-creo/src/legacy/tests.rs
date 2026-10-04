@@ -1724,3 +1724,47 @@ fn legacy_declaration_utf8_refuses_before_malformed_input() {
         if resource.dimension == ResourceDimension::WorkUnits
             && resource.operation == "creo legacy declaration UTF-8 validation"));
 }
+
+#[test]
+fn legacy_signed_utf8_refuses_before_invalid_scalar() {
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo UTF-8 validation",
+        |ctx| super::signed_integer(ctx, b"1\xff"),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo UTF-8 validation"));
+}
+
+#[test]
+fn legacy_unsigned_utf8_refuses_before_invalid_scalar() {
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo UTF-8 validation",
+        |ctx| super::unsigned_integer(ctx, b"1\xff"),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo UTF-8 validation"));
+}
+
+#[test]
+fn legacy_compact_real_utf8_refuses_work() {
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo UTF-8 validation",
+        |ctx| super::compact_real(ctx, b"3FF0000000000000"),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo UTF-8 validation"));
+}
+
+#[test]
+fn legacy_string_utf8_refuses_before_binary_fallback() {
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo UTF-8 validation",
+        |ctx| super::byte_string_value(ctx, b"a\xff", super::NullToken::RepresentsBytes),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo UTF-8 validation"));
+}

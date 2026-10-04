@@ -662,7 +662,7 @@ pub(crate) fn choices(
                 },
                 |hit| hit.0,
             );
-            let label = std::str::from_utf8(label)
+            let label = ctx.validate_utf8(label, "creo UTF-8 validation")?
                 .map_err(|_| CodecError::malformed("creo static choice label"))?;
             let label = ctx.copy_retained_text(label, "creo feature choice label")?;
             let payload =
@@ -798,7 +798,7 @@ pub(crate) fn choice_fields(
             if value_start > end {
                 continue;
             }
-            let name = std::str::from_utf8(&choice.payload[header + 2..value_start - 1])
+            let name = ctx.validate_utf8(&choice.payload[header + 2..value_start - 1], "creo UTF-8 validation")?
                 .map_err(|_| CodecError::malformed("creo ASCII choice field name"))?;
             let label = ctx.copy_retained_text(&choice.label, "creo choice field label")?;
             let name = ctx.copy_retained_text(name, "creo choice field name")?;

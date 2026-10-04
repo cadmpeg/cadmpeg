@@ -707,7 +707,7 @@ fn scan_sections<'a>(
         {
             continue;
         }
-        let name = std::str::from_utf8(name_bytes)
+        let name = ctx.validate_utf8(name_bytes, "creo UTF-8 validation")?
             .map_err(|_| CodecError::malformed("non-ASCII Creo section name"))?;
         if FRAMING_NAMES.contains(&name) {
             continue;
@@ -763,7 +763,7 @@ fn toc_sections<'a>(
         else {
             continue;
         };
-        let Ok(header) = std::str::from_utf8(&data[toc_offset..line_end]) else {
+        let Ok(header) = ctx.validate_utf8(&data[toc_offset..line_end], "creo UTF-8 validation")? else {
             continue;
         };
         let header = header.trim_end_matches('#');
@@ -927,7 +927,7 @@ fn legacy_toc_sections<'a>(
     let Some((toc_value, after_toc_value)) = legacy::line(data, after_toc_declaration) else {
         return Ok(Vec::new());
     };
-    let Ok(toc_value) = std::str::from_utf8(toc_value) else {
+    let Ok(toc_value) = ctx.validate_utf8(toc_value, "creo UTF-8 validation")? else {
         return Ok(Vec::new());
     };
     let mut toc_fields = toc_value.split_ascii_whitespace();
@@ -953,7 +953,7 @@ fn legacy_toc_sections<'a>(
     let Some((entry_array, mut next)) = legacy::line(data, after_entry_declaration) else {
         return Ok(Vec::new());
     };
-    let Ok(entry_array) = std::str::from_utf8(entry_array) else {
+    let Ok(entry_array) = ctx.validate_utf8(entry_array, "creo UTF-8 validation")? else {
         return Ok(Vec::new());
     };
     let mut array_fields = entry_array.split_ascii_whitespace();
@@ -1180,7 +1180,7 @@ fn legacy_product_release(
                 return Ok(None);
             };
             if release.iter().all(u8::is_ascii_graphic) {
-                let release = std::str::from_utf8(release)
+                let release = ctx.validate_utf8(release, "creo UTF-8 validation")?
                     .map_err(|_| CodecError::malformed("non-ASCII Creo release"))?;
                 return ctx
                     .copy_retained_text(release, "creo legacy product release")
@@ -1190,7 +1190,7 @@ fn legacy_product_release(
         }
         if let Some(release) = word.strip_prefix(b"Release") {
             if !release.is_empty() && release.iter().all(u8::is_ascii_graphic) {
-                let release = std::str::from_utf8(release)
+                let release = ctx.validate_utf8(release, "creo UTF-8 validation")?
                     .map_err(|_| CodecError::malformed("non-ASCII Creo release"))?;
                 return ctx
                     .copy_retained_text(release, "creo legacy product release")
@@ -1234,7 +1234,7 @@ fn legacy_ascii_framing(
         return Ok(None);
     }
     let schema =
-        std::str::from_utf8(schema).map_err(|_| CodecError::malformed("non-ASCII Creo schema"))?;
+        ctx.validate_utf8(schema, "creo UTF-8 validation")?.map_err(|_| CodecError::malformed("non-ASCII Creo schema"))?;
     let schema = ctx.copy_retained_text(schema, "creo legacy schema")?;
     let mut from = object_header_end + 1;
     while let Some(object_end) =
@@ -1485,7 +1485,7 @@ fn cmnm_model_name(
         let Some(length_bytes) = data.get(start..marker + cmnm::LEN) else {
             return Ok(None);
         };
-        let Ok(length_text) = std::str::from_utf8(length_bytes) else {
+        let Ok(length_text) = ctx.validate_utf8(length_bytes, "creo UTF-8 validation")? else {
             return Ok(None);
         };
         let Ok(length) = ctx.parse_radix::<usize>(length_text, 16, "creo CMNM hexadecimal parsing")? else {
@@ -1497,7 +1497,7 @@ fn cmnm_model_name(
         if name.is_empty() || name.iter().any(|byte| matches!(byte, 0 | b'\n' | b'\r')) {
             return Ok(None);
         }
-        Ok(std::str::from_utf8(name).ok())
+        Ok(ctx.validate_utf8(name, "creo UTF-8 validation")?.ok())
     })()? else {
         return Ok(None);
     };
@@ -1543,7 +1543,7 @@ fn native_model_name(
                 name_start += 1;
             }
             let value = &region[name_start..value_end];
-            if let Ok(name) = std::str::from_utf8(value) {
+            if let Ok(name) = ctx.validate_utf8(value, "creo UTF-8 validation")? {
                 if !name.is_empty() && name.chars().all(|character| !character.is_control()) {
                     return Ok(Some((
                         ctx.copy_retained_text(name, "creo native model name")?,
@@ -2336,7 +2336,7 @@ fn feature_row_has_model_identity(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         return Ok(true);
     }
     ctx.any_by(reference_names, |reference| {
-        let Ok(name) = std::str::from_utf8(&reference.name_bytes) else {
+        let Ok(name) = ctx.validate_utf8(&reference.name_bytes, "creo UTF-8 validation")? else {
             return Ok(false);
         };
         let numbered_family = |family: &str| {

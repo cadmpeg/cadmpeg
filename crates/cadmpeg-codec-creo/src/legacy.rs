@@ -940,7 +940,7 @@ fn compact_real(ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &[u8]) -> 
     {
         return Ok(None);
     }
-    let digits = { let Some(value) = std::str::from_utf8(digits).ok() else { return Ok(None); }; value };
+    let digits = { let Some(value) = ctx.validate_utf8(digits, "creo UTF-8 validation")?.ok() else { return Ok(None); }; value };
     let mut bits = { let Some(value) = ctx.parse_radix::<u64>(digits, 16, "creo compact real hexadecimal parsing")?.ok() else { return Ok(None); }; value };
     let fill = if repeat_last { bits & 0x0f } else { 0 };
     for _ in digits.len()..16 {
@@ -950,7 +950,7 @@ fn compact_real(ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &[u8]) -> 
 }
 
 fn signed_integer(ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &[u8]) -> Result<Option<i32>, cadmpeg_core::CodecError> {
-    let text = { let Some(value) = std::str::from_utf8(bytes).ok() else { return Ok(None); }; value };
+    let text = { let Some(value) = ctx.validate_utf8(bytes, "creo UTF-8 validation")?.ok() else { return Ok(None); }; value };
     if text.is_empty()
         || !text
             .strip_prefix('-')
@@ -964,7 +964,7 @@ fn signed_integer(ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &[u8]) -
 }
 
 fn unsigned_integer(ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &[u8]) -> Result<Option<u32>, cadmpeg_core::CodecError> {
-    let text = { let Some(value) = std::str::from_utf8(bytes).ok() else { return Ok(None); }; value };
+    let text = { let Some(value) = ctx.validate_utf8(bytes, "creo UTF-8 validation")?.ok() else { return Ok(None); }; value };
     if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
         return Ok(None);
     }
@@ -1268,7 +1268,7 @@ fn byte_string_value(
 ) -> Result<StringValue, CodecError> {
     if null_token == NullToken::RepresentsNull && bytes == b"NULL" {
         Ok(StringValue::Null)
-    } else if let Ok(text) = std::str::from_utf8(bytes) {
+    } else if let Ok(text) = ctx.validate_utf8(bytes, "creo UTF-8 validation")? {
         Ok(StringValue::Utf8 {
             text: ctx.copy_retained_text(text, "creo legacy string UTF-8 payload")?,
         })

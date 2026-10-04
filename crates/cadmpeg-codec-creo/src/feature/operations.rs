@@ -607,7 +607,7 @@ pub(crate) fn operation_states(
         while offset > 0 && family_byte(payload[offset - 1]) {
             offset -= 1;
         }
-        while offset < separator && std::str::from_utf8(&payload[offset..separator]).is_err() {
+        while offset < separator && ctx.validate_utf8(&payload[offset..separator], "creo UTF-8 validation")?.is_err() {
             offset += 1;
         }
         let state_offset = offset;
@@ -630,7 +630,7 @@ pub(crate) fn operation_states(
         if end == 0 || !digits[..end].iter().all(u8::is_ascii_digit) {
             continue;
         }
-        let Ok(digits) = std::str::from_utf8(&digits[..end]) else {
+        let Ok(digits) = ctx.validate_utf8(&digits[..end], "creo UTF-8 validation")? else {
             continue;
         };
         let Ok(feature_id) = ctx.parse_text::<u32>(digits, "creo scalar text parsing")? else {

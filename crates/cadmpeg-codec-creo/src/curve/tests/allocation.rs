@@ -1648,3 +1648,14 @@ fn affine_equation_merge_propagates_coefficient_node_refusal() {
         );
     });
 }
+
+#[test]
+fn relation_record_line_utf8_refuses_before_comment_skip() {
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo UTF-8 validation",
+        |ctx| super::super::expression_records_with_model_name(ctx, ONE_COMMENT, None),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo UTF-8 validation"));
+}
