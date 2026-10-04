@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed planar-sketch records and closed neutral sketch graphs.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -1451,7 +1451,7 @@ pub(crate) fn project(
     })?;
     let mut projected_entity_by_key_storage =
         ctx.reserve_scoped(0, "index projected Inventor sketch entity key")?;
-    let mut projected_entity_by_key = HashMap::new();
+    let mut projected_entity_by_key = BTreeMap::new();
     for raw in ctx.admit_iter(&inventory.entities, "visit Inventor sketch items")? {
         let (native_id, _native_reservation) = ctx.format_scoped(
             format_args!(
@@ -1466,7 +1466,7 @@ pub(crate) fn project(
             "access Inventor sketch records",
         )? {
             projected_entity_by_key_storage.with_storage(|| {
-                ctx.insert_hash_map(
+                ctx.insert_btree_map(
                     &mut projected_entity_by_key,
                     (
                         raw.identity.segment_token.as_str(),
@@ -1739,7 +1739,7 @@ pub(crate) fn project(
 fn project_constraint(
     ctx: &DecodeContext<'_>,
     constraint: &PmDcSketchConstraint,
-    entities: &HashMap<(&str, u32), &SketchEntity>,
+    entities: &BTreeMap<(&str, u32), &SketchEntity>,
     parameters: &HashMap<String, ParameterId>,
 ) -> Option<Result<SketchConstraint, CodecError>> {
     macro_rules! admit {
@@ -1770,7 +1770,7 @@ fn project_constraint(
             return Ok(None);
         };
         Ok(ctx
-            .get_hash_map(
+            .get_btree_map(
                 entities,
                 &(constraint.identity.segment_token.as_str(), ordinal),
                 "resolve Inventor sketch constraint entity",
@@ -2707,7 +2707,7 @@ fn line_component<'ctx>(
     adjacency: &HashMap<&str, Vec<usize>>,
 ) -> Result<
     (
-        HashSet<usize>,
+        BTreeSet<usize>,
         cadmpeg_core::decode::ScopedReservation<'ctx>,
     ),
     CodecError,
@@ -2715,15 +2715,15 @@ fn line_component<'ctx>(
     let (mut pending, mut pending_storage) = ctx.temporary_vec(0, "queue Inventor profile line")?;
     pending_storage
         .with_storage(|| ctx.push_vec(&mut pending, start, "queue Inventor profile line"))?;
-    let (mut component, mut component_storage) =
-        ctx.temporary_set(0, "collect Inventor profile component")?;
+    let mut component_storage = ctx.reserve_scoped(0, "collect Inventor profile component")?;
+    let mut component = BTreeSet::new();
     while !pending.is_empty() {
         ctx.charge_work(1, "scan Inventor profile component")?;
         let Some(index) = pending.pop() else {
             break;
         };
         if !component_storage.with_storage(|| {
-            ctx.insert_hash_set(&mut component, index, "collect Inventor profile component")
+            ctx.insert_btree_set(&mut component, index, "collect Inventor profile component")
         })? {
             continue;
         }
@@ -3242,7 +3242,7 @@ mod tests {
             )
             .expect("point geometry"),
         );
-        let entities = std::collections::HashMap::from([(("segment", 0), &entity)]);
+        let entities = std::collections::BTreeMap::from([(("segment", 0), &entity)]);
         let parameters = std::collections::HashMap::new();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -3296,7 +3296,7 @@ mod tests {
             )
             .expect("point geometry"),
         );
-        let entities = std::collections::HashMap::from([(("segment", 0), &entity)]);
+        let entities = std::collections::BTreeMap::from([(("segment", 0), &entity)]);
         let parameters = std::collections::HashMap::new();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();

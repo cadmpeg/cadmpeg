@@ -10,7 +10,7 @@ type Class1aPcurveFields = Option<(u32, [f64; 2], [f64; 2], [f64; 2], f64, [f64;
 type LoopReferencesOutput = Result<Option<(Vec<u32>, B5LoopMetadata, Vec<[i16; 3]>)>, CodecError>;
 type LoopMetadataOutput = Result<Option<(B5LoopMetadata, Vec<[i16; 3]>)>, CodecError>;
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ops::Range;
 
 use cadmpeg_core::decode::{DecodeContext, View, WorkBudget};
@@ -2373,7 +2373,7 @@ fn resolve_targeted_surface(
         headers,
         resolved,
         rolling,
-        HashSet::new(),
+        BTreeSet::new(),
     )
 }
 
@@ -2384,11 +2384,11 @@ fn resolve_targeted_surface_inner(
     headers: &HashMap<u32, crate::families::a5a8::records::A8SurfaceHeader>,
     resolved: &HashMap<u32, Option<B5Surface>>,
     rolling: &HashMap<u32, Option<B5Surface>>,
-    mut visited: HashSet<u32>,
+    mut visited: BTreeSet<u32>,
 ) -> Result<Option<B5Surface>, CodecError> {
     let _depth = ctx.enter_nested("catia_b5_targeted_surface_resolution")?;
     loop {
-        if !ctx.insert_hash_set(&mut visited, object_id, "catia_b5_targeted_surface_visited")?
+        if !ctx.insert_btree_set(&mut visited, object_id, "catia_b5_targeted_surface_visited")?
             || records.get(&object_id).is_some_and(Option::is_none)
         {
             return Ok(None);
@@ -2435,7 +2435,7 @@ fn resolve_targeted_analytic_offset(
     headers: &HashMap<u32, crate::families::a5a8::records::A8SurfaceHeader>,
     resolved: &HashMap<u32, Option<B5Surface>>,
     rolling: &HashMap<u32, Option<B5Surface>>,
-    visited: &HashSet<u32>,
+    visited: &BTreeSet<u32>,
 ) -> Result<Option<B5Surface>, CodecError> {
     if record.payload.first() != Some(&0x82) {
         return Ok(None);
@@ -2454,7 +2454,7 @@ fn resolve_targeted_analytic_offset(
         headers,
         resolved,
         rolling,
-        ctx.copy_retained_set(visited, "catia_b5_targeted_visited_copy")?,
+        ctx.collect_btree_set(visited.iter().copied(), "catia_b5_targeted_visited_copy")?,
     )?
     else {
         return Ok(None);
@@ -2474,7 +2474,7 @@ fn resolve_targeted_analytic_offset(
             headers,
             resolved,
             rolling,
-            ctx.copy_retained_set(visited, "catia_b5_targeted_visited_copy")?,
+            ctx.collect_btree_set(visited.iter().copied(), "catia_b5_targeted_visited_copy")?,
         )?
         else {
             return Ok(None);

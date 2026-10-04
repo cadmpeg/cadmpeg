@@ -409,7 +409,7 @@ mod tests {
             .to_vec();
         bytes.extend_from_slice(&zip);
         with_stream(&bytes, |ctx, root| {
-            const RESULT_COLLECTION_PRIOR_ITEMS: u64 = 292;
+            const RESULT_COLLECTION_PRIOR_ITEMS: u64 = 293;
             let ParsedProtein::Package {
                 archive, payload, ..
             } = parse_stream(ctx, root).expect("synthetic Protein package parses")
@@ -422,22 +422,24 @@ mod tests {
                     .len(),
                 1
             );
-            // Prior slots: ZIP index 10 + schema view 1 + XML tree/depth 58 + schema maps 2 + entry/view 2 + frames 213 + outcome 1 + inheritance 4 + property 1 = 292; the outer result slot is next.
+            // Prior slots: ZIP index 10 + schema view 1 + XML tree/depth 58 + schema maps 2 + entry/view 2 + frames 213 + outcome 1 + inheritance guards, active set, path and closure 4 + resolved schema 1 + property 1 = 293; the outer result slot is next.
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = RESULT_COLLECTION_PRIOR_ITEMS;
             let (limited, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
                 .expect("synthetic Protein input fits policy");
+            let refused = decode_instances_from(&limited, &archive, payload);
             assert!(
                 matches!(
-                    decode_instances_from(&limited, &archive, payload),
+                    refused,
                     Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                         if limit.dimension == ResourceDimension::CollectionItems
                             && limit.operation == "admit Inventor Protein instance records"
                             && limit.used == RESULT_COLLECTION_PRIOR_ITEMS
                             && limit.additional == 1
                 ),
-                "result collection must refuse at its own admission"
+                "result collection must refuse at its own admission: {:?}",
+                refused.as_ref().err()
             );
         });
     }
@@ -567,12 +569,11 @@ mod tests {
         let archive_name_bytes = archive_name_lengths.iter().copied().sum::<usize>();
         let archive_entry_count = archive_name_lengths.len();
         // Core charges four mutation passes and two key comparisons per new
-        // B-tree key. The two scoped sets also charge their admitted slot visits.
+        // B-tree key.
         let btree_insert_work = |key_size: usize,
                                  value_size: usize,
                                  key_alignment: usize,
-                                 value_alignment: usize,
-                                 scoped_set: bool| {
+                                 value_alignment: usize| {
             archive_name_lengths
                 .iter()
                 .enumerate()
@@ -596,8 +597,7 @@ mod tests {
                             + 1)
                     };
                     let key_comparison_work = 2 * *key_bytes * comparisons;
-                    let slot_visit_work = if scoped_set { 2 * len } else { 0 };
-                    tree_mutation_work + key_comparison_work + slot_visit_work
+                    tree_mutation_work + key_comparison_work
                 })
                 .sum::<usize>()
         };
@@ -606,19 +606,16 @@ mod tests {
             std::mem::size_of::<()>(),
             std::mem::align_of::<&[u8]>(),
             std::mem::align_of::<()>(),
-            true,
         ) + btree_insert_work(
             std::mem::size_of::<String>(),
             std::mem::size_of::<()>(),
             std::mem::align_of::<String>(),
             std::mem::align_of::<()>(),
-            true,
         ) + btree_insert_work(
             std::mem::size_of::<String>(),
             std::mem::size_of::<usize>(),
             std::mem::align_of::<String>(),
             std::mem::align_of::<usize>(),
-            false,
         );
         // Each snapshot copies names into three owners and charges three
         // central-name, entry-record, and name-index visits.

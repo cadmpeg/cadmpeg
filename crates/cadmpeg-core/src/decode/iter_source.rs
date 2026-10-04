@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Closed traversal sources with bounds available before the first visit.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use super::u64_from_index;
 
@@ -13,7 +13,8 @@ mod sealed {
 ///
 /// The source is consumed: a borrowed collection yields references, a mutable
 /// borrow yields mutable references and an owned collection moves its values.
-/// Hash traversal includes vacant buckets; text traversal counts bytes.
+/// Text traversal counts bytes. Hash tables are not sources: their iteration
+/// order is unspecified and their allocated extent has no exact public bound.
 pub trait IterSource: sealed::Sealed {
     /// Traversal without allocating element storage.
     type Iter: Iterator;
@@ -84,8 +85,6 @@ counted_source!(['a, T] &'a Option<T> => std::option::Iter<'a, T>; |value| usize
 counted_source!(['a] &'a str => std::str::Chars<'a>; |text| text.len(), text.chars());
 counted_source!(['a] &'a String => std::str::Chars<'a>; |text| text.len(), text.chars());
 counted_source!(['a, T] &'a VecDeque<T> => std::collections::vec_deque::Iter<'a, T>; |values| values.len(), values.iter());
-counted_source!(['a, K, V, S] &'a HashMap<K, V, S> => std::collections::hash_map::Iter<'a, K, V>; |values| values.capacity(), values.iter());
-counted_source!(['a, T, S] &'a HashSet<T, S> => std::collections::hash_set::Iter<'a, T>; |values| values.capacity(), values.iter());
 counted_source!(['a, K, V] &'a BTreeMap<K, V> => std::collections::btree_map::Iter<'a, K, V>; |values| values.len(), values.iter());
 counted_source!(['a, K, V] &'a mut BTreeMap<K, V> => std::collections::btree_map::IterMut<'a, K, V>; |values| values.len(), values.iter_mut());
 counted_source!([K, V] BTreeMap<K, V> => std::collections::btree_map::IntoIter<K, V>; |values| values.len(), IntoIterator::into_iter(values));

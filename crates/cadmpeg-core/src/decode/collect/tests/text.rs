@@ -83,13 +83,6 @@ retained_case!(
         .map(|_| ())
 );
 retained_case!(
-    copy_retained_set_charges_before_allocation,
-    crate::decode::u64_from_index(std::mem::size_of::<u8>() + 32),
-    |ctx: &DecodeContext<'_>| ctx
-        .copy_retained_set(&HashSet::from([1_u8]), "test retained set")
-        .map(|_| ())
-);
-retained_case!(
     format_retained_charges_before_allocation,
     3,
     |ctx: &DecodeContext<'_>| ctx
