@@ -1235,3 +1235,28 @@ fn draft_face_selection_refuses_retained_limit() {
             && limit.operation == "format SLDPRT draft surface selection set")
     );
 }
+
+#[test]
+fn relation_diameter_expression_propagates_format_work_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    assert!(matches!(
+        super::super::relation_display_parameter_value(
+            &ctx, crate::records::FeatureInputRelationFamily::CircleDiameter, 2.0,
+        ),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "format SLDPRT relation display parameter"
+    ));
+    let (value, display, expression) = super::super::relation_display_parameter_value(
+        &cadmpeg_test_support::service_decode_context(),
+        crate::records::FeatureInputRelationFamily::CircleDiameter,
+        2.0,
+    ).unwrap().expect("finite diameter");
+    assert_eq!(expression, "<MOD-DIAM>2000mm");
+    assert_eq!(display, Some(cadmpeg_ir::features::DimensionDisplay::Diameter));
+    assert!(matches!(value, cadmpeg_ir::features::ParameterValue::Length(length) if length.get() == 2000.0));
+}
