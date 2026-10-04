@@ -595,3 +595,21 @@ fn alias_lookup_refusal_does_not_become_a_missing_alias() {
         assert_eq!(ctx.resource_refusal(), Some(limit));
     }
 }
+
+#[test]
+fn alias_update_lookup_refusal_preserves_the_existing_binding() {
+    let parameter = ParameterId::mint("test:test:parameter#width").unwrap();
+    let mut aliases = HashMap::from([(String::from("Width"), Some(parameter.clone()))]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // One work unit admits the owner step; the five-byte lookup must refuse.
+    policy.limits.max_work_units = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = crate::history::parameters::insert_parameter_alias(&ctx, &mut aliases, String::from("Width"), &parameter).unwrap_err();
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("resource refusal"); };
+    assert_eq!(limit.operation, "look up mutable SLDPRT hash key");
+    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert_eq!(limit.additional, 5);
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+    assert_eq!(aliases.get("Width"), Some(&Some(parameter)));
+}

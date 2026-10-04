@@ -1246,7 +1246,7 @@ fn unique_source_bindings<'a>(
         let Some(source) = feature.source_id else {
             continue;
         };
-        if let Some(existing) = bindings.get_mut(&source) {
+        if let Some(existing) = ctx.get_mut_hash_map(&mut (bindings), &source, "look up mutable SLDPRT hash key")? {
             *existing = None;
             continue;
         }

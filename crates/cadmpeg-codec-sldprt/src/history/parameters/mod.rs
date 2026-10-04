@@ -590,7 +590,7 @@ fn insert_parameter_alias(
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "index SLDPRT parameter aliases";
     ctx.charge_work(1, OPERATION)?;
-    if let Some(candidate) = aliases.get_mut(&alias) {
+    if let Some(candidate) = ctx.get_mut_hash_map(&mut *aliases, &alias, "look up mutable SLDPRT hash key")? {
         if candidate
             .as_ref()
             .is_some_and(|existing| existing != parameter)
@@ -676,7 +676,7 @@ impl ParameterAliases {
                         "index SLDPRT local parameter alias owners",
                     )?;
                 }
-                aliases.feature_local.get_mut(owner).ok_or_else(|| {
+                ctx.get_mut_hash_map(&mut (aliases.feature_local), owner, "look up mutable SLDPRT hash key")?.ok_or_else(|| {
                     CodecError::malformed("missing SLDPRT local parameter alias owner")
                 })?
             } else {
