@@ -1221,7 +1221,7 @@ fn chart_points(
     if point_layout == ChartPointLayout::Xyz3 {
         let operation = "NX raw xyz3 chart points";
         let (mut points, _reservation) = ctx.temporary_vec(count, operation)?;
-        for index in 0..count {
+        for index in ctx.admit_iter(&(0..count), "NX chart points range traversal")? {
             let Some(point) = point_m(stream, block + index * 24) else {
                 return Ok(None);
             };
@@ -1245,7 +1245,7 @@ fn chart_points(
         ctx.reserve_scoped(0, "NX raw ext11 support-UV lane")?,
         ctx.reserve_scoped(0, "NX raw ext11 support-UV lane")?,
     ];
-    for index in 0..count {
+    for index in ctx.admit_iter(&(0..count), "NX chart points range traversal")? {
         let Some((point, parameter, lanes)) = chart_ext_point_at(stream, block + index * 88) else {
             return Ok(None);
         };
@@ -1551,7 +1551,7 @@ fn uv_at(
     let operation = "NX support-UV scalar lane";
     ctx.charge_collection_items(count_u64, operation)?;
     let (mut scalars, _reservation) = ctx.scoped_vector_storage(count_usize, operation)?;
-    for _ in 0..count_usize {
+    for _ in ctx.admit_iter(&(0..count_usize), "NX uv at range traversal")? {
         let Some(value) = view.f64_be() else {
             return Ok(None);
         };

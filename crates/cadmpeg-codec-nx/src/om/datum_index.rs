@@ -3,7 +3,7 @@
 
 use super::compact::NullableCompactIndex;
 use super::compact::{CompactIndexAtom, CountedIndexMembers, LocatedCompactIndex};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use std::ops::Add;
 
@@ -87,13 +87,8 @@ pub(crate) fn scan(
     bytes: &[u8],
 ) -> Result<Vec<DatumIndexLane>, CodecError> {
     let mut lanes = Vec::new();
-    ctx.charge_work(u64_from_index(bytes.len()), "scan NX datum index lanes")?;
-    for start in bytes
-        .len()
-        .checked_sub(7)
-        .into_iter()
-        .flat_map(|last| 0..last)
-    {
+    if let Some(last) = bytes.len().checked_sub(7) {
+    for start in ctx.admit_iter(&(0..last), "scan NX datum index lanes")? {
         if bytes[start] != 0x01 {
             continue;
         }
@@ -101,10 +96,9 @@ pub(crate) fn scan(
         if declared_count < 2 {
             continue;
         }
-        ctx.charge_work(u64::from(declared_count), "scan NX datum index members")?;
         let mut scan_at = start + 2;
         let mut complete = true;
-        for _ in 1..declared_count {
+        for _ in ctx.admit_iter(&(1..declared_count), "scan NX datum index members")? {
             let Some(token) =
                 NullableCompactIndex::read(bytes, scan_at).filter(|token| token.atom.is_some())
             else {
@@ -120,7 +114,7 @@ pub(crate) fn scan(
         let operation = "NX datum index members";
         let mut indices = ctx.collection_vec(member_count, operation)?;
         let mut at = start + 2;
-        for _ in 0..member_count {
+        for _ in ctx.admit_iter(&(0..member_count), "NX datum index member materialization")? {
             let Some(token) = LocatedCompactIndex::read(&bytes[..scan_at], at) else {
                 break;
             };
@@ -140,6 +134,7 @@ pub(crate) fn scan(
             ctx.reserve_vec(&mut lanes, 1, "NX datum index lanes")?;
             lanes.push(lane);
         }
+    }
     }
     Ok(lanes)
 }

@@ -409,7 +409,7 @@ fn decode_retains_topology_owned_point_at_origin() {
     assert_eq!(
         graph
             .get(NodeKind::Point, 11)
-            .and_then(crate::topology::Node::point_position)
+            .and_then(|node| crate::test_support::with_decode_context(|ctx| node.point_position(ctx)).unwrap())
             .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0))
     );

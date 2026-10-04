@@ -253,7 +253,7 @@ fn counted_lane<T>(
     let len = usize::from(count - 1);
     let operation = "NX extrude 32 counted lane";
     let mut values = ctx.collection_vec(len, operation)?;
-    for _ in 1..count {
+    for _ in ctx.admit_iter(&(1..count), "NX counted lane range traversal")? {
         let Some((token, width)) = bytes.get(*at..).and_then(&mut read) else {
             return Ok(None);
         };

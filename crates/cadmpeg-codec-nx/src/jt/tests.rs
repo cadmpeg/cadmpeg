@@ -88,22 +88,19 @@ fn jt_int32_cdp2_refuses_nesting_at_caller_limit() {
 fn jt_int32_cdp2_refuses_symbol_work_at_caller_limit() {
     let packet = [2, 0, 0, 0, 1, 21, 0, 0, 0, 0x00, 0xc0, 0x16, 0x04];
 
-    crate::test_support::with_decode_context_over(
+    let error = crate::test_support::resource_refusal_at(
         &packet,
-        |policy| {
-            policy.limits.max_work_units = 1;
-        },
-        |ctx| {
-            let error = super::decode_int32_cdp2(ctx, &packet, 0)
-                .expect_err("two decoded integers exceed one work unit");
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                        && limit.operation == "decode JT bitlength symbols"
-            ));
-        },
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "decode JT bitlength symbols",
+        |ctx| super::decode_int32_cdp2(ctx, &packet, 0),
     );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "decode JT bitlength symbols"
+                && limit.additional == 2
+    ));
 }
 
 fn frame_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(u32, u8, usize)> {
@@ -1016,15 +1013,14 @@ fn single_symbol_probability_packet(raw: u32) -> (Vec<u8>, Vec<u8>) {
 #[test]
 fn jt_arithmetic_output_copy_refuses_work_before_formation() {
     let (_, packet) = single_symbol_probability_packet(2);
-    crate::test_support::with_decode_context_over(
+    let error = crate::test_support::resource_refusal_at(
         &packet,
-        |policy| policy.limits.max_work_units = 3,
-        |ctx| {
-            let error = super::decode_int32_cdp2(ctx, &packet, 0).unwrap_err();
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits && limit.operation == "form JT arithmetic values")
-            );
-        },
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "form JT arithmetic values",
+        |ctx| super::decode_int32_cdp2(ctx, &packet, 0),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits && limit.operation == "form JT arithmetic values")
     );
 }
 
@@ -1051,16 +1047,58 @@ fn jt_variable_bitlength_delta_cycles_refuse_code_work() {
     }
     crate::test_support::with_decode_context_over(
         &packet,
-        |policy| policy.limits.max_work_units = u64::from(bit_len),
+        // The final two-bit delta follows the header and all 128 six-bit cycles.
+        |policy| policy.limits.max_work_units = u64::from(bit_len) - 2,
         |ctx| {
             let error = super::decode_int32_cdp2(ctx, &packet, 0).unwrap_err();
             assert!(
                 matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                    && limit.operation == "decode JT bitlength code bits"
-                    && limit.additional == u64::from(bit_len))
+                    && limit.operation == "decode JT bit field"
+                    && limit.additional == 2)
             );
         },
     );
     assert_eq!(decode_int32_cdp2(&packet, 0), Some((vec![0], packet.len())));
+}
+
+#[test]
+fn msb_bit_range_refusal_precedes_read() {
+    let bytes = [0xa5];
+    crate::test_support::with_decode_context_over(&bytes, |policy| policy.limits.max_work_units = 3, |ctx| {
+        let mut bits = super::MsbBitReader::new(&bytes);
+        let error = bits.read(ctx, 4).unwrap_err();
+        assert!(matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "decode JT bit field" && limit.additional == 4));
+        assert_eq!(bits.bit, 0);
+        assert_eq!(ctx.resource_refusal(), match error { cadmpeg_core::CodecError::ResourceLimit(limit) => Some(limit), _ => unreachable!() });
+    });
+}
+
+#[test]
+fn code_bit_range_refusal_precedes_read() {
+    let bytes = [0, 0, 0, 0];
+    crate::test_support::with_decode_context_over(&bytes, |policy| policy.limits.max_work_units = 3, |ctx| {
+        let mut bits = super::CodeBits { words: &bytes, bit_len: 32, bit: 0 };
+        let error = bits.read(ctx, 4).unwrap_err();
+        assert!(matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "decode JT bit field" && limit.additional == 4));
+        assert_eq!(bits.bit, 0);
+        assert_eq!(ctx.resource_refusal(), match error { cadmpeg_core::CodecError::ResourceLimit(limit) => Some(limit), _ => unreachable!() });
+    });
+}
+
+#[test]
+fn signed_code_bit_range_refusal_propagates() {
+    let bytes = [0xff; 4];
+    crate::test_support::with_decode_context_over(&bytes, |policy| policy.limits.max_work_units = 3, |ctx| {
+        let mut bits = super::CodeBits { words: &bytes, bit_len: 32, bit: 0 };
+        let error = bits.read_signed(ctx, 4).unwrap_err();
+        assert!(matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "decode JT bit field" && limit.additional == 4));
+        assert_eq!(bits.bit, 0);
+    });
 }

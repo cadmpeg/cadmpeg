@@ -670,7 +670,7 @@ pub(in crate::native) fn feature_draft_construction_references(
     container: &Container,
 ) -> Result<Vec<FeatureDraftConstructionReference>, cadmpeg_core::CodecError> {
     let references = resolved_feature_payload_references(ctx, container, |record, base| {
-        Ok(crate::om::draft_references::draft_feature_payload_references(record)
+        Ok(crate::om::draft_references::draft_feature_payload_references(ctx, record)?
             .and_then(|field| field.relocate(base))
             .map(|field| field.references().into_iter().collect()))
     })?;
@@ -734,8 +734,9 @@ pub(in crate::native) fn feature_draft_construction_index_lanes(
                 (|| -> Result<Option<FeatureDraftConstructionIndexLane>, CodecError> {
                     let section_ordinal = if let Some(graph) =
                         crate::om::draft_references::draft_feature_payload_references(
+                            ctx,
                             record.payload_view(),
-                        ) {
+                        )? {
                         let count =
                             4usize.checked_add(lane.indices().count()).ok_or_else(|| {
                                 ctx.refuse_codec_limit("NX draft complete reference indices", 0, 1)

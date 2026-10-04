@@ -20,12 +20,10 @@ impl<'a> DescendingU32Edges<'a> {
         bytes: &'a [u8],
     ) -> Result<Self, CodecError> {
         let mut offsets_by_alignment = <[Vec<usize>; 4]>::default();
-        for offset in bytes
+        if let Some(range_end) = bytes
             .len()
-            .checked_sub(7)
-            .into_iter()
-            .flat_map(|last| 0..last)
-        {
+            .checked_sub(7) {
+            for offset in ctx.admit_iter(&(0..range_end), "NX descending index edge scan")? {
             if View::u32_le_at(bytes, offset)
                 .zip(View::u32_le_at(bytes, offset + 4))
                 .is_some_and(|(current, next)| current > next)
@@ -34,6 +32,7 @@ impl<'a> DescendingU32Edges<'a> {
                 ctx.reserve_scoped_vec(reservation, offsets, 1, "nx descending index edges")?;
                 offsets.push(offset);
             }
+        }
         }
         Ok(Self {
             bytes,

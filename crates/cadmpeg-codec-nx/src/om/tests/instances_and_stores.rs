@@ -484,20 +484,20 @@ fn om_geometry_instance_reference_requires_one_complete_field() {
     let label = "Geometry Instance";
     let payload = b"\x44\x45\x00\xff\xff\xf1\x03\x21\x01\x02\x00\xff\xff\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00\x01\x02";
     let record = crate::om::operation_record::OperationPayload::new(payload, 200, label).unwrap();
-    let field = PatternReferences::read(record).expect("complete field");
+    let field = crate::test_support::with_decode_context(|ctx| PatternReferences::read(ctx, record)).unwrap().expect("complete field");
     let references = field.into_references();
     assert_eq!(references[0].token.value(), 801);
     assert_eq!(references[0].offset, 205);
 
     let ambiguous = [payload.as_slice(), payload.as_slice()].concat();
-    assert!(PatternReferences::read(
+    assert!(crate::test_support::with_decode_context(|ctx| PatternReferences::read(ctx,
         crate::om::operation_record::OperationPayload::new(
             &ambiguous,
             record.payload_offset(),
             record.name()
         )
         .unwrap()
-    )
+    )).unwrap()
     .is_none());
 }
 
@@ -610,7 +610,7 @@ fn om_draft_feature_references_require_one_complete_graph() {
     let terminal = b"\x81\x5e\x80\xb8\x01\x03\x02\x01\x02\x01\x01\x01\x00\x00\x00\x29\x29\x0c\x00";
     let payload = [prefix.as_slice(), graph.as_slice(), terminal.as_slice()].concat();
     let record = crate::om::operation_record::OperationPayload::new(&payload, 200, label).unwrap();
-    let field = crate::om::draft_references::draft_feature_payload_references(record)
+    let field = crate::test_support::with_decode_context(|ctx| crate::om::draft_references::draft_feature_payload_references(ctx, record)).unwrap()
         .expect("complete graph");
     assert_eq!(
         field.references().map(|(token, _)| token.value()),
@@ -655,14 +655,14 @@ fn om_draft_feature_references_require_one_complete_graph() {
     let mut malformed = payload.clone();
     malformed[53] = 0x00;
     assert!(
-        crate::om::draft_references::draft_feature_payload_references(
+        crate::test_support::with_decode_context(|ctx| crate::om::draft_references::draft_feature_payload_references(ctx,
             crate::om::operation_record::OperationPayload::new(
                 &malformed,
                 record.payload_offset(),
                 record.name()
             )
             .unwrap()
-        )
+        )).unwrap()
         .is_none()
     );
     let mut malformed_lane = payload.clone();
@@ -682,25 +682,25 @@ fn om_draft_feature_references_require_one_complete_graph() {
     );
     let ambiguous = [prefix.as_slice(), graph.as_slice(), graph.as_slice()].concat();
     assert!(
-        crate::om::draft_references::draft_feature_payload_references(
+        crate::test_support::with_decode_context(|ctx| crate::om::draft_references::draft_feature_payload_references(ctx,
             crate::om::operation_record::OperationPayload::new(
                 &ambiguous,
                 record.payload_offset(),
                 record.name()
             )
             .unwrap()
-        )
+        )).unwrap()
         .is_none()
     );
     assert!(
-        crate::om::draft_references::draft_feature_payload_references(
+        crate::test_support::with_decode_context(|ctx| crate::om::draft_references::draft_feature_payload_references(ctx,
             crate::om::operation_record::OperationPayload::new(
                 &payload[..prefix.len() + graph.len() - 2],
                 record.payload_offset(),
                 record.name()
             )
             .unwrap()
-        )
+        )).unwrap()
         .is_none()
     );
     assert!(crate::om::draft_terminal::scan(

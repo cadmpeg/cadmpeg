@@ -105,22 +105,26 @@ pub(super) fn operation_state_opaque_lane_end_at(
     (lane_end <= end).then_some(lane_end)
 }
 
-fn operation_state_opaque_payload_end(bytes: &[u8], at: usize, end: usize) -> Option<usize> {
+fn operation_state_opaque_payload_end(ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &[u8], at: usize, end: usize) -> Result<Option<usize>, cadmpeg_core::CodecError> {
+    let parsed: Option<Result<_, cadmpeg_core::CodecError>> = (|| {
     const MAX_OPAQUE_STATUS_BYTES: usize = 64 * 1024;
     let first = *bytes.get(at)?;
     if !matches!(first, 0x02 | 0x1e | 0xff) {
         return None;
     }
     if bytes.get(at..at + 3) == Some(&[0x02, 0x01, 0x11]) {
-        return Some(at + 3);
+        return (Some(at + 3)).map(Ok);
     }
     let search_end = end.min(at.checked_add(MAX_OPAQUE_STATUS_BYTES)?);
-    for cursor in at..search_end.checked_sub(1)? {
+    for cursor in propagate_resource!(ctx.admit_iter(&(at..search_end.checked_sub(1)?), "NX opaque status boundary search").map_err(cadmpeg_core::CodecError::from)) {
         if bytes.get(cursor..cursor + 2) == Some(&[0x02, 0x11]) {
-            return Some(cursor + 2);
+            return (Some(cursor + 2)).map(Ok);
         }
     }
-    None
+    (None).map(Ok)
+
+    })();
+    parsed.transpose()
 }
 
 fn operation_state_link_payload(
@@ -175,8 +179,10 @@ pub(super) fn operation_state_status_row_at<'a>(
         0x02 | 0x1e | 0xff => {
             let precomputed_end = opaque_lane_starts
                 .and_then(|starts| operation_state_opaque_lane_end_at(starts, payload_at, end));
-            let payload_end = precomputed_end
-                .or_else(|| operation_state_opaque_payload_end(bytes, payload_at, end))?;
+            let payload_end = match precomputed_end {
+                Some(end) => end,
+                None => propagate_resource!(operation_state_opaque_payload_end(ctx, bytes, payload_at, end))?,
+            };
             (
                 StateStatusPayload::Opaque {
                     raw: bytes.get(payload_at..payload_end)?,

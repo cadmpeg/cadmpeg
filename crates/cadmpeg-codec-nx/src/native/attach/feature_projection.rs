@@ -1181,14 +1181,15 @@ pub(super) fn block_placement(
             bands.push(PlaneBand { normal, offsets });
         }
     }
-    if bands.len() != 3
-        || (0..3).any(|first| {
-            (first + 1..3).any(|second| {
-                bands[first].normal.dot(bands[second].normal).abs() > angular_tolerance
-            })
-        })
-    {
+    if bands.len() != 3 {
         return Ok(None);
+    }
+    for first in 0usize..3 {
+        if ctx.admit_iter(&(first + 1..3), "NX block plane orthogonality search")?.any(|second| {
+            bands[first].normal.dot(bands[second].normal).abs() > angular_tolerance
+        }) {
+            return Ok(None);
+        }
     }
     let [first, second, third] = bands.as_mut_slice() else {
         return Ok(None);
@@ -3375,7 +3376,7 @@ pub(super) fn counterbore_cylinders(
         false,
         "nx counterbore cylinder assignments",
     )?;
-    for first_index in 0..cylinders.len() {
+    for first_index in ctx.admit_iter(&(0..cylinders.len()), "NX counterbore cylinders range traversal")? {
         if used[first_index] {
             continue;
         }

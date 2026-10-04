@@ -81,10 +81,6 @@ impl CountedPatternReferences<()> {
             return Ok(None);
         }
         let bytes = record.payload();
-        ctx.charge_work(
-            u64_from_index(bytes.len()),
-            "scan NX counted pattern references",
-        )?;
         let shape = |start: usize| {
             if bytes.get(start) != Some(&1) {
                 return None;
@@ -96,7 +92,7 @@ impl CountedPatternReferences<()> {
             let at = start.checked_add(2)?;
             cadmpeg_core::decode::bounded_len(u64::from(count), 2, bytes.len().checked_sub(at)?)?;
             let mut scan_at = at;
-            for _ in 0..count {
+            for _ in propagate_resource!(ctx.admit_iter(&(0..count), "NX counted pattern reference validation").map_err(CodecError::from)) {
                 let token = PayloadIndexToken::read(bytes.get(scan_at..)?)?;
                 scan_at += token.raw().len();
             }
@@ -105,9 +101,15 @@ impl CountedPatternReferences<()> {
                 return None;
             }
             record.payload_offset().checked_add(end)?;
-            Some((start, count))
+            (Some((start, count))).map(Ok)
         };
-        let Some((start, count)) = super::unique_candidate((0..bytes.len()).filter_map(shape))
+        let Some((start, count)) = ({
+
+let mut candidates = ctx.admit_iter(&(0..bytes.len()), "scan NX counted pattern references")?.filter_map(shape);
+let first = candidates.next().transpose()?;
+let second = candidates.next().transpose()?;
+if second.is_none() { first } else { None }
+})
         else {
             return Ok(None);
         };
@@ -117,7 +119,7 @@ impl CountedPatternReferences<()> {
         let Some(mut at) = start.checked_add(2) else {
             return Ok(None);
         };
-        for _ in 0..count {
+        for _ in ctx.admit_iter(&(0..count), "NX counted pattern reference materialization")? {
             let Some(token) = bytes.get(at..).and_then(PayloadIndexToken::read) else {
                 return Ok(None);
             };

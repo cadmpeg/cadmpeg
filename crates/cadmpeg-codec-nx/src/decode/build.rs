@@ -60,7 +60,7 @@ pub(super) fn ordered_point_candidates<'a>(
     ctx: &DecodeContext<'_>,
     graph: &'a Graph,
 ) -> Result<Vec<(FinitePoint3, &'a Node)>, CodecError> {
-    ordered_fixed_candidates(ctx, graph, [NodeKind::Point], Node::point_position)
+    ordered_fixed_candidates(ctx, graph, [NodeKind::Point], |node| node.point_position(ctx))
 }
 
 pub(super) fn ordered_surface_candidates<'a>(
@@ -77,7 +77,7 @@ pub(super) fn ordered_surface_candidates<'a>(
             NodeKind::Sphere,
             NodeKind::Torus,
         ],
-        Node::surface_geometry,
+        |node| node.surface_geometry(ctx),
     )
 }
 
@@ -89,7 +89,7 @@ pub(super) fn ordered_curve_candidates<'a>(
         ctx,
         graph,
         [NodeKind::Line, NodeKind::Circle, NodeKind::Ellipse],
-        Node::curve_geometry,
+        |node| node.curve_geometry(ctx),
     )
 }
 
@@ -97,13 +97,13 @@ fn ordered_fixed_candidates<'a, T>(
     ctx: &DecodeContext<'_>,
     graph: &'a Graph,
     kinds: impl IntoIterator<Item = NodeKind>,
-    graph_value: impl Fn(&Node) -> Option<T>,
+    graph_value: impl Fn(&Node) -> Result<Option<T>, CodecError>,
 ) -> Result<Vec<(T, &'a Node)>, CodecError> {
     let mut candidates = BTreeMap::new();
     for kind in kinds {
     for node in graph.of_kind(ctx, kind)? {
         ctx.charge_work(1, "scan NX analytic candidates")?;
-        if let Some(value) = graph_value(node) {
+        if let Some(value) = graph_value(node)? {
             ctx.insert_btree_map(
                 &mut candidates,
                 node.pos(),

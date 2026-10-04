@@ -63,19 +63,19 @@ pub(crate) fn counted_lanes(
             let anchor = LocatedCompactIndex::read(bytes, start + usize::from(COUNTED_PREFIX))?;
             let members_start = anchor.offset + anchor.atom.raw().len();
             let mut at = members_start;
-            for _ in 0..usize::from(declared_count) - 2 {
+            for _ in propagate_resource!(ctx.admit_iter(&(0..usize::from(declared_count) - 2), "NX counted lanes row validation").map_err(CodecError::from)) {
                 at += LocatedCompactIndex::read(bytes, at)?.atom.raw().len();
             }
             let end = at.checked_add(COUNTED_TERMINATOR.len())?;
             (bytes.get(at..end) == Some(&COUNTED_TERMINATOR)).then_some(())?;
-            Some((anchor, members_start, usize::from(declared_count) - 2, end))
-        })() else {
+            (Some((anchor, members_start, usize::from(declared_count) - 2, end))).map(Ok)
+        })().transpose()? else {
             return Ok(None);
         };
         let operation = "NX counted index lane members";
         let mut members = ctx.collection_vec(member_count, operation)?;
         let mut at = members_start;
-        for _ in 0..member_count {
+        for _ in ctx.admit_iter(&(0..member_count), "NX counted lanes range traversal")? {
             let Some(token) = LocatedCompactIndex::read(bytes, at) else {
                 return Ok(None);
             };

@@ -534,7 +534,7 @@ impl Decoder<'_> {
             }
             slot -= 1;
         }
-        for unresolved in first_unresolved..=slot {
+        for unresolved in ctx.admit_iter(&(first_unresolved..=slot), "NX complete vertex range traversal")? {
             if self.activate_face(ctx, vertex, unresolved)?.is_none() {
                 return Ok(None);
             }
@@ -611,7 +611,7 @@ impl Decoder<'_> {
             let Some(seed) = self.new_vertex(ctx)? else {
                 return Ok(None);
             };
-            for slot in 0..self.vertices[seed].faces.len() {
+            for slot in ctx.admit_iter(&(0..self.vertices[seed].faces.len()), "NX run range traversal")? {
                 if self.activate_face(ctx, seed, slot)?.is_none() {
                     return Ok(None);
                 }
@@ -661,11 +661,7 @@ impl Decoder<'_> {
                         return Ok(None);
                     };
                     let mut attribute_slot = face.attributes.len() - 1;
-                    ctx.charge_work(
-                        cadmpeg_core::decode::u64_from_index(vertex_slot + 1),
-                        "scan JT polygon attribute mask",
-                    )?;
-                    for slot in 0..=vertex_slot {
+                    for slot in ctx.admit_iter(&(0..=vertex_slot), "scan JT polygon attribute mask")? {
                         if face.attribute_mask[slot] {
                             attribute_slot = (attribute_slot + 1) % face.attributes.len();
                         }

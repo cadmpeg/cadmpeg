@@ -51,13 +51,13 @@ impl DraftFeaturePayloadReferenceField {
     }
 }
 
-pub(crate) fn draft_feature_payload_references(
+pub(crate) fn draft_feature_payload_references(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     record: OperationPayload<'_>,
-) -> Option<DraftFeaturePayloadReferenceField> {
+) -> Result<Option<DraftFeaturePayloadReferenceField>, cadmpeg_core::CodecError> {
     if record.name() != "DRAFT"
         || record.payload().get(..PAYLOAD_PREFIX.len()) != Some(&PAYLOAD_PREFIX)
     {
-        return None;
+        return Ok(None);
     }
     let decode = |start: usize| {
         let mut at = start + GRAPH_PREFIX.len();
@@ -82,18 +82,20 @@ pub(crate) fn draft_feature_payload_references(
             origin: cadmpeg_core::decode::u64_from_index(record.payload_offset() + start),
         })
     };
-    super::unique_candidate(
-        (record
+    Ok({
+let Some(candidate_end_0) = record
             .payload()
             .len()
-            .checked_sub(GRAPH_PREFIX.len())
-            .into_iter()
-            .flat_map(|last| PAYLOAD_PREFIX.len()..=last))
+            .checked_sub(GRAPH_PREFIX.len()) else { return Ok(None); };
+let mut candidates = (ctx.admit_iter(&(PAYLOAD_PREFIX.len()..=candidate_end_0), "NX draft feature payload references candidate search")?)
         .filter(|&start| {
             record.payload().get(start..start + GRAPH_PREFIX.len()) == Some(&GRAPH_PREFIX)
         })
-        .filter_map(decode),
-    )
+        .filter_map(decode);
+let first = candidates.next();
+let second = candidates.next();
+if second.is_none() { first } else { None }
+})
 }
 
 #[cfg(test)]
@@ -112,9 +114,9 @@ mod tests {
         let mut payload = PAYLOAD_PREFIX.to_vec();
         payload.extend([0x55; 2]);
         payload.extend_from_slice(&graph);
-        let field = draft_feature_payload_references(
+        let field = crate::test_support::with_decode_context(|ctx| draft_feature_payload_references(ctx,
             OperationPayload::new(&payload, 100, "DRAFT").unwrap(),
-        )
+        )).unwrap()
         .unwrap();
         assert_eq!(
             field.references().map(|(token, _)| token.value()),
@@ -131,9 +133,26 @@ mod tests {
         assert!(field.clone().relocate(u64::MAX - 170).is_some());
         assert!(field.relocate(u64::MAX - 169).is_none());
         payload.extend(graph);
-        assert!(draft_feature_payload_references(
+        assert!(crate::test_support::with_decode_context(|ctx| draft_feature_payload_references(ctx,
             OperationPayload::new(&payload, 100, "DRAFT").unwrap()
-        )
+        )).unwrap()
         .is_none());
     }
+    #[test]
+    fn draft_reference_candidate_range_refusal_precedes_rejection() {
+        let mut bytes = PAYLOAD_PREFIX.to_vec();
+        bytes.extend([0; 6]);
+        crate::test_support::with_decode_context_over(&bytes, |policy| policy.limits.max_work_units = 0, |ctx| {
+            let record = OperationPayload::new(&bytes, 0, "DRAFT").unwrap();
+            let error = draft_feature_payload_references(ctx, record).unwrap_err();
+            assert!(matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                    && limit.operation == "NX draft feature payload references candidate search"
+                    && limit.additional == 5));
+            if let cadmpeg_core::CodecError::ResourceLimit(limit) = error {
+                assert_eq!(ctx.resource_refusal(), Some(limit));
+            }
+        });
+    }
+
 }

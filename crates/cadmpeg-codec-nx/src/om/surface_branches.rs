@@ -218,7 +218,7 @@ fn surface_feature_branch_paths(
     };
     let mut cursor = at + 3;
     let mut members = Vec::new();
-    for _ in 1..declared_count {
+    for _ in ctx.admit_iter(&(1..declared_count), "NX surface feature branch paths range traversal")? {
         let Some(token) = payload.get(cursor..).and_then(PayloadIndexToken::read) else {
             return Ok(Vec::new());
         };
@@ -340,18 +340,12 @@ pub(crate) fn surface_feature_payload_branches(
         "Studio Surface" => &STUDIO_TERMINATOR[..],
         _ => return Ok(None),
     };
-    ctx.charge_work(
-        u64_from_index(record.payload().len()),
-        "scan NX surface branch groups",
-    )?;
     let mut candidate = None;
-    for start in record
+    if let Some(range_end) = record
         .payload()
         .len()
-        .checked_sub(6)
-        .into_iter()
-        .flat_map(|last| 0..last)
-    {
+        .checked_sub(6) {
+            for start in ctx.admit_iter(&(0..range_end), "scan NX surface branch groups")? {
         if record.payload().get(start..start + 2) != Some(&[0xa0, 0x5a]) {
             continue;
         }
@@ -396,6 +390,7 @@ pub(crate) fn surface_feature_payload_branches(
         }
         candidate = Some(group);
     }
+        }
     Ok(candidate)
 }
 

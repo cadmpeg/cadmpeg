@@ -77,7 +77,7 @@ impl SketchReferenceField {
             };
             let leading_count = count.map_or(0, |count| usize::from(count.get() - 1));
             let mut references = Vec::new();
-            for _ in 0..leading_count {
+            for _ in match ctx.admit_iter(&(0..leading_count), "NX sketch reference traversal") { Ok(rows) => rows, Err(error) => { failure = Some(error.into()); return None; } } {
                 let token = ReferenceIndexToken::read_payload(bytes.get(at..)?)?;
                 let width = token.raw().len();
                 if let Err(error) = ctx.reserve_vec(&mut references, 1, "nx sketch references") {

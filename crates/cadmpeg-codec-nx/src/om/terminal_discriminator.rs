@@ -94,10 +94,6 @@ pub(crate) fn operation_terminal_discriminator(
     if record.payload().last() != Some(&0) {
         return Ok(None);
     }
-    ctx.charge_work(
-        u64_from_index(record.payload().len()),
-        "scan NX terminal discriminator",
-    )?;
 
     let decode = |start: usize| {
         if record.payload().get(start..start + 3) != Some(&[0x01, 0x01, 0x02]) {
@@ -152,13 +148,11 @@ pub(crate) fn operation_terminal_discriminator(
     };
 
     let mut found = None;
-    for start in record
+    if let Some(range_end) = record
         .payload()
         .len()
-        .checked_sub(18)
-        .into_iter()
-        .flat_map(|last| 0..last)
-    {
+        .checked_sub(18) {
+            for start in ctx.admit_iter(&(0..range_end), "scan NX terminal discriminator")? {
         if record.payload().get(start..start + 3) == Some(&[0x01, 0x01, 0x02]) {
             ctx.charge_work(
                 u64_from_index(record.payload().len() - start),
@@ -173,6 +167,7 @@ pub(crate) fn operation_terminal_discriminator(
         }
         found = Some(candidate);
     }
+        }
     let Some((origin, indices, flags, trailing_bytes, trailing_count)) = found else {
         return Ok(None);
     };

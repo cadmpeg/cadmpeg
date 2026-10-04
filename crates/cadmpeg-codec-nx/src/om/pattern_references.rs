@@ -68,7 +68,7 @@ const INSTANCE_SUFFIX: [u8; 17] = [
 ];
 
 impl PatternReferences {
-    pub(crate) fn read(record: OperationPayload<'_>) -> Option<Self> {
+    pub(crate) fn read(ctx: &cadmpeg_core::decode::DecodeContext<'_>, record: OperationPayload<'_>) -> Result<Option<Self>, cadmpeg_core::CodecError> {
         let bytes = record.payload();
         let consume = |at: &mut usize, expected: &[u8]| {
             let end = at.checked_add(expected.len())?;
@@ -135,7 +135,13 @@ impl PatternReferences {
                 body,
             })
         };
-        super::unique_candidate((0..bytes.len()).filter_map(decode))
+        Ok({
+
+let mut candidates = ctx.admit_iter(&(0..bytes.len()), "NX pattern reference candidate search")?.filter_map(decode);
+let first = candidates.next();
+let second = candidates.next();
+if second.is_none() { first } else { None }
+})
     }
 
     pub(crate) fn layout(&self) -> PatternPayloadReferenceLayout {
@@ -196,7 +202,7 @@ mod tests {
         let bytes = b"\x61\xf0\x01\xff\x00\xff\x01\xf1\x01\x02\xf0\x03\x61\xf1\x01\x04\xff\x00\xff\x01\xf0\x05\xf1\x01\x06\xff\x62\xf0\x07\xf1\x01\x08\xff\x00\x00\x01\xf0\x09\xf1\x01\x0a\xff\xff\x01";
         let payload = OperationPayload::new(bytes, 100, "Pattern Geometry")
             .ok_or("bounded operation payload")?;
-        let graph = PatternReferences::read(payload).ok_or("complete pattern graph")?;
+        let graph = crate::test_support::with_decode_context(|ctx| PatternReferences::read(ctx, payload)).unwrap().ok_or("complete pattern graph")?;
         assert_eq!(
             graph
                 .into_references()

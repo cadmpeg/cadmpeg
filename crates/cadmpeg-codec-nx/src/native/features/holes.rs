@@ -1496,9 +1496,13 @@ pub(in crate::native) fn feature_hole_package_construction_group_lanes(
             if failure.is_some() {
                 return;
             }
-            let Some(lane) = crate::om::hole_package_construction_group_lane(record.payload_view())
-            else {
-                return;
+            let lane = match crate::om::hole_package_construction_group_lane(ctx, record.payload_view()) {
+                Ok(Some(lane)) => lane,
+                Ok(None) => return,
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
             let references = match package_lane_references(ctx, &indexed, entry_offset, &lane) {
                 Ok(Some(references)) => references,

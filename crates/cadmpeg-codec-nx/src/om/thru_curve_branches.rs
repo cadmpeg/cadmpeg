@@ -169,7 +169,7 @@ fn thru_curve_payload_branch(
         };
         let mut cursor = at + 3;
         let mut members = Vec::new();
-        for _ in 1..declared_count {
+        for _ in match ctx.admit_iter(&(1..declared_count), "NX thru curve payload branch row traversal") { Ok(rows) => rows, Err(error) => { failure = Some(error.into()); return None; } } {
             let token = PayloadIndexToken::read(record.payload().get(cursor..)?)?;
             cursor += token.raw().len();
             if let Err(error) = ctx.reserve_vec(&mut members, 1, "NX thru-curve branch members") {
@@ -230,10 +230,6 @@ pub(crate) fn thru_curve_payload_branch_group(
     let Some(envelope) = thru_curve_payload_references(record) else {
         return Ok(None);
     };
-    ctx.charge_work(
-        u64_from_index(record.payload().len()),
-        "scan NX thru-curve branches",
-    )?;
     let mut at = envelope.byte_len();
     let group_offset = at;
     let Some(declared_count @ 2..) = record.payload().get(at).copied() else {
@@ -241,7 +237,7 @@ pub(crate) fn thru_curve_payload_branch_group(
     };
     at += 1;
     let mut branches = Vec::new();
-    for _ in 1..declared_count {
+    for _ in ctx.admit_iter(&(1..declared_count), "scan NX thru-curve branches")? {
         let Some((branch, next)) = thru_curve_payload_branch(ctx, record, at)? else {
             return Ok(None);
         };

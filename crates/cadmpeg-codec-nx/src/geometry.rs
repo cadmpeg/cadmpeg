@@ -99,14 +99,14 @@ fn analytic_records<T>(
             p += 1;
             continue;
         }
-        let frames = fixed_record_candidates(stream, p, kind);
+        let frames = fixed_record_candidates(ctx, stream, p, kind)?;
         let mut candidates = [None, None];
         for (slot, frame) in frames.iter().enumerate() {
             if let Some(frame) = frame {
-                candidates[slot] = analytic_candidate(stream, p, kind, *frame);
+                candidates[slot] = analytic_candidate(ctx, stream, p, kind, *frame)?;
             }
         }
-        if let Some((record, end)) = select_analytic_candidate(stream, candidates) {
+        if let Some((record, end)) = select_analytic_candidate(ctx, stream, candidates)? {
             if let Some(record) = project(record) {
                 ctx.reserve_vec(&mut out, 1, "nx analytic records")?;
                 out.push(record);
@@ -144,17 +144,18 @@ struct AnalyticCandidate {
     record: AnalyticRecord,
 }
 
-fn analytic_candidate(
+fn analytic_candidate(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     stream: &[u8],
     pos: usize,
     kind: NodeKind,
     frame: FixedRecordFrame,
-) -> Option<AnalyticCandidate> {
+) -> Result<Option<AnalyticCandidate>, cadmpeg_core::CodecError> {
+    let parsed: Option<Result<_, cadmpeg_core::CodecError>> = (|| {
     let record_bytes = stream.get(pos..frame.end())?;
     let record = match kind {
         NodeKind::Point => {
             let mut at = pos + 8 + frame.shift();
-            skip_sequence_at(stream, &mut at, 4)?;
+            propagate_resource!(skip_sequence_at(ctx, stream, &mut at, 4))?;
             let xyz = vec3_be_at(stream, at)?;
             let position = mm_position(xyz)?;
             AnalyticRecord::Point(position)
@@ -173,18 +174,22 @@ fn analytic_candidate(
         }
         _ => return None,
     };
-    Some(AnalyticCandidate { frame, record })
+    (Some(AnalyticCandidate { frame, record })).map(Ok)
+
+    })();
+    parsed.transpose()
 }
 
-fn select_analytic_candidate(
+fn select_analytic_candidate(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     stream: &[u8],
     candidates: [Option<AnalyticCandidate>; 2],
-) -> Option<(AnalyticRecord, usize)> {
-    match candidates {
+) -> Result<Option<(AnalyticRecord, usize)>, cadmpeg_core::CodecError> {
+    let parsed: Option<Result<_, cadmpeg_core::CodecError>> = (|| {
+    (match candidates {
         [Some(first), None] | [None, Some(first)] => Some((first.record, first.frame.end())),
         [Some(first), Some(second)] => {
-            let first_boundary = fixed_record_boundary(stream, first.frame.end());
-            let second_boundary = fixed_record_boundary(stream, second.frame.end());
+            let first_boundary = propagate_resource!(fixed_record_boundary(ctx, stream, first.frame.end()));
+            let second_boundary = propagate_resource!(fixed_record_boundary(ctx, stream, second.frame.end()));
             match (first_boundary, second_boundary) {
                 (true, false) => Some((first.record, first.frame.end())),
                 (false, true) => Some((second.record, second.frame.end())),
@@ -192,7 +197,10 @@ fn select_analytic_candidate(
             }
         }
         [None, None] => None,
-    }
+    }).map(Ok)
+
+    })();
+    parsed.transpose()
 }
 
 /// Decode a graph-owned analytic surface at its resolved payload shift.
