@@ -537,3 +537,19 @@ fn terminate_count_utf8_refusal_reaches_the_caller() {
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
         && limit.operation == "iges terminate count text"));
 }
+
+#[test]
+fn terminate_integer_parse_refusal_reaches_the_caller() {
+    let bytes = point_file();
+    let scan = crate::test_support::scan(&bytes).unwrap();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // The first field validates seven UTF-8 bytes before parsing its seven-digit count.
+    policy.limits.max_work_units = 7;
+    let error = crate::test_support::with_policy_context(&[], &policy, |ctx| {
+        super::terminate_counts(&scan.lines, &mut super::FramingRecoveries::default(), ctx)
+    }).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+        && limit.used == 7 && limit.additional == 7
+        && limit.operation == "iges terminate count integer"));
+}

@@ -640,8 +640,11 @@ fn terminate_counts(
         } else {
             None
         }
-            .filter(|text| !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit()))
-            .and_then(|text| text.parse::<usize>().ok());
+            .filter(|text| !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit()));
+        let declared = match declared {
+            Some(text) => ctx.parse_text::<usize>(text, "iges terminate count integer")?.ok(),
+            None => None,
+        };
         let census = lines
             .iter()
             .filter(|line| matches!(line, ScannedLine::Card { section: current, .. } if *current == section))
