@@ -81,39 +81,28 @@ fn result_body_frame() -> (Vec<u8>, DesignParameterScope) {
 }
 
 #[test]
-fn base_feature_result_runs_refuse_each_collection_limit() {
+fn base_feature_result_bodies_refuse_collection_limit() {
     let (bytes, scope) = result_body_frame();
-    for (limit, operation) in [
-        (2, "f3d BaseFeature entities"),
-        (5, "f3d BaseFeature references"),
-        (8, "f3d BaseFeature repeated reference fields"),
-        // Includes the two metadata bytes admitted before the remaining bodies.
-        (12, "f3d BaseFeature remaining result bodies"),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = exact_base_feature_construction(&ctx, &bytes, &scope);
-        assert!(
-            matches!(
-                result,
-                Err(cadmpeg_core::CodecError::ResourceLimit(failure))
-                    if failure.dimension == ResourceDimension::CollectionItems
-                        && failure.operation == operation
-            ),
-            "limit {limit}: {operation}"
-        );
-    }
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    // Includes the two admitted result-body metadata bytes.
-    policy.limits.max_collection_items = 13;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = exact_base_feature_construction(&ctx, &bytes, &scope)
-        .unwrap()
-        .expect("admitted BaseFeature result bodies");
+    let operation = "f3d BaseFeature remaining result bodies";
+    let refusal = crate::test_support::resource_refusal_at(
+        ResourceDimension::CollectionItems,
+        operation,
+        0,
+        |ctx| exact_base_feature_construction(ctx, &bytes, &scope).map(|_| ()),
+    );
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == operation
+    ));
+    let result = exact_base_feature_construction(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        &scope,
+    )
+    .unwrap()
+    .expect("admitted BaseFeature result bodies");
     let DesignBaseFeatureConstruction::ResultBodies {
         bodies,
         metadata_field,
@@ -141,6 +130,24 @@ fn base_feature_result_runs_refuse_each_collection_limit() {
                     && limit.additional == additional
         ));
     }
+}
+
+#[test]
+fn base_feature_result_bodies_reject_an_unmarked_later_result() {
+    let (mut bytes, scope) = result_body_frame();
+    // Prefix, the entity and reference runs, the count block, the repeated
+    // run, the separator, the metadata entry and the result count precede
+    // the result run; the second result entry follows the first.
+    let second_result = 24 + 2 * 15 * 3 + 11 + 11 * 3 + 1 + 11 + 4 + 11;
+    assert_eq!(bytes[second_result], 1);
+    bytes[second_result] = 0;
+    assert!(exact_base_feature_construction(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        &scope,
+    )
+    .unwrap()
+    .is_none());
 }
 
 fn snapshot_frame() -> (Vec<u8>, DesignParameterScope) {
