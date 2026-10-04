@@ -533,7 +533,7 @@ fn decode_dot(
     })
 }
 
-fn v2_version(
+fn v2_version(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     reader: &mut BoundedReader<'_>,
     offset: usize,
     kind: &str,
@@ -541,13 +541,13 @@ fn v2_version(
     if reader.u8()? >> 4 != 1 {
         return Err(FramingError::structural(
             offset,
-            format!("V2 {kind} version is unsupported"),
+            ctx.format_retained(format_args!("V2 {kind} version is unsupported"), "Rhino v2_version text")?,
         ));
     }
     Ok(())
 }
 
-fn v2_point(
+fn v2_point(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
     offset: usize,
@@ -556,9 +556,9 @@ fn v2_point(
     let raw_point = [reader.f64()?, reader.f64()?, reader.f64()?];
     let mut point = [FiniteReal::ZERO; 3];
     for (target, value) in point.iter_mut().zip(raw_point) {
-        *target = scaled_coordinate(value, scale).ok_or_else(|| {
-            FramingError::structural(offset, format!("scaled V2 {kind} point is invalid"))
-        })?;
+        *target = scaled_coordinate(value, scale).map_or_else(|| {
+            Err(FramingError::structural(offset, ctx.format_retained(format_args!("scaled V2 {kind} point is invalid"), "Rhino v2_point text")?)
+        )}, Ok)?;
     }
     Ok(point)
 }
@@ -570,8 +570,8 @@ fn decode_v2_text_dot(
     scale: MillimeterScale,
 ) -> Result<TextDotData, FramingError> {
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
-    v2_version(&mut reader, range.start, "text-dot")?;
-    let center = v2_point(&mut reader, scale, range.start, "text-dot")?;
+    v2_version(ctx, &mut reader, range.start, "text-dot")?;
+    let center = v2_point(ctx, &mut reader, scale, range.start, "text-dot")?;
     let primary_text = utf16_retained(ctx, &mut reader, "Rhino V2 text dot primary text")?;
     reader.skip_remaining()?;
     Ok(TextDotData {
@@ -587,15 +587,15 @@ fn decode_v2_text_dot(
     })
 }
 
-fn decode_v2_annotation_arrow(
+fn decode_v2_annotation_arrow(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     data: &[u8],
     range: std::ops::Range<usize>,
     scale: MillimeterScale,
 ) -> Result<([FiniteReal; 3], [FiniteReal; 3]), FramingError> {
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
-    v2_version(&mut reader, range.start, "annotation-arrow")?;
-    let tail = v2_point(&mut reader, scale, range.start, "annotation-arrow tail")?;
-    let head = v2_point(&mut reader, scale, range.start, "annotation-arrow head")?;
+    v2_version(ctx, &mut reader, range.start, "annotation-arrow")?;
+    let tail = v2_point(ctx, &mut reader, scale, range.start, "annotation-arrow tail")?;
+    let head = v2_point(ctx, &mut reader, scale, range.start, "annotation-arrow head")?;
     reader.skip_remaining()?;
     Ok((tail, head))
 }
@@ -1017,7 +1017,7 @@ pub(crate) fn install(
                 });
             }
             AnnotationClass::V2Arrow => {
-                let (tail, head) = match decode_v2_annotation_arrow(
+                let (tail, head) = match decode_v2_annotation_arrow(ctx, 
                     scan.data,
                     object.class_data_range.clone(),
                     scale,
@@ -2145,6 +2145,9 @@ mod tests {
 
     #[test]
     fn v2_annotation_arrow_reads_tail_and_head_and_skips_class_data_suffix() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
         let mut bytes = vec![0x10];
         for value in [[1.0_f64, 2.0, 3.0], [-4.0_f64, 5.0, -6.0]] {
             for coordinate in value {
@@ -2152,7 +2155,7 @@ mod tests {
             }
         }
         bytes.extend([0xa5, 0x5a]);
-        let (tail, head) = decode_v2_annotation_arrow(
+        let (tail, head) = decode_v2_annotation_arrow(&ctx, 
             &bytes,
             0..bytes.len(),
             crate::test_support::millimeter_scale(10.0),

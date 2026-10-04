@@ -39,12 +39,12 @@ impl Cage {
     }
 }
 
-fn refused(offset: usize, error: &CodecError) -> GeometryError {
+fn refused(ctx: &cadmpeg_core::decode::DecodeContext<'_>, offset: usize, error: &CodecError) -> Result<GeometryError, cadmpeg_core::CodecError> { Ok(
     match error {
         CodecError::ResourceLimit(limit) => GeometryError::Codec(CodecError::ResourceLimit(*limit)),
-        _ => GeometryError::malformed(offset, format!("NURBS cage allocation refused: {error}")),
+        _ => GeometryError::malformed(offset, ctx.format_retained(format_args!("NURBS cage allocation refused: {error}"), "Rhino refused text")?),
     }
-}
+) }
 
 fn req_i32(view: &mut View<'_>) -> Result<i32, GeometryError> {
     let offset = view.position();
@@ -58,17 +58,17 @@ fn req_f64(view: &mut View<'_>) -> Result<f64, GeometryError> {
         .map_err(|_| GeometryError::malformed(offset, "NURBS cage record truncated"))
 }
 
-fn positive(view: &mut View<'_>, label: &str) -> Result<usize, GeometryError> {
+fn positive(ctx: &cadmpeg_core::decode::DecodeContext<'_>, view: &mut View<'_>, label: &str) -> Result<usize, GeometryError> {
     let offset = view.position();
     let value = req_i32(view)?;
     if value <= 0 {
         return Err(GeometryError::malformed(
             offset,
-            format!("NURBS cage {label} is not positive"),
+            ctx.format_retained(format_args!("NURBS cage {label} is not positive"), "Rhino positive text")?,
         ));
     }
     usize::try_from(value)
-        .map_err(|_| GeometryError::malformed(offset, format!("NURBS cage {label} overflows")))
+        .or_else(|_| Err(GeometryError::malformed(offset, ctx.format_retained(format_args!("NURBS cage {label} overflows"), "Rhino positive text")?)))
 }
 
 pub(crate) fn decode(
@@ -118,7 +118,7 @@ pub(crate) fn decode_at(
             message: format!("unsupported NURBS cage version {major}.{minor}"),
         });
     }
-    let dimension = positive(&mut body, "dimension")?;
+    let dimension = positive(expand.ctx(), &mut body, "dimension")?;
     if dimension > MAX_DIMENSION {
         return Err(GeometryError::malformed(
             body.position() - 4,
@@ -136,14 +136,14 @@ pub(crate) fn decode_at(
         }
     };
     let orders = [
-        positive(&mut body, "U order")?,
-        positive(&mut body, "V order")?,
-        positive(&mut body, "W order")?,
+        positive(expand.ctx(), &mut body, "U order")?,
+        positive(expand.ctx(), &mut body, "V order")?,
+        positive(expand.ctx(), &mut body, "W order")?,
     ];
     let counts = [
-        positive(&mut body, "U count")?,
-        positive(&mut body, "V count")?,
-        positive(&mut body, "W count")?,
+        positive(expand.ctx(), &mut body, "U count")?,
+        positive(expand.ctx(), &mut body, "V count")?,
+        positive(expand.ctx(), &mut body, "W count")?,
     ];
     let orders_offset = body.position() - 24;
     for axis in 0..3 {
@@ -177,7 +177,7 @@ pub(crate) fn decode_at(
             })?;
         let mut reserved =
             ExactVec::<FiniteReal>::new(expand.ctx(), bound, "Rhino cage knot values")
-                .map_err(|error| refused(body.position(), &error))?;
+                .or_else(|error| Err(refused(expand.ctx(), body.position(), &error)?))?;
         let mut previous: Option<FiniteReal> = None;
         for _ in 0..knot_count {
             let knot = req_f64(&mut body)?;
@@ -196,11 +196,11 @@ pub(crate) fn decode_at(
             previous = Some(knot);
             reserved
                 .push(expand.ctx(), knot, "Rhino cage knot values")
-                .map_err(|error| refused(body.position(), &error))?;
+                .or_else(|error| Err(refused(expand.ctx(), body.position(), &error)?))?;
         }
         knots[axis] = reserved
             .finish()
-            .map_err(|error| refused(body.position(), &error))?;
+            .or_else(|error| Err(refused(expand.ctx(), body.position(), &error)?))?;
     }
 
     let stored_dimension = dimension + usize::from(rational);
@@ -221,7 +221,7 @@ pub(crate) fn decode_at(
         })?;
     let mut control_points =
         ExactVec::<Vec<FiniteReal>>::new(expand.ctx(), control_bound, "Rhino cage control points")
-            .map_err(|error| refused(body.position(), &error))?;
+            .or_else(|error| Err(refused(expand.ctx(), body.position(), &error)?))?;
     let mut weights = if rational {
         Some(
             expand
@@ -240,7 +240,7 @@ pub(crate) fn decode_at(
             })?;
         let mut stored =
             ExactVec::<FiniteReal>::new(expand.ctx(), tuple_bound, "Rhino cage coordinate tuple")
-                .map_err(|error| refused(body.position(), &error))?;
+                .or_else(|error| Err(refused(expand.ctx(), body.position(), &error)?))?;
         for _ in 0..dimension {
             let value = req_f64(&mut body)?;
             let Some(value) = FiniteReal::new(value) else {
@@ -251,11 +251,11 @@ pub(crate) fn decode_at(
             };
             stored
                 .push(expand.ctx(), value, "Rhino cage coordinate tuple")
-                .map_err(|error| refused(body.position(), &error))?;
+                .or_else(|error| Err(refused(expand.ctx(), body.position(), &error)?))?;
         }
         let stored = stored
             .finish()
-            .map_err(|error| refused(body.position(), &error))?;
+            .or_else(|error| Err(refused(expand.ctx(), body.position(), &error)?))?;
         let weight = if let Some(weights) = &mut weights {
             let weight = req_f64(&mut body)?;
             let Some(weight) = FiniteReal::new(weight) else {
@@ -290,7 +290,7 @@ pub(crate) fn decode_at(
         }
         control_points
             .push(expand.ctx(), point, "Rhino cage control points")
-            .map_err(|error| refused(body.position(), &error))?;
+            .or_else(|error| Err(refused(expand.ctx(), body.position(), &error)?))?;
     }
     let remaining = body.remaining();
     body.skip(remaining).ok_or_else(|| {
@@ -298,7 +298,7 @@ pub(crate) fn decode_at(
     })?;
     let control_points = control_points
         .finish()
-        .map_err(|error| refused(body.position(), &error))?;
+        .or_else(|error| Err(refused(expand.ctx(), body.position(), &error)?))?;
     Ok((
         Cage {
             source_range: offset..chunk.next_offset(),
@@ -315,6 +315,19 @@ pub(crate) fn decode_at(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn cage_dimension_message_propagates_work_refusal() {
+        let bytes = 0_i32.to_le_bytes();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, mut view) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
+        let error = super::positive(&ctx, &mut view, "dimension").expect_err("message work refuses");
+        let GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) = error else { panic!("resource refusal"); };
+        assert_eq!(limit.operation, "Rhino positive text");
+        assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit));
+    }
+
     use super::{decode, ANONYMOUS};
     use crate::chunks::{ArchiveVersion, FramingError};
     use crate::curves::GeometryError;

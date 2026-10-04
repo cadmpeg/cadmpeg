@@ -121,7 +121,7 @@ pub(crate) struct Header {
 }
 
 /// Errors that mean the byte stream cannot be safely framed.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 pub(crate) enum FramingError {
     /// The input ended before a required field.
     Truncated { offset: usize, needed: usize },
@@ -134,6 +134,8 @@ pub(crate) enum FramingError {
     /// A structural rule was violated by a derived or already-decoded value
     /// that has no byte position of its own.
     Unpositioned { message: String },
+    /// An owned core error formatted with the framing prefix at the boundary.
+    Core(cadmpeg_core::CodecError),
     /// Arithmetic overflow occurred while deriving a boundary.
     Overflow { offset: usize },
     /// A derived boundary exceeded its containing bound.
@@ -152,7 +154,7 @@ impl From<cadmpeg_core::CodecError> for FramingError {
     fn from(error: cadmpeg_core::CodecError) -> Self {
         match error {
             cadmpeg_core::CodecError::ResourceLimit(limit) => Self::Resource(limit),
-            other => Self::unpositioned(other.to_string()),
+            other => Self::Core(other),
         }
     }
 }
@@ -186,6 +188,7 @@ impl fmt::Display for FramingError {
                 write!(f, "framing error at {offset}: {message}")
             }
             Self::Unpositioned { message } => write!(f, "framing error: {message}"),
+            Self::Core(error) => write!(f, "framing error: {error}"),
             Self::Overflow { offset } => write!(f, "offset arithmetic overflow at {offset}"),
             Self::OutOfBounds { offset, end, bound } => {
                 write!(f, "range {offset}..{end} exceeds bound {bound}")
@@ -690,7 +693,7 @@ pub(crate) fn verify_checksum(
     chunk: &Chunk,
 ) -> Result<ChecksumStatus, FramingError> {
     let body = chunk.body();
-    verify_checksum_ranges(ctx, bytes, chunk, std::iter::once(Ok(body)))
+    verify_checksum_ranges(ctx, bytes, chunk, std::iter::once(body).map(Ok))
 }
 
 /// Verifies a chunk checksum over its direct byte ranges.
@@ -932,7 +935,7 @@ pub(crate) fn checksum_children_through_class_end(
         if reader.position() == reader.end() {
             return Err(FramingError::structural(
                 reader.end(),
-                format!("{context} is missing its class end"),
+                ctx.format_retained(format_args!("{context} is missing its class end"), "Rhino checksum_children_through_class_end text")?,
             ));
         }
         let start = reader.position();
@@ -954,7 +957,7 @@ pub(crate) fn checksum_children_through_class_end(
             if !child.short() || child.value()? != 0 {
                 return Err(FramingError::structural(
                     start,
-                    format!("{context} class end must be a short zero chunk"),
+                    ctx.format_retained(format_args!("{context} class end must be a short zero chunk"), "Rhino checksum_children_through_class_end text")?,
                 ));
             }
             return Ok(children);
@@ -1004,6 +1007,33 @@ pub(crate) fn validate_eof(
 
 #[cfg(test)]
 mod direct_range_tests {
+    #[test]
+    fn core_framing_cause_keeps_the_rendered_error_prefix() {
+        let error = super::FramingError::from(cadmpeg_core::CodecError::Malformed("invalid field".into()));
+        let ctx = cadmpeg_test_support::service_decode_context();
+        assert_eq!(ctx.format_retained(format_args!("{error}"), "test framing cause").expect("message fits"), "framing error: malformed container: invalid field");
+    }
+
+    impl PartialEq for super::FramingError {
+        fn eq(&self, other: &Self) -> bool {
+            use super::FramingError;
+            match (self, other) {
+                (FramingError::Truncated { offset: a, needed: b }, FramingError::Truncated { offset: c, needed: d }) => a == c && b == d,
+                (FramingError::InvalidHeader, FramingError::InvalidHeader) | (FramingError::MissingEof, FramingError::MissingEof) => true,
+                (FramingError::InvalidLength { offset: a, value: b }, FramingError::InvalidLength { offset: c, value: d }) => a == c && b == d,
+                (FramingError::Structural { offset: a, message: b }, FramingError::Structural { offset: c, message: d }) => a == c && b == d,
+                (FramingError::Unpositioned { message: a }, FramingError::Unpositioned { message: b }) => a == b,
+                (FramingError::Core(a), FramingError::Core(b)) => a.to_string() == b.to_string(),
+                (FramingError::Overflow { offset: a }, FramingError::Overflow { offset: b }) => a == b,
+                (FramingError::OutOfBounds { offset: a, end: b, bound: c }, FramingError::OutOfBounds { offset: d, end: e, bound: f }) => a == d && b == e && c == f,
+                (FramingError::Resource(a), FramingError::Resource(b)) => a == b,
+                _ => false,
+            }
+        }
+    }
+
+    impl Eq for super::FramingError {}
+
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     use super::{

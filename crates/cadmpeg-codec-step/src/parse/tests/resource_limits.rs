@@ -12,7 +12,7 @@ use crate::parse::{
 use crate::test_support::{with_policy_context, with_service_context};
 
 fn assert_local_refusal(error: ResolveError, operation: &'static str) {
-    let parsed = error.into_parse_error(0).into_codec_error();
+    let parsed = with_service_context(b"", |_, ctx| error.into_parse_error(0).into_codec_error(ctx)).expect("resource conversion");
     assert!(matches!(parsed, CodecError::ResourceLimit(refusal)
         if refusal.dimension == ResourceDimension::Codec(operation)
             && refusal.operation == operation));

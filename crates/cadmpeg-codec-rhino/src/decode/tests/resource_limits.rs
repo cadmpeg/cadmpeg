@@ -489,7 +489,7 @@ fn curve_warning_tree_refuses_collection_limit() {
 
 #[test]
 fn typed_install_loss_transfer_refuses_collection_limit() {
-    let source = vec![RhinoLossCode::IntegrityFailure.note("invalid source record")];
+    let source = vec![RhinoLossCode::IntegrityFailure.note("invalid source record".into())];
     let refusal = with_collection_limit(0, |ctx| {
         super::super::append_report_losses(ctx, &mut Vec::new(), source)
             .expect_err("typed loss transfer requires one report slot")
@@ -499,7 +499,7 @@ fn typed_install_loss_transfer_refuses_collection_limit() {
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "Rhino typed decode losses"
     ));
-    let source = vec![RhinoLossCode::IntegrityFailure.note("invalid source record")];
+    let source = vec![RhinoLossCode::IntegrityFailure.note("invalid source record".into())];
     let mut report = Vec::new();
     super::super::append_report_losses(
         &cadmpeg_test_support::service_decode_context(),

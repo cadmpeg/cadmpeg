@@ -1035,7 +1035,7 @@ pub(crate) fn parse_attributes(
                     reader.u8()?,
                     reader.array::<4>()?,
                     reader.u8()?,
-                    read_finite(&mut reader, "plot weight")?,
+                    read_finite(ctx, &mut reader, "plot weight")?,
                 )
             } else {
                 (0, 0, [0; 4], 0, FiniteReal::ZERO)
@@ -1067,12 +1067,12 @@ pub(crate) fn parse_attributes(
         } else {
             None
         };
-        let obsolete_thickness = finite(
+        let obsolete_thickness = finite(ctx, 
             obsolete_thickness_offset,
             obsolete_thickness,
             "obsolete thickness",
         )?;
-        let obsolete_scale = finite(obsolete_scale_offset, obsolete_scale, "obsolete scale")?;
+        let obsolete_scale = finite(ctx, obsolete_scale_offset, obsolete_scale, "obsolete scale")?;
         reader.skip_remaining()?;
         return Ok(ObjectAttributes {
             source: SourceRange {
@@ -1259,7 +1259,7 @@ pub(crate) fn parse_attributes(
                 attributes.plot_color = reader.array::<4>()?;
             }
             AttributeItem::PlotWeight => {
-                attributes.plot_weight = read_finite(&mut reader, "plot weight")?;
+                attributes.plot_weight = read_finite(ctx, &mut reader, "plot weight")?;
             }
             AttributeItem::Decoration => attributes.decoration = i32::from(reader.u8()?),
             AttributeItem::WireDensity => attributes.wire_density = reader.i32()?,
@@ -1315,14 +1315,14 @@ pub(crate) fn parse_attributes(
             }
             AttributeItem::HatchPatternIndex => attributes.hatch_pattern_index = reader.i32()?,
             AttributeItem::SectionHatchScale => {
-                attributes.section_hatch_scale = read_finite(&mut reader, "section hatch scale")?;
+                attributes.section_hatch_scale = read_finite(ctx, &mut reader, "section hatch scale")?;
             }
             AttributeItem::SectionHatchRotation => {
                 attributes.section_hatch_rotation =
-                    read_finite(&mut reader, "section hatch rotation")?;
+                    read_finite(ctx, &mut reader, "section hatch rotation")?;
             }
             AttributeItem::LinetypePatternScale => {
-                attributes.linetype_pattern_scale = read_finite(&mut reader, "linetype scale")?;
+                attributes.linetype_pattern_scale = read_finite(ctx, &mut reader, "linetype scale")?;
             }
             AttributeItem::HatchBackground => {
                 attributes.hatch_background = reader.array::<4>()?;
@@ -1336,7 +1336,7 @@ pub(crate) fn parse_attributes(
                     reader.bool_with_writer_version(writer_version)?;
             }
             AttributeItem::ObjectFrame => {
-                attributes.object_frame = Some(settings::xform(&mut reader)?);
+                attributes.object_frame = Some(settings::xform(ctx, &mut reader)?);
             }
             AttributeItem::SectionFillRule => attributes.section_fill_rule = reader.u8()?,
             AttributeItem::EmbeddedLinetype => {
@@ -1543,7 +1543,7 @@ fn parse_obsolete_custom_mesh_userdata(
         let mut reader = BoundedReader::new(bytes, payload_range.start, payload_range.end)?;
         let _legacy_value = reader.i32()?;
         let in_use = reader.bool_with_writer_version(descriptor.writer_version)?;
-        let mut mesh = settings::parse_mesh_parameters(bytes, &mut reader, archive, true)?;
+        let mut mesh = settings::parse_mesh_parameters(ctx, bytes, &mut reader, archive, true)?;
         reader.skip_remaining()?;
 
         // Read3dmObject converts this carrier into the modern per-object
@@ -1620,7 +1620,7 @@ fn parse_per_object_mesh_userdata(
             ));
         }
         let mut mesh_reader = BoundedReader::new(bytes, inner.body().start, inner.body().end)?;
-        let mut mesh = settings::parse_mesh_parameters(bytes, &mut mesh_reader, archive, true)?;
+        let mut mesh = settings::parse_mesh_parameters(ctx, bytes, &mut mesh_reader, archive, true)?;
         mesh_reader.skip_remaining()?;
         outer_reader.skip_remaining()?;
 

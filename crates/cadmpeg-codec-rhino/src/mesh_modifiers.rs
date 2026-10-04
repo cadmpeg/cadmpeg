@@ -521,51 +521,51 @@ fn parse_xml(
 ) -> Result<DisplacementModifier, FramingError> {
     let admitted_document =
         ctx.parse_xml(xml, "Rhino mesh modifier XML tree")
-            .map_err(|error| {
+            .or_else(|error| {
                 let cadmpeg_core::CodecError::Malformed(error) = error else {
-                    return error.into();
+                    return Err(error.into());
                 };
-                FramingError::unpositioned(format!("invalid displacement XML: {error}"))
-            })?;
+                Err(FramingError::unpositioned(ctx.format_retained(format_args!("invalid displacement XML: {error}"), "Rhino parse_xml text")?)
+            )})?;
     let document = admitted_document.document();
     let root = document.root_element();
     if !same_name(root, "xml") {
-        return Err(FramingError::unpositioned(format!(
+        return Err(FramingError::unpositioned(ctx.format_retained(format_args!(
             "displacement XML root is `{}`, expected `xml`",
             root.tag_name().name()
-        )));
+        ), "Rhino parse_xml text")?));
     }
     let displacement = direct_child(root, DISPLACEMENT_ROOT).ok_or_else(|| {
         FramingError::unpositioned(format!(
             "displacement XML has no `{DISPLACEMENT_ROOT}` child"
         ))
     })?;
-    let sweep_resolution_formula = field_i32_optional(displacement, "sweep-res-formula")?
+    let sweep_resolution_formula = field_i32_optional(ctx, displacement, "sweep-res-formula")?
         .unwrap_or_else(|| i32::from(archive.value() < 60));
     let sub_items = ctx.try_collect_retained_with(
         displacement
             .children()
             .filter(|node| node.is_element() && same_name(*node, DISPLACEMENT_SUB)),
         "Rhino displacement sub-items",
-        parse_sub_item,
+        |node| parse_sub_item(ctx, node),
     )?;
     Ok(DisplacementModifier {
         xml_version,
-        on: field_bool(displacement, "on", false)?,
+        on: field_bool(ctx, displacement, "on", false)?,
         texture: field_uuid(displacement, "texture"),
-        channel: field_i32(displacement, "channel", 0)?,
-        black_point: field_f64(displacement, "black-point", 0.0)?,
-        white_point: field_f64(displacement, "white-point", 1.0)?,
-        sweep_pitch: field_i32(displacement, "sweep-pitch", 1000)?,
-        refine_steps: field_i32(displacement, "refine-steps", 1)?,
-        refine_sensitivity: field_f64(displacement, "refine-sensitivity", 0.5)?,
-        face_count_limit_enabled: field_bool(displacement, "face-count-limit-enabled", false)?,
-        face_count_limit: field_i32(displacement, "face-count-limit", 10_000)?,
-        post_weld_angle: field_f64(displacement, "post-weld-angle", 40.0)?,
-        mesh_memory_limit: field_i32(displacement, "mesh-memory-limit", 512)?,
-        fairing_enabled: field_bool(displacement, "fairing-enabled", false)?,
-        fairing_amount: field_i32(displacement, "fairing-amount", 4)?,
-        sub_object_count: field_i32_optional(displacement, "sub-object-count")?,
+        channel: field_i32(ctx, displacement, "channel", 0)?,
+        black_point: field_f64(ctx, displacement, "black-point", 0.0)?,
+        white_point: field_f64(ctx, displacement, "white-point", 1.0)?,
+        sweep_pitch: field_i32(ctx, displacement, "sweep-pitch", 1000)?,
+        refine_steps: field_i32(ctx, displacement, "refine-steps", 1)?,
+        refine_sensitivity: field_f64(ctx, displacement, "refine-sensitivity", 0.5)?,
+        face_count_limit_enabled: field_bool(ctx, displacement, "face-count-limit-enabled", false)?,
+        face_count_limit: field_i32(ctx, displacement, "face-count-limit", 10_000)?,
+        post_weld_angle: field_f64(ctx, displacement, "post-weld-angle", 40.0)?,
+        mesh_memory_limit: field_i32(ctx, displacement, "mesh-memory-limit", 512)?,
+        fairing_enabled: field_bool(ctx, displacement, "fairing-enabled", false)?,
+        fairing_amount: field_i32(ctx, displacement, "fairing-amount", 4)?,
+        sub_object_count: field_i32_optional(ctx, displacement, "sub-object-count")?,
         sweep_resolution_formula,
         sub_items,
     })
@@ -578,19 +578,19 @@ fn parse_edge_softening_xml(
 ) -> Result<EdgeSofteningModifier, FramingError> {
     let admitted_document =
         ctx.parse_xml(xml, "Rhino mesh modifier XML tree")
-            .map_err(|error| {
+            .or_else(|error| {
                 let cadmpeg_core::CodecError::Malformed(error) = error else {
-                    return error.into();
+                    return Err(error.into());
                 };
-                FramingError::unpositioned(format!("invalid edge-softening XML: {error}"))
-            })?;
+                Err(FramingError::unpositioned(ctx.format_retained(format_args!("invalid edge-softening XML: {error}"), "Rhino parse_edge_softening_xml text")?)
+            )})?;
     let document = admitted_document.document();
     let root = document.root_element();
     if !same_name(root, "xml") {
-        return Err(FramingError::unpositioned(format!(
+        return Err(FramingError::unpositioned(ctx.format_retained(format_args!(
             "edge-softening XML root is `{}`, expected `xml`",
             root.tag_name().name()
-        )));
+        ), "Rhino parse_edge_softening_xml text")?));
     }
     let edge_softening = direct_child(root, EDGE_SOFTENING_ROOT).ok_or_else(|| {
         FramingError::unpositioned(format!(
@@ -599,14 +599,14 @@ fn parse_edge_softening_xml(
     })?;
     Ok(EdgeSofteningModifier {
         xml_version,
-        on: field_bool(edge_softening, "on", false)?,
-        softening: field_f64(edge_softening, "softening", 0.1)?,
+        on: field_bool(ctx, edge_softening, "on", false)?,
+        softening: field_f64(ctx, edge_softening, "softening", 0.1)?,
         options: EdgeSofteningOptions {
-            chamfer: field_bool(edge_softening, "chamfer", false)?,
-            faceted: field_bool(edge_softening, "unweld", false)?,
-            force_softening: field_bool(edge_softening, "force-softening", false)?,
+            chamfer: field_bool(ctx, edge_softening, "chamfer", false)?,
+            faceted: field_bool(ctx, edge_softening, "unweld", false)?,
+            force_softening: field_bool(ctx, edge_softening, "force-softening", false)?,
         },
-        edge_angle_threshold: field_f64(edge_softening, "edge-threshold", 5.0)?,
+        edge_angle_threshold: field_f64(ctx, edge_softening, "edge-threshold", 5.0)?,
     })
 }
 
@@ -617,32 +617,32 @@ fn parse_thickening_xml(
 ) -> Result<ThickeningModifier, FramingError> {
     let admitted_document =
         ctx.parse_xml(xml, "Rhino mesh modifier XML tree")
-            .map_err(|error| {
+            .or_else(|error| {
                 let cadmpeg_core::CodecError::Malformed(error) = error else {
-                    return error.into();
+                    return Err(error.into());
                 };
-                FramingError::unpositioned(format!("invalid thickening XML: {error}"))
-            })?;
+                Err(FramingError::unpositioned(ctx.format_retained(format_args!("invalid thickening XML: {error}"), "Rhino parse_thickening_xml text")?)
+            )})?;
     let document = admitted_document.document();
     let root = document.root_element();
     if !same_name(root, "xml") {
-        return Err(FramingError::unpositioned(format!(
+        return Err(FramingError::unpositioned(ctx.format_retained(format_args!(
             "thickening XML root is `{}`, expected `xml`",
             root.tag_name().name()
-        )));
+        ), "Rhino parse_thickening_xml text")?));
     }
     let thickening = direct_child(root, THICKENING_ROOT).ok_or_else(|| {
         FramingError::unpositioned(format!("thickening XML has no `{THICKENING_ROOT}` child"))
     })?;
     Ok(ThickeningModifier {
         xml_version,
-        on: field_bool(thickening, "on", false)?,
+        on: field_bool(ctx, thickening, "on", false)?,
         options: ThickeningOptions {
-            solid: field_bool(thickening, "solid", true)?,
-            both_sides: field_bool(thickening, "both-sides", false)?,
-            offset_only: field_bool(thickening, "offset-only", false)?,
+            solid: field_bool(ctx, thickening, "solid", true)?,
+            both_sides: field_bool(ctx, thickening, "both-sides", false)?,
+            offset_only: field_bool(ctx, thickening, "offset-only", false)?,
         },
-        distance: field_f64(thickening, "distance", 0.1)?,
+        distance: field_f64(ctx, thickening, "distance", 0.1)?,
     })
 }
 
@@ -653,19 +653,19 @@ fn parse_curve_piping_xml(
 ) -> Result<CurvePipingModifier, FramingError> {
     let admitted_document =
         ctx.parse_xml(xml, "Rhino mesh modifier XML tree")
-            .map_err(|error| {
+            .or_else(|error| {
                 let cadmpeg_core::CodecError::Malformed(error) = error else {
-                    return error.into();
+                    return Err(error.into());
                 };
-                FramingError::unpositioned(format!("invalid curve-piping XML: {error}"))
-            })?;
+                Err(FramingError::unpositioned(ctx.format_retained(format_args!("invalid curve-piping XML: {error}"), "Rhino parse_curve_piping_xml text")?)
+            )})?;
     let document = admitted_document.document();
     let root = document.root_element();
     if !same_name(root, "xml") {
-        return Err(FramingError::unpositioned(format!(
+        return Err(FramingError::unpositioned(ctx.format_retained(format_args!(
             "curve-piping XML root is `{}`, expected `xml`",
             root.tag_name().name()
-        )));
+        ), "Rhino parse_curve_piping_xml text")?));
     }
     let curve_piping = direct_child(root, CURVE_PIPING_ROOT).ok_or_else(|| {
         FramingError::unpositioned(format!(
@@ -674,11 +674,11 @@ fn parse_curve_piping_xml(
     })?;
     Ok(CurvePipingModifier {
         xml_version,
-        on: field_bool(curve_piping, "on", false)?,
-        radius: field_f64(curve_piping, "radius", 1.0)?,
-        segments: field_i32(curve_piping, "segments", 16)?,
-        faceted: !field_bool(curve_piping, "weld", true)?,
-        accuracy: field_i32(curve_piping, "accuracy", 50)?,
+        on: field_bool(ctx, curve_piping, "on", false)?,
+        radius: field_f64(ctx, curve_piping, "radius", 1.0)?,
+        segments: field_i32(ctx, curve_piping, "segments", 16)?,
+        faceted: !field_bool(ctx, curve_piping, "weld", true)?,
+        accuracy: field_i32(ctx, curve_piping, "accuracy", 50)?,
         cap_type: field_cap_type(curve_piping, "cap-type"),
     })
 }
@@ -690,19 +690,19 @@ fn parse_shut_lining_xml(
 ) -> Result<ShutLiningModifier, FramingError> {
     let admitted_document =
         ctx.parse_xml(xml, "Rhino mesh modifier XML tree")
-            .map_err(|error| {
+            .or_else(|error| {
                 let cadmpeg_core::CodecError::Malformed(error) = error else {
-                    return error.into();
+                    return Err(error.into());
                 };
-                FramingError::unpositioned(format!("invalid shut-lining XML: {error}"))
-            })?;
+                Err(FramingError::unpositioned(ctx.format_retained(format_args!("invalid shut-lining XML: {error}"), "Rhino parse_shut_lining_xml text")?)
+            )})?;
     let document = admitted_document.document();
     let root = document.root_element();
     if !same_name(root, "xml") {
-        return Err(FramingError::unpositioned(format!(
+        return Err(FramingError::unpositioned(ctx.format_retained(format_args!(
             "shut-lining XML root is `{}`, expected `xml`",
             root.tag_name().name()
-        )));
+        ), "Rhino parse_shut_lining_xml text")?));
     }
     let shut_lining = direct_child(root, SHUT_LINING_ROOT).ok_or_else(|| {
         FramingError::unpositioned(format!("shut-lining XML has no `{SHUT_LINING_ROOT}` child"))
@@ -710,39 +710,39 @@ fn parse_shut_lining_xml(
     let curves = shut_lining
         .children()
         .filter(|node| node.is_element() && same_name(*node, "curve"))
-        .map(parse_shut_lining_curve)
+        .map(|node| parse_shut_lining_curve(ctx, node))
         .collect::<Result<_, _>>()?;
     Ok(ShutLiningModifier {
         xml_version,
-        on: field_bool(shut_lining, "on", false)?,
+        on: field_bool(ctx, shut_lining, "on", false)?,
         options: ShutLiningOptions {
-            faceted: field_bool(shut_lining, "faceted", false)?,
-            auto_update: field_bool(shut_lining, "auto-update", false)?,
-            force_update: field_bool(shut_lining, "force-update", false)?,
+            faceted: field_bool(ctx, shut_lining, "faceted", false)?,
+            auto_update: field_bool(ctx, shut_lining, "auto-update", false)?,
+            force_update: field_bool(ctx, shut_lining, "force-update", false)?,
         },
         curves,
     })
 }
 
-fn parse_shut_lining_curve(node: roxmltree::Node<'_, '_>) -> Result<ShutLiningCurve, FramingError> {
+fn parse_shut_lining_curve(ctx: &cadmpeg_core::decode::DecodeContext<'_>, node: roxmltree::Node<'_, '_>) -> Result<ShutLiningCurve, FramingError> {
     Ok(ShutLiningCurve {
         uuid: field_uuid_untyped(node, "uuid"),
         radius: field_f64_untyped(node, "radius", FiniteReal::ONE),
-        profile: field_i32_untyped(node, "profile", 0)?,
+        profile: field_i32_untyped(ctx, node, "profile", 0)?,
         enabled: field_bool_untyped(node, "enabled", false),
         pull: field_bool_untyped(node, "pull", false),
         is_bump: field_bool_untyped(node, "is-bump", false),
     })
 }
 
-fn parse_sub_item(node: roxmltree::Node<'_, '_>) -> Result<DisplacementSubItem, FramingError> {
+fn parse_sub_item(ctx: &cadmpeg_core::decode::DecodeContext<'_>, node: roxmltree::Node<'_, '_>) -> Result<DisplacementSubItem, FramingError> {
     Ok(DisplacementSubItem {
-        face_index: field_i32(node, "sub-index", -1)?,
-        on: field_bool(node, "sub-on", false)?,
+        face_index: field_i32(ctx, node, "sub-index", -1)?,
+        on: field_bool(ctx, node, "sub-on", false)?,
         texture: field_uuid(node, "sub-texture"),
-        channel: field_i32(node, "sub-channel", 0)?,
-        black_point: field_f64(node, "sub-black-point", 0.0)?,
-        white_point: field_f64(node, "sub-white-point", 1.0)?,
+        channel: field_i32(ctx, node, "sub-channel", 0)?,
+        black_point: field_f64(ctx, node, "sub-black-point", 0.0)?,
+        white_point: field_f64(ctx, node, "sub-white-point", 1.0)?,
     })
 }
 
@@ -770,9 +770,9 @@ fn attribute<'a>(node: roxmltree::Node<'a, '_>, name: &str) -> Option<&'a str> {
         .map(|attribute| attribute.value())
 }
 
-fn malformed_typed_field(name: &str, kind: &str) -> FramingError {
-    FramingError::unpositioned(format!("XML field `{name}` has invalid {kind} value"))
-}
+fn malformed_typed_field(ctx: &cadmpeg_core::decode::DecodeContext<'_>, name: &str, kind: &str) -> Result<FramingError, cadmpeg_core::CodecError> { Ok(
+    FramingError::unpositioned(ctx.format_retained(format_args!("XML field `{name}` has invalid {kind} value"), "Rhino malformed_typed_field text")?)
+) }
 
 fn parse_bool_text(text: &str) -> Option<bool> {
     if text.eq_ignore_ascii_case("true") || text.eq_ignore_ascii_case("t") || text == "1" {
@@ -784,7 +784,7 @@ fn parse_bool_text(text: &str) -> Option<bool> {
     }
 }
 
-fn field_bool(
+fn field_bool(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     parent: roxmltree::Node<'_, '_>,
     name: &str,
     default: bool,
@@ -809,18 +809,18 @@ fn field_bool(
     } else {
         None
     };
-    value.ok_or_else(|| malformed_typed_field(name, kind))
+    value.map_or_else(|| Err(malformed_typed_field(ctx, name, kind)?), Ok)
 }
 
-fn field_i32(
+fn field_i32(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     parent: roxmltree::Node<'_, '_>,
     name: &str,
     default: i32,
 ) -> Result<i32, FramingError> {
-    Ok(field_i32_optional(parent, name)?.unwrap_or(default))
+    Ok(field_i32_optional(ctx, parent, name)?.unwrap_or(default))
 }
 
-fn field_i32_optional(
+fn field_i32_optional(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     parent: roxmltree::Node<'_, '_>,
     name: &str,
 ) -> Result<Option<i32>, FramingError> {
@@ -863,16 +863,16 @@ fn field_i32_optional(
     };
     value
         .map(Some)
-        .ok_or_else(|| malformed_typed_field(name, kind))
+        .map_or_else(|| Err(malformed_typed_field(ctx, name, kind)?), Ok)
 }
 
-fn field_f64(
+fn field_f64(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     parent: roxmltree::Node<'_, '_>,
     name: &str,
     default: f64,
 ) -> Result<FiniteReal, FramingError> {
     let Some(node) = typed_child(parent, name) else {
-        return FiniteReal::new(default).ok_or_else(|| malformed_typed_field(name, "default"));
+        return FiniteReal::new(default).map_or_else(|| Err(malformed_typed_field(ctx, name, "default")?), Ok);
     };
     let text = node.text().unwrap_or_default().trim();
     let kind = attribute(node, "type").unwrap_or_default();
@@ -889,7 +889,7 @@ fn field_f64(
     };
     value
         .and_then(FiniteReal::new)
-        .ok_or_else(|| malformed_typed_field(name, kind))
+        .map_or_else(|| Err(malformed_typed_field(ctx, name, kind)?), Ok)
 }
 
 fn field_uuid(parent: roxmltree::Node<'_, '_>, name: &str) -> Option<Uuid> {
@@ -916,7 +916,7 @@ fn field_bool_untyped(parent: roxmltree::Node<'_, '_>, name: &str, default: bool
         || text.parse::<i32>().is_ok_and(|value| value != 0)
 }
 
-fn field_i32_untyped(
+fn field_i32_untyped(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     parent: roxmltree::Node<'_, '_>,
     name: &str,
     default: i32,
@@ -930,7 +930,7 @@ fn field_i32_untyped(
     } else {
         match text.parse::<f64>() {
             Ok(value) => cadmpeg_core::convert::truncate_f64_to_i32(value)
-                .ok_or_else(|| FramingError::unpositioned(format!("{name} is outside i32 range"))),
+                .map_or_else(|| Err(FramingError::unpositioned(ctx.format_retained(format_args!("{name} is outside i32 range"), "Rhino field_i32_untyped text")?)), Ok),
             Err(_) => Ok(0),
         }
     }

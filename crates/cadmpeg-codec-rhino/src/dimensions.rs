@@ -258,7 +258,7 @@ fn text_content(
 ) -> Result<TextContent, FramingError> {
     let (mut text, next, _version) = anonymous(data, reader.position(), reader.end(), archive)?;
     let rich_text = utf16_retained(ctx, &mut text, "Rhino dimension rich text")?;
-    plane(&mut text)?;
+    plane(ctx, &mut text)?;
     let rectangle_width = text.f64()?;
     let rotation_radians = text.f64()?;
     let (Some(rectangle_width), Some(rotation_radians)) = (
@@ -301,7 +301,7 @@ pub(crate) fn annotation(
         anonymous(data, reader.position(), reader.end(), archive)?;
     let text = text_content(ctx, data, &mut annotation, archive)?;
     let dimstyle_id = uuid(&mut annotation)?;
-    let plane = plane(&mut annotation)?;
+    let plane = plane(ctx, &mut annotation)?;
     let annotation_type = if version >= 1 { annotation.i32()? } else { 0 };
     let mut override_present = false;
     if version >= 2 {
@@ -424,7 +424,7 @@ fn legacy_annotation_fields(
     let kind = annotation.i32()?;
     let text_display_mode = annotation.i32()?;
     let plane_offset = annotation.position();
-    let plane = scale_plane(plane(annotation)?, scale, plane_offset)?;
+    let plane = scale_plane(plane(ctx, annotation)?, scale, plane_offset)?;
     let point_count_offset = annotation.position();
     let point_count = annotation.i32()?;
     let point_count = usize::try_from(point_count)
@@ -596,7 +596,7 @@ pub(crate) fn v2_annotation_direct(
     }
     let kind = reader.i32()?;
     let plane_offset = reader.position();
-    let raw_plane = plane(reader)?;
+    let raw_plane = plane(ctx, reader)?;
     if raw_plane
         .origin
         .iter()
@@ -1772,12 +1772,12 @@ pub(crate) fn project(
     let key = cadmpeg_ir::ids::IdentityKey::try_new(
         ctx.copy_retained_text(key, "Rhino dimension identity key")?,
     )
-    .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
+    .or_else(|error| Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(format_args!("{}", error), "Rhino project text")?)))?;
     let annotation_id = SemanticAnnotationId::try_from(ctx.format_retained(
         format_args!("rhino:dimension:annotation#{}", key.as_str()),
         "Rhino dimension annotation identity",
     )?)
-    .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
+    .or_else(|error| Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(format_args!("{}", error), "Rhino project text")?)))?;
     let mut text = Vec::new();
     if !dimension.user_text.is_empty() {
         ctx.reserve_vec(&mut text, 1, "Rhino dimension annotation text")?;
@@ -1856,6 +1856,9 @@ pub(crate) mod tests {
 
     #[test]
     fn shifted_plane_keeps_computed_overflow_outside_source_admission() {
+        let arena = cadmpeg_core::decode::DecodeArena::default();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let bytes = plane_bytes(
             [f64::MAX, 0.0, 0.0],
             [1.0, 0.0, 0.0],
@@ -1863,7 +1866,7 @@ pub(crate) mod tests {
             [0.0, 0.0, 1.0, 0.0],
         );
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("plane reader");
-        let plane = crate::settings::plane(&mut reader).expect("finite source plane");
+        let plane = crate::settings::plane(&ctx, &mut reader).expect("finite source plane");
         let shifted = super::shifted_plane(plane, [f64::MAX, 0.0]);
         assert!(matches!(
             shifted.origin,

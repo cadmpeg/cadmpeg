@@ -144,30 +144,30 @@ pub(crate) fn decode(
     let profile_start = reader.position();
     let profile = decode_embedded_curve_2d(expand.ctx(), data, &mut reader, scale, archive, 1)?;
     let profile_range = profile_start..reader.position();
-    let path_from = crate::wire::scaled_point(point(&mut reader)?.0.get(), scale)
+    let path_from = crate::wire::scaled_point(point(expand.ctx(), &mut reader)?.0.get(), scale)
         .ok_or_else(|| error(reader.position(), "scaled extrusion path is invalid"))?
         .get();
-    let path_to = crate::wire::scaled_point(point(&mut reader)?.0.get(), scale)
+    let path_to = crate::wire::scaled_point(point(expand.ctx(), &mut reader)?.0.get(), scale)
         .ok_or_else(|| error(reader.position(), "scaled extrusion path is invalid"))?
         .get();
-    let trim = increasing_interval(interval(&mut reader)?.0, reader.position(), "path trim")?;
+    let trim = increasing_interval(expand.ctx(), interval(expand.ctx(), &mut reader)?.0, reader.position(), "path trim")?;
     if trim[0] < 0.0 || trim[1] > 1.0 {
         return Err(error(
             reader.position(),
             "extrusion path trim is outside the line interval",
         ));
     }
-    let up = crate::wire::vector(vector(&mut reader)?.0.get());
+    let up = crate::wire::vector(vector(expand.ctx(), &mut reader)?.0.get());
     let miter_present = [
         reader.bool_with_writer_version(writer_version)?,
         reader.bool_with_writer_version(writer_version)?,
     ];
     let miter_normals = [
-        crate::wire::vector(vector(&mut reader)?.0.get()),
-        crate::wire::vector(vector(&mut reader)?.0.get()),
+        crate::wire::vector(vector(expand.ctx(), &mut reader)?.0.get()),
+        crate::wire::vector(vector(expand.ctx(), &mut reader)?.0.get()),
     ];
     let path_domain =
-        increasing_interval(interval(&mut reader)?.0, reader.position(), "path domain")?;
+        increasing_interval(expand.ctx(), interval(expand.ctx(), &mut reader)?.0, reader.position(), "path domain")?;
     let transposed = reader.bool_with_writer_version(writer_version)?;
     let profile_count = if minor >= 1 { reader.i32()? } else { 1 };
     if profile_count <= 0 {
@@ -270,7 +270,7 @@ pub(crate) fn decode(
         ));
     }
     let tangent = path_delta.scale(1.0 / path_length);
-    require_unit(up, version_offset, "extrusion up vector")?;
+    require_unit(expand.ctx(), up, version_offset, "extrusion up vector")?;
     if up.dot(tangent).abs() > UNIT_TOLERANCE {
         return Err(error(
             version_offset,
@@ -289,7 +289,7 @@ pub(crate) fn decode(
             .map_err(|_| GeometryError::unpositioned("geometry count exceeds address space"))?,
         version_offset,
     )?;
-    let xaxis = normalize(
+    let xaxis = normalize(expand.ctx(), 
         up.cross(tangent),
         version_offset,
         "extrusion profile X axis",
@@ -341,8 +341,8 @@ pub(crate) fn decode(
             )),
             source.into_warnings(),
         );
-        let start_frame = cap_frame(xaxis.into(), up, tangent, active_miters[0], version_offset)?;
-        let end_frame = cap_frame(xaxis.into(), up, tangent, active_miters[1], version_offset)?;
+        let start_frame = cap_frame(expand.ctx(), xaxis.into(), up, tangent, active_miters[0], version_offset)?;
+        let end_frame = cap_frame(expand.ctx(), xaxis.into(), up, tangent, active_miters[1], version_offset)?;
         let start_pcurve = cap_pcurve(
             expand.ctx(),
             &start_nurbs,
@@ -399,8 +399,8 @@ pub(crate) fn decode(
         ));
     }
     let cap_frames = [
-        cap_frame(xaxis.into(), up, tangent, active_miters[0], version_offset)?,
-        cap_frame(xaxis.into(), up, tangent, active_miters[1], version_offset)?,
+        cap_frame(expand.ctx(), xaxis.into(), up, tangent, active_miters[0], version_offset)?,
+        cap_frame(expand.ctx(), xaxis.into(), up, tangent, active_miters[1], version_offset)?,
     ];
     Ok(DecodedExtrusion {
         boundaries,
@@ -649,7 +649,7 @@ fn transform_nurbs(
     let mut curve = curve.try_clone_for_decode(ctx, "Rhino extrusion transformed NURBS")?;
     curve.try_map_control_points(
         |_, point| {
-            let transformed = transform_local(
+            let transformed = transform_local(ctx, 
                 point.get(),
                 frame.origin,
                 frame.xaxis,
@@ -667,7 +667,7 @@ fn transform_nurbs(
     Ok(curve)
 }
 
-fn transform_local(
+fn transform_local(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     point: Point3,
     origin: Point3,
     xaxis: Vector3,
@@ -682,27 +682,27 @@ fn transform_local(
             "extrusion profile pole is outside the XY plane",
         ));
     }
-    let local = mitered_local(Vector3::new(point.x, point.y, 0.0), miter, offset)?;
+    let local = mitered_local(ctx, Vector3::new(point.x, point.y, 0.0), miter, offset)?;
     Ok(origin.translated(
         xaxis.scale(local.x) + yaxis.scale(local.y) + zaxis.scale(local.z),
         1.0,
     ))
 }
 
-fn cap_frame(
+fn cap_frame(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     xaxis: Vector3,
     yaxis: Vector3,
     zaxis: Vector3,
     miter: Option<UnitVector3>,
     offset: usize,
 ) -> Result<(UnitVector3, UnitVector3, UnitVector3), GeometryError> {
-    let local_x = mitered_local(Vector3::new(1.0, 0.0, 0.0), miter, offset)?;
-    let local_y = mitered_local(Vector3::new(0.0, 1.0, 0.0), miter, offset)?;
+    let local_x = mitered_local(ctx, Vector3::new(1.0, 0.0, 0.0), miter, offset)?;
+    let local_y = mitered_local(ctx, Vector3::new(0.0, 1.0, 0.0), miter, offset)?;
     let world_x = local_to_world_vector(local_x, xaxis, yaxis, zaxis);
     let world_y = local_to_world_vector(local_y, xaxis, yaxis, zaxis);
-    let u = normalize(world_x, offset, "extrusion cap U axis")?;
-    let normal = normalize(world_x.cross(world_y), offset, "extrusion cap normal")?;
-    let v = normalize(
+    let u = normalize(ctx, world_x, offset, "extrusion cap U axis")?;
+    let normal = normalize(ctx, world_x.cross(world_y), offset, "extrusion cap normal")?;
+    let v = normalize(ctx, 
         Vector3::from(normal).cross(u.into()),
         offset,
         "extrusion cap V axis",
@@ -761,7 +761,7 @@ fn cap_pcurve(
     })
 }
 
-fn mitered_local(
+fn mitered_local(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     point: Vector3,
     normal: Option<UnitVector3>,
     offset: usize,
@@ -773,7 +773,7 @@ fn mitered_local(
     if normal.x == 0.0 && normal.y == 0.0 {
         return Ok(point);
     }
-    let axis: Vector3 = normalize(
+    let axis: Vector3 = normalize(ctx, 
         Vector3::new(-normal.y, normal.x, 0.0),
         offset,
         "extrusion miter rotation axis",
@@ -805,9 +805,9 @@ fn read_mesh_cache(
         writer_version,
         scale,
     } = format;
-    let cache = anonymous_chunk(data, reader, archive, "extrusion mesh cache")?;
+    let cache = anonymous_chunk(expand.ctx(), data, reader, archive, "extrusion mesh cache")?;
     let mut cache_reader = BoundedReader::new(data, cache.body().start, cache.body().end)?;
-    require_anonymous_version(&mut cache_reader, 1, 0, "extrusion mesh cache")?;
+    require_anonymous_version(expand.ctx(), &mut cache_reader, 1, 0, "extrusion mesh cache")?;
     let mut meshes = Vec::new();
     let mut cache_children = Vec::new();
     let mut index = 0_usize;
@@ -822,7 +822,7 @@ fn read_mesh_cache(
                 ))
             }
         }
-        let item = anonymous_chunk(data, &mut cache_reader, archive, "mesh-cache item")?;
+        let item = anonymous_chunk(expand.ctx(), data, &mut cache_reader, archive, "mesh-cache item")?;
         expand.ctx().reserve_vec(
             &mut cache_children,
             1,
@@ -830,7 +830,7 @@ fn read_mesh_cache(
         )?;
         cache_children.push(item.range());
         let mut item_reader = BoundedReader::new(data, item.body().start, item.body().end)?;
-        require_anonymous_version(&mut item_reader, 1, 0, "mesh-cache item")?;
+        require_anonymous_version(expand.ctx(), &mut item_reader, 1, 0, "mesh-cache item")?;
         item_reader.skip(16)?;
         let wrapper_start = item_reader.position();
         let wrapper = chunk_at(data, wrapper_start, item_reader.end(), archive, false)?;
@@ -965,7 +965,7 @@ fn read_v5_mesh_cache(
     Ok(meshes)
 }
 
-fn anonymous_chunk(
+fn anonymous_chunk(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -975,7 +975,7 @@ fn anonymous_chunk(
     if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(error(
             chunk.header_start,
-            format!("expected anonymous {name} chunk"),
+            ctx.format_retained(format_args!("expected anonymous {name} chunk"), "Rhino anonymous_chunk text")?,
         ));
     }
     Ok(chunk)
@@ -1041,7 +1041,7 @@ fn finish_payload(
     Ok(())
 }
 
-fn require_anonymous_version(
+fn require_anonymous_version(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     reader: &mut BoundedReader<'_>,
     major: i32,
     minor: i32,
@@ -1053,13 +1053,13 @@ fn require_anonymous_version(
     if actual_major != major || actual_minor < minor {
         return Err(GeometryError::unsupported(
             offset,
-            format!("unsupported {name} version"),
+            ctx.format_retained(format_args!("unsupported {name} version"), "Rhino require_anonymous_version text")?,
         ));
     }
     Ok(())
 }
 
-fn increasing_interval(
+fn increasing_interval(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     value: FiniteVector<2>,
     offset: usize,
     name: &str,
@@ -1067,16 +1067,16 @@ fn increasing_interval(
     if value[0] < value[1] {
         Ok(value)
     } else {
-        Err(error(offset, format!("extrusion {name} is invalid")))
+        Err(error(offset, ctx.format_retained(format_args!("extrusion {name} is invalid"), "Rhino increasing_interval text")?))
     }
 }
 
-fn require_unit(value: Vector3, offset: usize, name: &str) -> Result<(), GeometryError> {
+fn require_unit(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: Vector3, offset: usize, name: &str) -> Result<(), GeometryError> {
     let length = value.norm();
     if (length - 1.0).abs() <= UNIT_TOLERANCE {
         Ok(())
     } else {
-        Err(error(offset, format!("{name} is not unit")))
+        Err(error(offset, ctx.format_retained(format_args!("{name} is not unit"), "Rhino require_unit text")?))
     }
 }
 
@@ -1088,10 +1088,10 @@ fn active_miter(present: bool, value: Vector3) -> Option<UnitVector3> {
     (Vector3::from(unit).z > MITER_Z_MINIMUM).then_some(unit)
 }
 
-fn normalize(value: Vector3, offset: usize, name: &str) -> Result<UnitVector3, GeometryError> {
+fn normalize(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: Vector3, offset: usize, name: &str) -> Result<UnitVector3, GeometryError> {
     FiniteVector3::new(value)
         .and_then(UnitVector3::normalized_nonzero)
-        .ok_or_else(|| error(offset, format!("{name} is invalid")))
+        .map_or_else(|| Err(error(offset, ctx.format_retained(format_args!("{name} is invalid"), "Rhino normalize text")?)), Ok)
 }
 
 fn local_to_world_vector(
@@ -1871,8 +1871,11 @@ pub(crate) mod tests {
 
     #[test]
     fn extrusion_cap_points_refuse_collection_limit() {
+        let arena = cadmpeg_core::decode::DecodeArena::default();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let curve = polygon_nurbs();
-        let frame = cap_frame(
+        let frame = cap_frame(&ctx, 
             Vector3::new(1.0, 0.0, 0.0),
             Vector3::new(0.0, 1.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -1894,8 +1897,11 @@ pub(crate) mod tests {
 
     #[test]
     fn extrusion_cap_knots_refuse_collection_limit() {
+        let arena = cadmpeg_core::decode::DecodeArena::default();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let curve = polygon_nurbs();
-        let frame = cap_frame(
+        let frame = cap_frame(&ctx, 
             Vector3::new(1.0, 0.0, 0.0),
             Vector3::new(0.0, 1.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -1918,6 +1924,9 @@ pub(crate) mod tests {
 
     #[test]
     fn extrusion_cap_weights_refuse_collection_limit() {
+        let arena = cadmpeg_core::decode::DecodeArena::default();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let curve = NurbsCurve::from_lanes(
             &cadmpeg_test_support::service_decode_context(),
             1,
@@ -1928,7 +1937,7 @@ pub(crate) mod tests {
         )
         .expect("fixture constructor admission")
         .expect("valid rational cap profile");
-        let frame = cap_frame(
+        let frame = cap_frame(&ctx, 
             Vector3::new(1.0, 0.0, 0.0),
             Vector3::new(0.0, 1.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -2022,19 +2031,22 @@ pub(crate) mod tests {
 
     #[test]
     fn active_miter_unitizes_and_applies_only_above_the_z_threshold() {
+        let arena = cadmpeg_core::decode::DecodeArena::default();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         assert_eq!(
             active_miter(true, Vector3::new(0.0, 1.2, 1.6)).map(Vector3::from),
             Some(Vector3::new(0.0, 0.6, 0.8))
         );
         assert_eq!(active_miter(true, Vector3::new(1.0, 0.0, 0.01)), None);
         assert_eq!(active_miter(true, Vector3::new(0.0, 0.0, 0.0)), None);
-        assert!(mitered_local(
+        assert!(mitered_local(&ctx, 
             Vector3::new(1.0, 0.0, 0.0),
             active_miter(true, Vector3::new(0.0, 1.2, 1.6)),
             0
         )
         .is_ok());
-        let plain = cap_frame(
+        let plain = cap_frame(&ctx, 
             Vector3::new(1.0, 0.0, 0.0),
             Vector3::new(0.0, 1.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -2042,7 +2054,7 @@ pub(crate) mod tests {
             0,
         )
         .expect("required invariant");
-        let mitered = cap_frame(
+        let mitered = cap_frame(&ctx, 
             Vector3::new(1.0, 0.0, 0.0),
             Vector3::new(0.0, 1.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -2415,8 +2427,11 @@ pub(crate) mod tests {
     const SMALL_MITER_TILT: f64 = 1.0e-8;
     #[test]
     fn numerical_seventh_miter_preserves_a_shallow_plane_tilt() {
+        let arena = cadmpeg_core::decode::DecodeArena::default();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let normal = super::active_miter(true, Vector3::new(SMALL_MITER_TILT, 0.0, 1.0)).unwrap();
-        let point = super::mitered_local(Vector3::new(1.0e8, 0.0, 0.0), Some(normal), 0).unwrap();
+        let point = super::mitered_local(&ctx, Vector3::new(1.0e8, 0.0, 0.0), Some(normal), 0).unwrap();
         assert!((point.z + 1.0).abs() <= 8.0 * f64::EPSILON);
         assert!(Vector3::from(normal).dot(point).abs() <= 8.0 * f64::EPSILON);
     }

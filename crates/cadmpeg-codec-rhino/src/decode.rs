@@ -940,12 +940,12 @@ impl<'a> DecodeContext<'a> {
                         writer_version: self.scan.metadata.properties.writer_version,
                         association: Some(self.source_association(identity)?),
                         id: crate::mesh::MeshId::Ready(
-                            cadmpeg_ir::tessellation::TessellationId::mint(format!(
+                            cadmpeg_ir::tessellation::TessellationId::mint(self.expand.ctx().format_retained(format_args!(
                                 "rhino:object:tessellation#{key}"
-                            ))
-                            .map_err(|error| {
-                                cadmpeg_core::CodecError::Malformed(error.to_string())
-                            })?,
+                            ), "Rhino decode_geometry text")?)
+                            .or_else(|error| {
+                                Err(cadmpeg_core::CodecError::Malformed(self.expand.ctx().format_retained(format_args!("{}", error), "Rhino decode_geometry text")?)
+                            )})?,
                         ),
                         scale,
                         userdata: &object.userdata,
@@ -1295,13 +1295,13 @@ impl<'a> DecodeContext<'a> {
                 ),
             )?;
         }
-        if let Err(errors) = crate::hatch::apply_userdata(
+        if let Err(errors) = crate::hatch::apply_userdata(&ctx, 
             self.scan.data,
             &object.userdata,
             scale,
             self.archive(),
             &mut hatch,
-        ) {
+        )? {
             let class = self.scan.objects[source_order]
                 .class_uuid()
                 .unwrap_or_else(crate::wire::Uuid::nil);
@@ -1326,10 +1326,12 @@ impl<'a> DecodeContext<'a> {
                 ))
             })
         }?;
+        let (record, _record_storage) = ctx.format_scoped(format_args!("rhino hatch record #{key}"), "Rhino hatch record label")?;
         let transform =
-            match hatch_plane_transform(&hatch.plane, scale, &format!("rhino hatch record #{key}"))
+            match hatch_plane_transform(ctx, &hatch.plane, scale, &record)
             {
                 Ok(transform) => transform,
+                Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
                     self.scan_warning(
                         source_order,
@@ -1555,7 +1557,7 @@ impl<'a> DecodeContext<'a> {
                     parameters,
                 }),
             ),
-            native_ref: Some(Self::mint_unknown_id(source_order).to_string()),
+            native_ref: Some(ctx.format_retained(format_args!("{}", Self::mint_unknown_id(source_order)), "Rhino decode_polyedge text")?),
         };
         match self
             .validate_candidate(|candidate, _annotations| candidate.model.features.push(feature))
@@ -1616,7 +1618,7 @@ impl<'a> DecodeContext<'a> {
             return Ok(());
         };
         let association = self.source_association(identity)?;
-        let curve_id = format!("rhino:object:curve#{key}.detail-boundary");
+        let curve_id = ctx.format_retained(format_args!("rhino:object:curve#{key}.detail-boundary"), "Rhino decode_detail text")?;
         let feature_id = {
             let mut copied_storage = ctx.reserve_scoped(0, "Rhino temporary identity key")?;
             copied_storage.with_storage(|| {
@@ -1694,7 +1696,7 @@ impl<'a> DecodeContext<'a> {
         });
         match result {
             Ok(()) => {
-                self.append_links(source_order, &[curve_id, feature_id.to_string()])?;
+                self.append_links(source_order, &[curve_id, ctx.format_retained(format_args!("{}", feature_id), "Rhino decode_detail text")?])?;
                 self.geometry_transferred = true;
                 self.mark_native_retained(source_order, RhinoLossCode::DetailViewNotTransferred);
             }
@@ -1910,7 +1912,7 @@ impl<'a> DecodeContext<'a> {
                 return Ok(());
             }
         };
-        let feature_id = feature.id.to_string();
+        let feature_id = self.expand.ctx().format_retained(format_args!("{}", feature.id), "Rhino decode_morph text")?;
         match self
             .validate_candidate(|candidate, _annotations| candidate.model.features.push(feature))
         {
@@ -1977,11 +1979,11 @@ impl<'a> DecodeContext<'a> {
             return Ok(());
         };
         let association = self.source_association(identity)?;
-        let parameter_id = format!("rhino:object:curve#{key}.curve-on-surface-c2");
+        let parameter_id = ctx.format_retained(format_args!("rhino:object:curve#{key}.curve-on-surface-c2"), "Rhino decode_curve_on_surface text")?;
         let model_id = construction
             .model_curve
             .as_ref()
-            .map(|_| format!("rhino:object:curve#{key}.curve-on-surface-c3"));
+            .map(|_| ctx.format_retained(format_args!("rhino:object:curve#{key}.curve-on-surface-c3"), "Rhino decode_curve_on_surface text")).transpose()?;
         let surface_id = {
             let mut copied_storage = ctx.reserve_scoped(0, "Rhino temporary identity key")?;
             copied_storage.with_storage(|| {
@@ -2107,7 +2109,7 @@ impl<'a> DecodeContext<'a> {
                 for warning in construction.warnings {
                     self.scan_diagnostic(source_order, &warning)?;
                 }
-                let mut links = vec![parameter_id, surface_id.to_string(), feature_id.to_string()];
+                let mut links = vec![parameter_id, ctx.format_retained(format_args!("{}", surface_id), "Rhino decode_curve_on_surface text")?, ctx.format_retained(format_args!("{}", feature_id), "Rhino decode_curve_on_surface text")?];
                 if let Some(model_id) = model_id {
                     links.push(model_id);
                 }
@@ -2361,49 +2363,49 @@ impl<'a> DecodeContext<'a> {
             .ok_or_else(|| "reference identity is unavailable".to_string())?;
         let identity = &object.identity;
         let reference =
-            crate::instances::parse_reference(self.scan.data, object.class_data_range.clone())
-                .map_err(|error| error.to_string())?;
+            crate::instances::parse_reference(self.expand.ctx(), self.scan.data, object.class_data_range.clone())
+                .or_else(|error| Err(ReferenceFailure::Semantic(self.expand.ctx().format_retained(format_args!("{}", error), "Rhino expand_reference_inner text")?)))?;
         if self
             .scan
             .definitions
             .is_ambiguous(reference.definition_id())
         {
-            return Err(format!("definition {} is duplicated", reference.definition_id()).into());
+            return Err(self.expand.ctx().format_retained(format_args!("definition {} is duplicated", reference.definition_id()), "Rhino expand_reference_inner text")?.into());
         }
         let definitions = self.scan.definitions.definitions();
         let definition = self
             .definition_candidates
             .get(&reference.definition_id())
             .and_then(|index| definitions.get(*index))
-            .ok_or_else(|| format!("definition {} is missing", reference.definition_id()))?;
+            .map_or_else(|| Err(ReferenceFailure::Semantic(self.expand.ctx().format_retained(format_args!("definition {} is missing", reference.definition_id()), "Rhino expand_reference_inner text")?)), Ok)?;
         if matches!(definition.kind, crate::instances::DefinitionKind::Linked)
             && definition.members.is_empty()
         {
-            return Err(format!(
+            return Err(self.expand.ctx().format_retained(format_args!(
                 "linked external definition {} has no local members",
                 definition.id()
-            )
+            ), "Rhino expand_reference_inner text")?
             .into());
         }
         if matches!(definition.kind, crate::instances::DefinitionKind::Unset) {
-            return Err(format!("definition {} has unset type", definition.id()).into());
+            return Err(self.expand.ctx().format_retained(format_args!("definition {} has unset type", definition.id()), "Rhino expand_reference_inner text")?.into());
         }
         if !instance_members_are_unique(self.expand.ctx(), &definition.members)? {
-            return Err(format!(
+            return Err(self.expand.ctx().format_retained(format_args!(
                 "definition {} contains duplicate member UUIDs",
                 definition.id()
-            )
+            ), "Rhino expand_reference_inner text")?
             .into());
         }
         if stack.contains(&definition.id()) {
-            return Err(format!("definition cycle reaches {}", definition.id()).into());
+            return Err(self.expand.ctx().format_retained(format_args!("definition cycle reaches {}", definition.id()), "Rhino expand_reference_inner text")?.into());
         }
         let binding = self.unit_binding();
         let crate::settings::UnitBinding::Millimeters(scale) = binding else {
-            return Err(format!(
+            return Err(self.expand.ctx().format_retained(format_args!(
                 "document has no physical millimetre binding ({})",
                 binding.label()
-            )
+            ), "Rhino expand_reference_inner text")?
             .into());
         };
         let local = crate::instances::scale_translation(reference.transform(), scale)
@@ -2437,10 +2439,10 @@ impl<'a> DecodeContext<'a> {
             let member_order = match self.resolve_object(member_id) {
                 ObjectReference::Resolved(order) => order,
                 ObjectReference::Missing => {
-                    return Err(format!("definition member {member_id} is missing").into());
+                    return Err(self.expand.ctx().format_retained(format_args!("definition member {member_id} is missing"), "Rhino expand_reference_inner text")?.into());
                 }
                 ObjectReference::Ambiguous => {
-                    return Err(format!("definition member {member_id} is ambiguous").into());
+                    return Err(self.expand.ctx().format_retained(format_args!("definition member {member_id} is ambiguous"), "Rhino expand_reference_inner text")?.into());
                 }
             };
             let member = &self.scan.objects[member_order];
@@ -2475,7 +2477,7 @@ impl<'a> DecodeContext<'a> {
             let after =
                 ModelCheckpoint::capture(&self.session.document().model, self.expand.ctx())?;
             if before.0.same_state(&after.0, self.expand.ctx())? {
-                return Err(format!("definition member {member_id} did not decode").into());
+                return Err(self.expand.ctx().format_retained(format_args!("definition member {member_id} did not decode"), "Rhino expand_reference_inner text")?.into());
             }
             let transformed = self.transform_new_entities(&before.0, transform, scratch)?;
             self.expand.ctx().charge_work(
@@ -2628,7 +2630,7 @@ impl<'a> DecodeContext<'a> {
                     .get();
                 Ok(())
             })
-            .map_err(|error| error.to_string())?;
+            .or_else(|error| Err(ReferenceFailure::Semantic(ctx.format_retained(format_args!("{}", error), "Rhino transform_new_entities text")?)))?;
             if !mesh.vertex_normals().is_empty() {
                 mesh.edit_normals(|value| {
                     *value = transform
@@ -2642,7 +2644,7 @@ impl<'a> DecodeContext<'a> {
                         })?;
                     Ok(())
                 })
-                .map_err(|error| error.to_string())?;
+                .or_else(|error| Err(ReferenceFailure::Semantic(ctx.format_retained(format_args!("{}", error), "Rhino transform_new_entities text")?)))?;
             }
             ctx.reserve_scoped_vec(scratch, &mut links, 1, "Rhino transformed instance links")?;
             let id = ctx.format_scoped_text(
@@ -2685,7 +2687,7 @@ impl<'a> DecodeContext<'a> {
                     },
                     ctx,
                 )?
-                .map_err(|error| error.to_string())?;
+                .or_else(|error| Err(ReferenceFailure::Semantic(ctx.format_retained(format_args!("{}", error), "Rhino transform_new_entities text")?)))?;
             ctx.reserve_scoped_vec(scratch, &mut links, 1, "Rhino transformed instance links")?;
             let id = ctx.format_scoped_text(
                 scratch,
@@ -2831,7 +2833,7 @@ impl<'a> DecodeContext<'a> {
             return Ok(false);
         };
         surface.source_object = Some(self.source_association(identity)?);
-        let id = surface.id.to_string();
+        let id = ctx.format_retained(format_args!("{}", surface.id), "Rhino commit_subd_surface text")?;
         let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
             candidate.model.subds.push(surface);
             set_exactness(
@@ -3634,7 +3636,7 @@ impl<'a> DecodeContext<'a> {
                     vec![region_id],
                     &association,
                 ));
-                let point_prefix = format!("rhino:object:point#{key}.");
+                let point_prefix = ctx.format_retained(format_args!("rhino:object:point#{key}."), "Rhino commit_geometry text")?;
                 for point in self
                     .session
                     .document()
@@ -3683,7 +3685,7 @@ impl<'a> DecodeContext<'a> {
                     Err(error) => {
                         self.report
                             .phase_warnings
-                            .push(format!("curve candidate rejected: {error}"));
+                            .push(ctx.format_retained(format_args!("curve candidate rejected: {error}"), "Rhino commit_geometry text")?);
                         return Ok(false);
                     }
                 };
@@ -3783,9 +3785,9 @@ impl<'a> DecodeContext<'a> {
                         },
                     )
                 },
-                |error| CandidateError::Admission(error.to_string()),
+                |error| Ok(CandidateError::Admission(ctx.format_retained(format_args!("{}", error), "Rhino commit_procedural_surface text")?)),
             )?;
-            let key = IdentityKey::try_new(key.to_owned()).map_err(|error| error.to_string())?;
+            let key = IdentityKey::try_new(key.to_owned()).or_else(|error| Err(CandidateError::Admission(ctx.format_retained(format_args!("{}", error), "Rhino commit_procedural_surface text")?)))?;
             let surface_id = {
                 let mut copied_storage = ctx.reserve_scoped(0, "Rhino temporary identity key")?;
                 copied_storage.with_storage(|| {
@@ -3826,11 +3828,11 @@ impl<'a> DecodeContext<'a> {
                         None,
                     ),
                 )?
-                .map_err(|error| error.to_string())?;
-            for id in [surface_id.to_string(), procedural_id.to_string()] {
+                .or_else(|error| Err(CandidateError::Admission(ctx.format_retained(format_args!("{}", error), "Rhino commit_procedural_surface text")?)))?;
+            for id in [ctx.format_retained(format_args!("{}", surface_id), "Rhino commit_procedural_surface text")?, ctx.format_retained(format_args!("{}", procedural_id), "Rhino commit_procedural_surface text")?] {
                 set_exactness(ctx, candidate_annotations, id, Exactness::Derived)?;
             }
-            Ok::<_, CandidateError>(vec![surface_id.to_string()])
+            Ok::<_, CandidateError>(vec![ctx.format_retained(format_args!("{}", surface_id), "Rhino commit_procedural_surface text")?])
         });
         let links = match result {
             Ok(links) => links,
@@ -3937,7 +3939,7 @@ impl<'a> DecodeContext<'a> {
                             None,
                             cadmpeg_ir::geometry::CacheContract::from_form(None),
                         )
-                        .map_err(|error| CandidateError::Admission(error.to_string()))
+                        .or_else(|error| Err(CandidateError::Admission(ctx.format_retained(format_args!("{}", error), "Rhino commit_extrusion text")?)))
                         .and_then(|admitted_payload| {
                             Ok::<_, CandidateError>(ProceduralSurface::new(
                                 procedure_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
@@ -3946,10 +3948,16 @@ impl<'a> DecodeContext<'a> {
                             ))
                         })
                         ?)?
-                    .map_err(|error| error.to_string())?;
-                annotate_derived(ctx, candidate_annotations, &surface_id.to_string())?;
-                annotate_derived(ctx, candidate_annotations, &procedure_id.to_string())?;
-                links.push(surface_id.to_string());
+                    .or_else(|error| Err(CandidateError::Admission(ctx.format_retained(format_args!("{}", error), "Rhino commit_extrusion text")?)))?;
+                {
+                    let (identity_text, _identity_storage) = ctx.format_scoped(format_args!("{}", surface_id), "Rhino commit_extrusion text")?;
+                    annotate_derived(ctx, candidate_annotations, &identity_text)?;
+                }
+                {
+                    let (identity_text, _identity_storage) = ctx.format_scoped(format_args!("{}", procedure_id), "Rhino commit_extrusion text")?;
+                    annotate_derived(ctx, candidate_annotations, &identity_text)?;
+                }
+                links.push(ctx.format_retained(format_args!("{}", surface_id), "Rhino commit_extrusion text")?);
             }
             if extrusion.caps[0] || extrusion.caps[1] {
                 links.push(stage_extrusion_caps(
@@ -3963,13 +3971,13 @@ impl<'a> DecodeContext<'a> {
                 )?);
             }
             for (index, mut mesh) in extrusion.meshes.into_iter().enumerate() {
-                mesh.tessellation.id = cadmpeg_ir::tessellation::TessellationId::mint(format!(
+                mesh.tessellation.id = cadmpeg_ir::tessellation::TessellationId::mint(ctx.format_retained(format_args!(
                     "rhino:object:tessellation#{key}.cache-{index}"
-                ))
-                .map_err(|error| error.to_string())?;
+                ), "Rhino commit_extrusion text")?)
+                .or_else(|error| Err(CandidateError::Admission(ctx.format_retained(format_args!("{}", error), "Rhino commit_extrusion text")?)))?;
                 mesh.tessellation.source_object = Some(association.try_clone_for_decode(ctx, "Rhino source association copy")?);
                 annotate_derived(ctx, candidate_annotations, mesh.tessellation.id.as_str())?;
-                links.push(mesh.tessellation.id.to_string());
+                links.push(ctx.format_retained(format_args!("{}", mesh.tessellation.id), "Rhino commit_extrusion text")?);
                 candidate.model.tessellations.push(mesh.tessellation);
             }
             Ok::<_, CandidateError>(links)
@@ -4035,7 +4043,7 @@ impl<'a> DecodeContext<'a> {
                 source_object: Some(association),
             });
             set_exactness(ctx, candidate_annotations, &id, Exactness::Unknown)?;
-            Ok::<_, CandidateError>(id.to_string())
+            Ok::<_, CandidateError>(ctx.format_retained(format_args!("{}", id), "Rhino commit_unknown_surface text")?)
         });
         match validation {
             Ok(link) => {
@@ -4071,10 +4079,10 @@ impl<'a> DecodeContext<'a> {
             point_exactness,
         )?;
         for id in [
-            vertex.to_string(),
-            shell.to_string(),
-            region.to_string(),
-            body.to_string(),
+            self.expand.ctx().format_retained(format_args!("{}", vertex), "Rhino annotate_point_topology text")?,
+            self.expand.ctx().format_retained(format_args!("{}", shell), "Rhino annotate_point_topology text")?,
+            self.expand.ctx().format_retained(format_args!("{}", region), "Rhino annotate_point_topology text")?,
+            self.expand.ctx().format_retained(format_args!("{}", body), "Rhino annotate_point_topology text")?,
         ] {
             set_exactness(
                 self.expand.ctx(),
@@ -4115,7 +4123,7 @@ impl<'a> DecodeContext<'a> {
             mesh.warnings,
             format_args!("{}", identity.source_id),
         )?;
-        let id = mesh.tessellation.id.to_string();
+        let id = self.expand.ctx().format_retained(format_args!("{}", mesh.tessellation.id), "Rhino commit_mesh text")?;
         let mut tessellation = mesh.tessellation;
         tessellation.source_object = Some(self.source_association(identity)?);
         self.session
@@ -4596,7 +4604,7 @@ fn stage_extrusion_caps(
     extrusion: &crate::extrusion::DecodedExtrusion,
     boundaries: &[CommittedExtrusionBoundary<'_>],
 ) -> Result<String, CandidateError> {
-    let key = IdentityKey::try_new(key.to_owned()).map_err(|error| error.to_string())?;
+    let key = IdentityKey::try_new(key.to_owned()).or_else(|error| Err(CandidateError::Admission(ctx.format_retained(format_args!("{}", error), "Rhino stage_extrusion_caps text")?)))?;
     let body_id = {
         let mut copied_storage = ctx.reserve_scoped(0, "Rhino temporary identity key")?;
         copied_storage.with_storage(|| {
@@ -4710,7 +4718,10 @@ fn stage_extrusion_caps(
                         association.try_clone_for_decode(ctx, "Rhino source association copy")?,
                     ),
                 });
-                annotate_derived(ctx, annotations, &id.to_string())?;
+                {
+                    let (identity_text, _identity_storage) = ctx.format_scoped(format_args!("{}", id), "Rhino stage_extrusion_caps text")?;
+                    annotate_derived(ctx, annotations, &identity_text)?;
+                }
                 id
             };
             let endpoint = if cap == 0 {
@@ -4817,10 +4828,10 @@ fn stage_extrusion_caps(
                     .transpose()?,
                 pcurve.periodic,
             )?
-            .map_err(|error| format!("extrusion cap staging: {error}"))?;
+            .or_else(|error| Err(CandidateError::Admission(ctx.format_retained(format_args!("extrusion cap staging: {error}"), "Rhino stage_extrusion_caps text")?)))?;
             let carrier =
                 cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some(parameter_range))
-                    .map_err(|error| format!("extrusion cap staging: {error}"))?;
+                    .or_else(|error| Err(CandidateError::Admission(ctx.format_retained(format_args!("extrusion cap staging: {error}"), "Rhino stage_extrusion_caps text")?)))?;
             ir.model.points.push(Point::new(
                 point_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
                 endpoint,
@@ -4877,17 +4888,17 @@ fn stage_extrusion_caps(
                         Vec::new(),
                     )
                     .map_err(cadmpeg_core::CodecError::from)?
-                    .map_err(|error| format!("extrusion cap staging: {error}"))?,
+                    .or_else(|error| Err(CandidateError::Admission(ctx.format_retained(format_args!("extrusion cap staging: {error}"), "Rhino stage_extrusion_caps text")?)))?,
                 ),
             });
             loop_ids.push(loop_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?);
             for id in [
-                point_id.to_string(),
-                vertex_id.to_string(),
-                edge_id.to_string(),
-                pcurve_id.to_string(),
-                coedge_id.to_string(),
-                loop_id.to_string(),
+                ctx.format_retained(format_args!("{}", point_id), "Rhino stage_extrusion_caps text")?,
+                ctx.format_retained(format_args!("{}", vertex_id), "Rhino stage_extrusion_caps text")?,
+                ctx.format_retained(format_args!("{}", edge_id), "Rhino stage_extrusion_caps text")?,
+                ctx.format_retained(format_args!("{}", pcurve_id), "Rhino stage_extrusion_caps text")?,
+                ctx.format_retained(format_args!("{}", coedge_id), "Rhino stage_extrusion_caps text")?,
+                ctx.format_retained(format_args!("{}", loop_id), "Rhino stage_extrusion_caps text")?,
             ] {
                 annotate_derived(ctx, annotations, &id)?;
             }
@@ -4906,8 +4917,14 @@ fn stage_extrusion_caps(
             color: association.color,
             tolerance: None,
         });
-        annotate_derived(ctx, annotations, &surface_id.to_string())?;
-        annotate_derived(ctx, annotations, &face_id.to_string())?;
+        {
+            let (identity_text, _identity_storage) = ctx.format_scoped(format_args!("{}", surface_id), "Rhino stage_extrusion_caps text")?;
+            annotate_derived(ctx, annotations, &identity_text)?;
+        }
+        {
+            let (identity_text, _identity_storage) = ctx.format_scoped(format_args!("{}", face_id), "Rhino stage_extrusion_caps text")?;
+            annotate_derived(ctx, annotations, &identity_text)?;
+        }
         ir.model.shells.push(Shell::with_face(
             shell_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
             region_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
@@ -4918,8 +4935,14 @@ fn stage_extrusion_caps(
             body: body_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
             shells: vec![shell_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?],
         });
-        annotate_derived(ctx, annotations, &shell_id.to_string())?;
-        annotate_derived(ctx, annotations, &region_id.to_string())?;
+        {
+            let (identity_text, _identity_storage) = ctx.format_scoped(format_args!("{}", shell_id), "Rhino stage_extrusion_caps text")?;
+            annotate_derived(ctx, annotations, &identity_text)?;
+        }
+        {
+            let (identity_text, _identity_storage) = ctx.format_scoped(format_args!("{}", region_id), "Rhino stage_extrusion_caps text")?;
+            annotate_derived(ctx, annotations, &identity_text)?;
+        }
         region_ids.push(region_id);
     }
     if region_ids.is_empty() {
@@ -4938,8 +4961,11 @@ fn stage_extrusion_caps(
         color: association.color,
         visible: association.visible,
     });
-    annotate_derived(ctx, annotations, &body_id.to_string())?;
-    Ok(body_id.to_string())
+    {
+        let (identity_text, _identity_storage) = ctx.format_scoped(format_args!("{}", body_id), "Rhino stage_extrusion_caps text")?;
+        annotate_derived(ctx, annotations, &identity_text)?;
+    }
+    Ok(ctx.format_retained(format_args!("{}", body_id), "Rhino stage_extrusion_caps text")?)
 }
 
 #[derive(Debug)]
@@ -5141,7 +5167,7 @@ fn stage_brep_carriers(
             let Some(slot) = slot.as_ref() else {
                 continue;
             };
-            let id = format!("rhino:object:tessellation#{key}.{kind}-{index}");
+            let id = ctx.format_retained(format_args!("rhino:object:tessellation#{key}.{kind}-{index}"), "Rhino stage_brep_carriers text")?;
             match crate::mesh::decode(
                 expand,
                 data,
@@ -5153,9 +5179,9 @@ fn stage_brep_carriers(
                         association.try_clone_for_decode(ctx, "Rhino source association copy")?,
                     ),
                     id: crate::mesh::MeshId::Ready(
-                        cadmpeg_ir::tessellation::TessellationId::mint(id).map_err(|error| {
-                            cadmpeg_core::CodecError::Malformed(error.to_string())
-                        })?,
+                        cadmpeg_ir::tessellation::TessellationId::mint(id).or_else(|error| {
+                            Err(cadmpeg_core::CodecError::Malformed(ctx.format_retained(format_args!("{}", error), "Rhino stage_brep_carriers text")?)
+                        )})?,
                     ),
                     scale,
                     userdata: &slot.userdata,
@@ -5168,14 +5194,14 @@ fn stage_brep_carriers(
                         .append_admitted(expand.ctx(), &mut mesh.warnings)?;
                     staged.draft.exactness(
                         ctx,
-                        mesh.tessellation.id.to_string(),
+                        ctx.format_retained(format_args!("{}", mesh.tessellation.id), "Rhino stage_brep_carriers text")?,
                         if mesh.scaled {
                             Exactness::Derived
                         } else {
                             Exactness::ByteExact
                         },
                     )?;
-                    staged.links.push(mesh.tessellation.id.to_string());
+                    staged.links.push(ctx.format_retained(format_args!("{}", mesh.tessellation.id), "Rhino stage_brep_carriers text")?);
                     staged
                         .draft
                         .model_mut()
@@ -5294,7 +5320,7 @@ fn stage_brep_carriers(
                 });
                 staged.draft.exactness(
                     ctx,
-                    id.to_string(),
+                    ctx.format_retained(format_args!("{}", id), "Rhino stage_brep_carriers text")?,
                     if derived {
                         Exactness::Derived
                     } else {
@@ -5396,7 +5422,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         mesh_budget,
     } = input;
     let key = IdentityKey::try_new(key.to_owned())
-        .map_err(|error| crate::curves::GeometryError::unpositioned(error.to_string()))?;
+        .or_else(|error| Err(crate::curves::GeometryError::unpositioned(expand.ctx().format_retained(format_args!("{error}"), "Rhino Brep identity error")?)))?;
     let raw = brep.raw();
     let resolved = brep.resolved();
     let BrepCarrierDraft {
@@ -5763,9 +5789,9 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                 cadmpeg_ir::topology::LoopRing::new(ctx, coedges, Vec::new())
                     .map_err(cadmpeg_core::CodecError::from)?
-                    .map_err(|error| {
-                        crate::curves::GeometryError::unpositioned(error.to_string())
-                    })?,
+                    .or_else(|error| {
+                        Err(crate::curves::GeometryError::unpositioned(ctx.format_retained(format_args!("{}", error), "Rhino stage_brep text")?)
+                    )})?,
             ),
         });
         ctx.reserve_vec(
@@ -5865,7 +5891,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
                     Vec::new()
                 },
             )
-            .map_err(|message| crate::curves::GeometryError::unpositioned(message.to_string()))?,
+            .or_else(|message| Err(crate::curves::GeometryError::unpositioned(ctx.format_retained(format_args!("{}", message), "Rhino stage_brep text")?)))?,
         );
         if let Some(region) = regions.iter_mut().find(|region| region.id == region_id) {
             ctx.reserve_vec(&mut region.shells, 1, "Rhino staged Brep region shells")
@@ -6219,7 +6245,7 @@ fn stage_brep_procedural_surface(
     context: &BrepStageContext<'_>,
 ) -> Result<cadmpeg_ir::ids::SurfaceId, crate::curves::GeometryError> {
     let key = IdentityKey::try_new(context.key.to_owned())
-        .map_err(|error| crate::curves::GeometryError::unpositioned(error.to_string()))?;
+        .or_else(|error| Err(crate::curves::GeometryError::unpositioned(context.ctx.format_retained(format_args!("{}", error), "Rhino stage_brep_procedural_surface text")?)))?;
     let definition = definition.into_definition(
         |child_index, _, child| {
             stage_curve_tree(
@@ -6232,7 +6258,7 @@ fn stage_brep_procedural_surface(
                 context.unknown,
             )
         },
-        |error| crate::curves::GeometryError::unpositioned(error.to_string()),
+        |error| Ok(crate::curves::GeometryError::unpositioned(context.ctx.format_retained(format_args!("{}", error), "Rhino stage_brep_procedural_surface text")?)),
     )?;
     let surface_id = {
         let mut copied_storage = context
@@ -6272,15 +6298,15 @@ fn stage_brep_procedural_surface(
                 None,
             ),
         )?
-        .map_err(|error| crate::curves::GeometryError::unpositioned(error.to_string()))?;
+        .or_else(|error| Err(crate::curves::GeometryError::unpositioned(context.ctx.format_retained(format_args!("{}", error), "Rhino stage_brep_procedural_surface text")?)))?;
     staged
         .draft
-        .exactness(context.ctx, surface_id.to_string(), Exactness::Derived)?;
+        .exactness(context.ctx, context.ctx.format_retained(format_args!("{}", surface_id), "Rhino stage_brep_procedural_surface text")?, Exactness::Derived)?;
     staged
         .draft
-        .exactness(context.ctx, procedural_id.to_string(), Exactness::Derived)?;
-    staged.links.push(surface_id.to_string());
-    staged.links.push(procedural_id.to_string());
+        .exactness(context.ctx, context.ctx.format_retained(format_args!("{}", procedural_id), "Rhino stage_brep_procedural_surface text")?, Exactness::Derived)?;
+    staged.links.push(context.ctx.format_retained(format_args!("{}", surface_id), "Rhino stage_brep_procedural_surface text")?);
+    staged.links.push(context.ctx.format_retained(format_args!("{}", procedural_id), "Rhino stage_brep_procedural_surface text")?);
     Ok(surface_id)
 }
 
@@ -6313,6 +6339,7 @@ fn stage_curve_tree(
             for (index, (parameter, child)) in children.into_iter().enumerate() {
                 let parameter = parameter.get();
                 parameters.push(parameter);
+                let (component_path, _path_storage) = ctx.format_scoped(format_args!("{path}.component-{index}"), "Rhino curve component path")?;
                 components.push(cadmpeg_ir::geometry::CompoundComponent {
                     parameter,
                     component: stage_curve_tree(
@@ -6320,7 +6347,7 @@ fn stage_curve_tree(
                         staged,
                         child,
                         key,
-                        &format!("{path}.component-{index}"),
+                        &component_path,
                         association,
                         unknown,
                     )?,
@@ -6341,7 +6368,7 @@ fn stage_curve_tree(
         }
     };
     let key = IdentityKey::try_new(key.to_owned())
-        .map_err(|error| crate::curves::GeometryError::unpositioned(error.to_string()))?;
+        .or_else(|error| Err(crate::curves::GeometryError::unpositioned(ctx.format_retained(format_args!("{}", error), "Rhino stage_curve_tree text")?)))?;
     let id = {
         let mut copied_storage = ctx.reserve_scoped(0, "Rhino temporary identity key")?;
         copied_storage.with_storage(|| {
@@ -6352,9 +6379,9 @@ fn stage_curve_tree(
                 } else {
                     key.try_clone_for_decode(ctx, "Rhino temporary identity key")?
                         .then(cadmpeg_ir::identity_key!("."))
-                        .then(IdentityKey::try_new(path.to_owned()).map_err(|error| {
-                            crate::curves::GeometryError::unpositioned(error.to_string())
-                        })?)
+                        .then(IdentityKey::try_new(path.to_owned()).or_else(|error| {
+                            Err(crate::curves::GeometryError::unpositioned(ctx.format_retained(format_args!("{}", error), "Rhino stage_curve_tree text")?)
+                        )})?)
                 },
             ))
         })
@@ -6368,8 +6395,8 @@ fn stage_curve_tree(
     });
     staged
         .draft
-        .exactness(ctx, id.to_string(), Exactness::Derived)?;
-    staged.links.push(id.to_string());
+        .exactness(ctx, ctx.format_retained(format_args!("{}", id), "Rhino stage_curve_tree text")?, Exactness::Derived)?;
+    staged.links.push(ctx.format_retained(format_args!("{}", id), "Rhino stage_curve_tree text")?);
     if let Some(definition) = definition {
         let mut procedure_key_copy_storage =
             ctx.reserve_scoped(0, "Rhino temporary identity key")?;
@@ -6380,9 +6407,9 @@ fn stage_curve_tree(
             procedure_key_copy_storage
                 .with_storage(|| key.try_clone_for_decode(ctx, "Rhino temporary identity key"))?
                 .then(cadmpeg_ir::identity_key!("."))
-                .then(IdentityKey::try_new(path.to_owned()).map_err(|error| {
-                    crate::curves::GeometryError::unpositioned(error.to_string())
-                })?)
+                .then(IdentityKey::try_new(path.to_owned()).or_else(|error| {
+                    Err(crate::curves::GeometryError::unpositioned(ctx.format_retained(format_args!("{}", error), "Rhino stage_curve_tree text")?)
+                )})?)
         };
         let procedure_id = cadmpeg_ir::ids::ProceduralCurveId::compose(
             &cadmpeg_ir::identity_namespace!("rhino", "object", "procedural-curve"),
@@ -6390,13 +6417,13 @@ fn stage_curve_tree(
         );
         staged
             .draft
-            .exactness(ctx, procedure_id.to_string(), Exactness::Derived)?;
-        staged.links.push(procedure_id.to_string());
+            .exactness(ctx, ctx.format_retained(format_args!("{}", procedure_id), "Rhino stage_curve_tree text")?, Exactness::Derived)?;
+        staged.links.push(ctx.format_retained(format_args!("{}", procedure_id), "Rhino stage_curve_tree text")?);
         staged
             .draft
             .model_mut()
             .add_procedural_curve(ctx, &id, ProceduralCurve::new(procedure_id, definition))?
-            .map_err(|error| crate::curves::GeometryError::unpositioned(error.to_string()))?;
+            .or_else(|error| Err(crate::curves::GeometryError::unpositioned(ctx.format_retained(format_args!("{}", error), "Rhino stage_curve_tree text")?)))?;
     }
     Ok(id)
 }
@@ -6944,7 +6971,7 @@ fn commit_curve_tree(
             for (index, (parameter, child)) in children.into_iter().enumerate() {
                 let parameter = parameter.get();
                 parameters.push(parameter);
-                let child_path = format!("{}.component-{index}", source.path);
+                let child_path = ctx.format_retained(format_args!("{}.component-{index}", source.path), "Rhino commit_curve_tree text")?;
                 components.push(cadmpeg_ir::geometry::CompoundComponent {
                     parameter,
                     component: commit_curve_tree(
@@ -6975,7 +7002,7 @@ fn commit_curve_tree(
             )
         }
     };
-    let key = IdentityKey::try_new(source.key.to_owned()).map_err(|error| error.to_string())?;
+    let key = IdentityKey::try_new(source.key.to_owned()).or_else(|error| Err(CandidateError::Admission(ctx.format_retained(format_args!("{}", error), "Rhino commit_curve_tree text")?)))?;
     let mut curve_key_copy_storage = ctx.reserve_scoped(0, "Rhino temporary identity key")?;
     let curve_key = if source.path == "root" {
         curve_key_copy_storage
@@ -6984,7 +7011,7 @@ fn commit_curve_tree(
         curve_key_copy_storage
             .with_storage(|| key.try_clone_for_decode(ctx, "Rhino temporary identity key"))?
             .then(cadmpeg_ir::identity_key!("."))
-            .then(IdentityKey::try_new(source.path.to_owned()).map_err(|error| error.to_string())?)
+            .then(IdentityKey::try_new(source.path.to_owned()).or_else(|error| Err(CandidateError::Admission(ctx.format_retained(format_args!("{}", error), "Rhino commit_curve_tree text")?)))?)
     };
     let id = {
         let mut copied_storage = ctx.reserve_scoped(0, "Rhino temporary identity key")?;
@@ -7012,7 +7039,7 @@ fn commit_curve_tree(
         );
         ir.model
             .add_procedural_curve(ctx, &id, ProceduralCurve::new(procedure_id, definition))?
-            .map_err(|error| error.to_string())?;
+            .or_else(|error| Err(CandidateError::Admission(ctx.format_retained(format_args!("{}", error), "Rhino commit_curve_tree text")?)))?;
     }
     Ok(id)
 }
@@ -7066,7 +7093,7 @@ fn hatch_source_links(
 /// Both the plane axes and `scale` come off the document, so a scale that
 /// drives a coefficient non-finite is a source the transform carrier refuses,
 /// not an impossible state. `record` names the hatch the plane came from.
-fn hatch_plane_transform(
+fn hatch_plane_transform(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     plane: &crate::settings::Plane,
     scale: MillimeterScale,
     record: &str,
@@ -7081,18 +7108,18 @@ fn hatch_plane_transform(
         [x[1] * scale, y[1] * scale, z[1] * scale, origin[1] * scale],
         [x[2] * scale, y[2] * scale, z[2] * scale, origin[2] * scale],
     ];
-    Transform::affine(rows).ok_or_else(|| {
+    Transform::affine(rows).map_or_else(|| {
         let offending = rows
             .iter()
             .flatten()
             .copied()
             .find(|value| !value.is_finite())
             .unwrap_or(f64::NAN);
-        cadmpeg_core::CodecError::malformed(format!(
+        Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(format_args!(
             "{record}: the hatch plane scaled by {scale} states the non-finite \
              transform coefficient {offending}"
-        ))
-    })
+        ), "Rhino hatch_plane_transform text")?)
+    )}, Ok)
 }
 
 fn transform_decoded_curve(
@@ -7180,12 +7207,12 @@ fn transform_curve(
                 Diagnostics::new(),
             );
             let mut nurbs =
-                crate::curves::exact_nurbs(ctx, &decoded, 0).map_err(|error| match error {
+                crate::curves::exact_nurbs(ctx, &decoded, 0).or_else(|error| Err(match error {
                     crate::curves::GeometryError::Codec(error) => ReferenceFailure::Codec(error),
-                    other => ReferenceFailure::Semantic(format!(
+                    other => ReferenceFailure::Semantic(ctx.format_retained(format_args!(
                         "analytic instance curve conversion failed: {other}"
-                    )),
-                })?;
+                    ), "Rhino transform_curve text")?),
+                }))?;
             if let Err(message) = nurbs.try_map_control_points(
                 |_, pole| {
                     transform

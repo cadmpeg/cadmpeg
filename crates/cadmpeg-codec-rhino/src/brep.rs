@@ -613,7 +613,7 @@ impl ValidatedRawBrep {
         };
         for vertex in &raw.vertices {
             let edges = slots(ctx, &vertex.edges, raw.edges.len(), "vertex edge")?;
-            let tolerance = finite_tolerance(vertex.tolerance, "vertex tolerance")?;
+            let tolerance = finite_tolerance(ctx, vertex.tolerance, "vertex tolerance")?;
             resolved.vertices.push(ResolvedVertex { edges, tolerance });
         }
         for (index, edge) in raw.edges.iter().enumerate() {
@@ -623,12 +623,12 @@ impl ValidatedRawBrep {
                     "edge C3 reference is invalid",
                 ));
             };
-            let vertices = slot_pair(edge.vertices, raw.vertices.len(), "edge vertex")?;
+            let vertices = slot_pair(ctx, edge.vertices, raw.vertices.len(), "edge vertex")?;
             let trims = slots(ctx, &edge.trims, raw.trims.len(), "edge trim")?;
             unique(ctx, &edge.trims, "edge trim")?;
-            ordered_interval(edge.proxy_domain, "edge proxy domain")?;
-            ordered_interval(edge.domain, "edge domain")?;
-            let tolerance = finite_tolerance(edge.tolerance, "edge tolerance")?;
+            ordered_interval(ctx, edge.proxy_domain, "edge proxy domain")?;
+            ordered_interval(ctx, edge.domain, "edge domain")?;
+            let tolerance = finite_tolerance(ctx, edge.tolerance, "edge tolerance")?;
             for trim in &trims {
                 if position(raw.trims[*trim].edge) != Some(index) {
                     return Err(error(
@@ -665,8 +665,8 @@ impl ValidatedRawBrep {
                 };
                 Some(curve)
             };
-            let vertices = slot_pair(trim.vertices, raw.vertices.len(), "trim vertex")?;
-            let loop_index = slot(trim.loop_index, raw.loops.len(), "trim loop")?;
+            let vertices = slot_pair(ctx, trim.vertices, raw.vertices.len(), "trim vertex")?;
+            let loop_index = slot(ctx, trim.loop_index, raw.loops.len(), "trim loop")?;
             if !raw.loops[loop_index]
                 .trims
                 .iter()
@@ -677,14 +677,14 @@ impl ValidatedRawBrep {
                     "trim/loop reciprocity mismatch",
                 ));
             }
-            ordered_interval(trim.proxy_domain, "trim proxy domain")?;
-            ordered_interval(trim.domain, "trim domain")?;
+            ordered_interval(ctx, trim.proxy_domain, "trim proxy domain")?;
+            ordered_interval(ctx, trim.domain, "trim domain")?;
             let tolerances = [
-                finite_tolerance(trim.tolerances[0], "trim tolerance")?,
-                finite_tolerance(trim.tolerances[1], "trim tolerance")?,
+                finite_tolerance(ctx, trim.tolerances[0], "trim tolerance")?,
+                finite_tolerance(ctx, trim.tolerances[1], "trim tolerance")?,
             ];
             for tolerance in trim.legacy_tolerances {
-                finite_tolerance(tolerance, "trim tolerance")?;
+                finite_tolerance(ctx, tolerance, "trim tolerance")?;
             }
             let edge = if matches!(
                 trim.trim_type,
@@ -704,7 +704,7 @@ impl ValidatedRawBrep {
                         "trim edge reference is out of range",
                     ));
                 };
-                Some(slot(edge, raw.edges.len(), "trim edge")?)
+                Some(slot(ctx, edge, raw.edges.len(), "trim edge")?)
             };
             resolved.trims.push(ResolvedTrim {
                 curve,
@@ -728,7 +728,7 @@ impl ValidatedRawBrep {
         for (index, loop_record) in raw.loops.iter().enumerate() {
             let trims = slots(ctx, &loop_record.trims, raw.trims.len(), "loop trim")?;
             unique(ctx, &loop_record.trims, "loop trim")?;
-            let face = slot(loop_record.face, raw.faces.len(), "loop face")?;
+            let face = slot(ctx, loop_record.face, raw.faces.len(), "loop face")?;
             if !raw.faces[face]
                 .loops
                 .iter()
@@ -993,7 +993,7 @@ pub(crate) fn parse(
     )?;
     let (loops, _) = read_loops(ctx, bytes, &mut reader, archive, &mut warnings)?;
     let (faces, _) = read_faces(ctx, bytes, &mut reader, archive, &mut warnings)?;
-    let bounds = bbox(&mut reader)?;
+    let bounds = bbox(ctx, &mut reader)?;
     let (render_meshes, analysis_meshes) = if minor >= 1 {
         let (render, _) =
             read_mesh_sides(ctx, bytes, &mut reader, archive, faces.len(), &mut warnings)?;
@@ -1197,7 +1197,7 @@ fn parse_legacy_major2(
         ));
     }
     let _outer_flag = reader.i32()?;
-    let bounds = bbox(&mut reader)?;
+    let bounds = bbox(ctx, &mut reader)?;
 
     let c2_start = reader.position();
     let mut c2_meta = ctx
@@ -1286,7 +1286,7 @@ fn parse_legacy_major2(
         let _obsolete_material = reader.i32()?;
         let reversed_surface = reader.i32()?;
         let _face_type = reader.i32()?;
-        let _face_bounds = bbox(&mut reader)?;
+        let _face_bounds = bbox(ctx, &mut reader)?;
         let boundary_count = count(&mut reader, MAX_BREP_ITEMS)?;
         if boundary_count == 0 {
             return Err(error(
@@ -1441,8 +1441,8 @@ fn parse_legacy_major2(
             .iter()
             .zip(loop_record.trims.iter().cycle().skip(1))
         {
-            let last = slot(*last, trims.len(), "legacy Brep loop trim")?;
-            let first = slot(*first, trims.len(), "legacy Brep loop trim")?;
+            let last = slot(ctx, *last, trims.len(), "legacy Brep loop trim")?;
+            let first = slot(ctx, *first, trims.len(), "legacy Brep loop trim")?;
             legacy_union(
                 &mut endpoint_parent,
                 legacy_trim_endpoint(last, 1),
@@ -1585,7 +1585,7 @@ fn parse_legacy_major2(
     }
     for edge in &edges {
         for vertex in edge.vertices {
-            let vertex = slot(vertex, vertices.len(), "legacy Brep edge vertex")?;
+            let vertex = slot(ctx, vertex, vertices.len(), "legacy Brep edge vertex")?;
             ctx.reserve_vec(
                 &mut vertices[vertex].edges,
                 1,
@@ -1596,7 +1596,7 @@ fn parse_legacy_major2(
     }
     for edge in &edges {
         for trim_index in &edge.trims {
-            let trim_index = slot(*trim_index, trims.len(), "legacy Brep edge trim")?;
+            let trim_index = slot(ctx, *trim_index, trims.len(), "legacy Brep edge trim")?;
             let loop_index = trims[trim_index].loop_index;
             let same_loop = edge
                 .trims
@@ -1616,7 +1616,7 @@ fn parse_legacy_major2(
     for (vertex_index, vertex) in vertices.iter_mut().enumerate() {
         let mut tolerance: f64 = 0.0;
         for edge_index in &vertex.edges {
-            let edge_index = slot(*edge_index, edges.len(), "legacy Brep vertex edge")?;
+            let edge_index = slot(ctx, *edge_index, edges.len(), "legacy Brep vertex edge")?;
             let edge = &edges[edge_index];
             tolerance = tolerance.max(edge.tolerance);
             let endpoint = if position(Some(edge.vertices[0])) == Some(vertex_index) {
@@ -1626,7 +1626,7 @@ fn parse_legacy_major2(
             } else {
                 continue;
             };
-            let curve = slot(edge.curve, c3_meta.len(), "legacy Brep edge curve")?;
+            let curve = slot(ctx, edge.curve, c3_meta.len(), "legacy Brep edge curve")?;
             let expected = c3_meta[curve].endpoints[endpoint];
             let delta = [
                 vertex.point[0] - expected[0],
@@ -2051,7 +2051,7 @@ fn read_vertices(
 ) -> Result<(Vec<RawBrepVertex>, Range<usize>), GeometryError> {
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child = body_reader(bytes, &chunk)?;
-    let count = raw_array_start(&mut child, "vertex", 40)?;
+    let count = raw_array_start(ctx, &mut child, "vertex", 40)?;
     let mut result = ctx
         .collection_vec(count, "Rhino Brep vertices")
         .map_err(crate::curves::GeometryError::from)?;
@@ -2117,7 +2117,7 @@ fn read_edges(
 ) -> Result<(Vec<RawBrepEdge>, Range<usize>), GeometryError> {
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child = body_reader(bytes, &chunk)?;
-    let count = raw_array_start(&mut child, "edge", 44)?;
+    let count = raw_array_start(ctx, &mut child, "edge", 44)?;
     let current = archive.value() >= 3 && writer_version.is_some_and(|v| v >= 200_206_180);
     unstamped_legacy_layout(ctx, archive, writer_version, count, "edge domains", losses)?;
     let mut result = ctx
@@ -2132,12 +2132,12 @@ fn read_edges(
             1 => true,
             _ => return Err(error(child.position() - 4, "invalid edge proxy reversal")),
         };
-        let proxy_domain = interval(&mut child)?;
+        let proxy_domain = interval(ctx, &mut child)?;
         let vertices = [child.i32()?, child.i32()?];
         let trims = indexes(ctx, &mut child)?;
         let tolerance = child.f64()?;
         let domain = if current {
-            interval(&mut child)?
+            interval(ctx, &mut child)?
         } else {
             proxy_domain
         };
@@ -2169,7 +2169,7 @@ fn read_trims(
 ) -> Result<(Vec<RawBrepTrim>, Range<usize>), GeometryError> {
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child = body_reader(bytes, &chunk)?;
-    let count = raw_array_start(&mut child, "trim", 132)?;
+    let count = raw_array_start(ctx, &mut child, "trim", 132)?;
     let current = archive.value() >= 3 && writer_version.is_some_and(|v| v >= 200_206_180);
     unstamped_legacy_layout(
         ctx,
@@ -2186,7 +2186,7 @@ fn read_trims(
         let start = child.position();
         let index = child.i32()?;
         let curve = child.i32().map(|value| (value != -1).then_some(value))?;
-        let proxy_domain = interval(&mut child)?;
+        let proxy_domain = interval(ctx, &mut child)?;
         let edge = child.i32().map(|value| (value != -1).then_some(value))?;
         let vertices = [child.i32()?, child.i32()?];
         let reversed_3d = match child.i32()? {
@@ -2201,7 +2201,7 @@ fn read_trims(
         let loop_index = child.i32()?;
         let tolerances = [child.f64()?, child.f64()?];
         let (domain, proxy_reversed, reserved) = if current {
-            let domain = interval(&mut child)?;
+            let domain = interval(ctx, &mut child)?;
             let proxy_reversed = match child.u8()? {
                 0 => false,
                 1 => true,
@@ -2246,7 +2246,7 @@ fn read_loops(
 ) -> Result<(Vec<RawBrepLoop>, Range<usize>), GeometryError> {
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child = body_reader(bytes, &chunk)?;
-    let count = raw_array_start(&mut child, "loop", 20)?;
+    let count = raw_array_start(ctx, &mut child, "loop", 20)?;
     let mut result = ctx
         .collection_vec(count, "Rhino Brep loops")
         .map_err(crate::curves::GeometryError::from)?;
@@ -2619,7 +2619,7 @@ fn read_region_records<'a>(
         index_mismatch |= usize::try_from(index).ok() != Some(position);
         let region_type = child.i32()?;
         let sides = indexes(ctx, &mut child)?;
-        let bounds = bbox(&mut child)?;
+        let bounds = bbox(ctx, &mut child)?;
         child.skip_remaining()?;
         result.push(RawBrepRegion {
             region_type,
@@ -2822,7 +2822,7 @@ fn validate_regions(
             infinite += 1;
         }
         for side in &region.sides {
-            let side = slot(*side, raw.face_sides.len(), "region side")?;
+            let side = slot(ctx, *side, raw.face_sides.len(), "region side")?;
             if !listed_sides.contains(&side) {
                 ctx.reserve_set(&mut listed_sides, 1, "Rhino Brep listed region sides")?;
             }
@@ -2853,7 +2853,7 @@ fn validate_regions(
     Ok(sides)
 }
 
-fn raw_array_start(
+fn raw_array_start(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     reader: &mut BoundedReader<'_>,
     label: &str,
     minimum_record_bytes: usize,
@@ -2862,7 +2862,7 @@ fn raw_array_start(
     if version >> 4 != 1 {
         return Err(GeometryError::unsupported(
             reader.position() - 1,
-            format!("unsupported {label} array version"),
+            ctx.format_retained(format_args!("unsupported {label} array version"), "Rhino raw_array_start text")?,
         ));
     }
     let count = count(reader, MAX_BREP_ITEMS)?;
@@ -2872,7 +2872,7 @@ fn raw_array_start(
     {
         return Err(error(
             reader.position(),
-            format!("{label} count exhausts payload before allocation"),
+            ctx.format_retained(format_args!("{label} count exhausts payload before allocation"), "Rhino raw_array_start text")?,
         ));
     }
     Ok(count)
@@ -2928,10 +2928,10 @@ fn position(value: Option<i32>) -> Option<usize> {
 }
 
 /// Resolves one stored reference against an array of `len` records.
-fn slot(value: i32, len: usize, label: &str) -> Result<usize, GeometryError> {
+fn slot(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: i32, len: usize, label: &str) -> Result<usize, GeometryError> {
     position(Some(value))
         .filter(|slot| *slot < len)
-        .ok_or_else(|| GeometryError::unpositioned(format!("{label} reference is out of range")))
+        .map_or_else(|| Err(GeometryError::unpositioned(ctx.format_retained(format_args!("{label} reference is out of range"), "Rhino slot text")?)), Ok)
 }
 
 /// Resolves a list of stored references against an array of `len` records.
@@ -2945,14 +2945,14 @@ fn slots(
         .collection_vec(values.len(), "Rhino resolved Brep references")
         .map_err(crate::curves::GeometryError::from)?;
     for value in values {
-        result.push(slot(*value, len, label)?);
+        result.push(slot(ctx, *value, len, label)?);
     }
     Ok(result)
 }
 
 /// Resolves an endpoint pair against an array of `len` records.
-fn slot_pair(values: [i32; 2], len: usize, label: &str) -> Result<[usize; 2], GeometryError> {
-    Ok([slot(values[0], len, label)?, slot(values[1], len, label)?])
+fn slot_pair(ctx: &cadmpeg_core::decode::DecodeContext<'_>, values: [i32; 2], len: usize, label: &str) -> Result<[usize; 2], GeometryError> {
+    Ok([slot(ctx, values[0], len, label)?, slot(ctx, values[1], len, label)?])
 }
 
 /// Resolves one child slot reference, requiring the expected base type.
@@ -3019,9 +3019,9 @@ fn unique(ctx: &DecodeContext<'_>, values: &[i32], label: &str) -> Result<(), Ge
     let mut seen = HashSet::new();
     for value in values {
         if seen.contains(value) {
-            return Err(GeometryError::unpositioned(format!(
+            return Err(GeometryError::unpositioned(ctx.format_retained(format_args!(
                 "{label} reference is duplicated"
-            )));
+            ), "Rhino unique text")?));
         }
         ctx.reserve_set(&mut seen, 1, "Rhino Brep unique references")?;
         seen.insert(*value);
@@ -3030,21 +3030,21 @@ fn unique(ctx: &DecodeContext<'_>, values: &[i32], label: &str) -> Result<(), Ge
 }
 
 /// Refuses a decoded interval that is neither an `ON_UNSET` pair nor ordered.
-fn ordered_interval(value: Interval, label: &str) -> Result<(), GeometryError> {
+fn ordered_interval(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: Interval, label: &str) -> Result<(), GeometryError> {
     let [low, high] = value.0.get();
     let unset = (low == ON_UNSET_VALUE && high == ON_UNSET_VALUE)
         || (low == ON_UNSET_POSITIVE_VALUE && high == ON_UNSET_POSITIVE_VALUE);
     let empty = (low == ON_UNSET_VALUE && high == ON_UNSET_POSITIVE_VALUE)
         || (low == ON_UNSET_POSITIVE_VALUE && high == ON_UNSET_VALUE);
     if !(unset || empty || low < high) {
-        return Err(GeometryError::unpositioned(format!("{label} is invalid")));
+        return Err(GeometryError::unpositioned(ctx.format_retained(format_args!("{label} is invalid"), "Rhino ordered_interval text")?));
     }
     Ok(())
 }
 
-fn finite_tolerance(value: f64, label: &str) -> Result<BrepTolerance, GeometryError> {
+fn finite_tolerance(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: f64, label: &str) -> Result<BrepTolerance, GeometryError> {
     BrepTolerance::new(value)
-        .ok_or_else(|| GeometryError::unpositioned(format!("{label} is invalid")))
+        .map_or_else(|| Err(GeometryError::unpositioned(ctx.format_retained(format_args!("{label} is invalid"), "Rhino finite_tolerance text")?)), Ok)
 }
 
 fn point(reader: &mut BoundedReader<'_>) -> Result<Point3, GeometryError> {
@@ -4364,24 +4364,30 @@ mod tests {
 
     #[test]
     fn tolerance_accepts_explicit_signed_unset_values() {
-        assert!(finite_tolerance(ON_UNSET_VALUE, "tolerance").is_ok());
-        assert!(finite_tolerance(ON_UNSET_POSITIVE_VALUE, "tolerance").is_ok());
-        assert!(finite_tolerance(-1.0, "tolerance").is_err());
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+        assert!(finite_tolerance(&ctx, ON_UNSET_VALUE, "tolerance").is_ok());
+        assert!(finite_tolerance(&ctx, ON_UNSET_POSITIVE_VALUE, "tolerance").is_ok());
+        assert!(finite_tolerance(&ctx, -1.0, "tolerance").is_err());
     }
 
     /// Both validators judge an already-decoded record field, which no byte of
     /// the file locates, so their refusals name no offset instead of byte 0.
     #[test]
     fn an_interval_or_tolerance_refusal_names_no_byte() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
         let error =
-            ordered_interval(finite_interval([0.0, 0.0]), "interval").expect_err("ordering");
+            ordered_interval(&ctx, finite_interval([0.0, 0.0]), "interval").expect_err("ordering");
         assert!(matches!(
             error,
             GeometryError::Malformed(crate::chunks::FramingError::Unpositioned { ref message })
                 if message == "interval is invalid"
         ));
         assert_eq!(error.to_string(), "framing error: interval is invalid");
-        let error = finite_tolerance(-1.0, "tolerance").expect_err("sign");
+        let error = finite_tolerance(&ctx, -1.0, "tolerance").expect_err("sign");
         assert!(matches!(
             error,
             GeometryError::Malformed(crate::chunks::FramingError::Unpositioned { ref message })
@@ -4391,15 +4397,18 @@ mod tests {
 
     #[test]
     fn interval_accepts_explicit_signed_unset_values() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
         for value in [
             finite_interval([ON_UNSET_VALUE, ON_UNSET_VALUE]),
             finite_interval([ON_UNSET_POSITIVE_VALUE, ON_UNSET_POSITIVE_VALUE]),
             finite_interval([ON_UNSET_VALUE, ON_UNSET_POSITIVE_VALUE]),
             finite_interval([ON_UNSET_POSITIVE_VALUE, ON_UNSET_VALUE]),
         ] {
-            assert!(ordered_interval(value, "interval").is_ok());
+            assert!(ordered_interval(&ctx, value, "interval").is_ok());
         }
-        assert!(ordered_interval(finite_interval([0.0, 0.0]), "interval").is_err());
+        assert!(ordered_interval(&ctx, finite_interval([0.0, 0.0]), "interval").is_err());
     }
 
     /// The one-trim fixture resolved the way validation resolves it.

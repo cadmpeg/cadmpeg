@@ -41,12 +41,12 @@ const VIEW_VIEWPORT_USERDATA: u32 = 0x2000_8d3b;
 const CLASS_USERDATA: u32 = 0x0002_7ffd;
 const VIEWPORT_USERDATA_CHILD_CAP: usize = 1 << 20;
 
-fn codec_error(error: FramingError) -> CodecError {
+fn codec_error(ctx: &cadmpeg_core::decode::DecodeContext<'_>, error: FramingError) -> Result<CodecError, cadmpeg_core::CodecError> { Ok(
     match error {
         FramingError::Resource(limit) => CodecError::ResourceLimit(limit),
-        other => CodecError::Malformed(other.to_string()),
+        other => CodecError::Malformed(ctx.format_retained(format_args!("{}", other), "Rhino codec_error text")?),
     }
-}
+) }
 
 #[derive(Debug, Serialize)]
 struct ViewChild {
@@ -382,7 +382,7 @@ fn parse_trace_image(
     let height_mm = scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
         FramingError::structural(reader.position() - 8, "trace height is invalid")
     })?;
-    let plane = scaled_plane(plane(&mut reader)?, scale, body.start)?;
+    let plane = scaled_plane(plane(ctx, &mut reader)?, scale, body.start)?;
     let grayscale = minor < 1 || reader.bool()?;
     let hidden = minor >= 2 && reader.bool()?;
     let filtered = minor >= 3 && reader.bool()?;
@@ -581,7 +581,7 @@ fn parse_cplane(
             "construction-plane version is unsupported",
         ));
     }
-    let value = scaled_plane(plane(&mut reader)?, scale, body.start)?;
+    let value = scaled_plane(plane(ctx, &mut reader)?, scale, body.start)?;
     let grid_spacing_mm = scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
         FramingError::structural(reader.position() - 8, "grid spacing is invalid")
     })?;
@@ -1061,7 +1061,7 @@ fn direct_view_child_checksum_warning(
     data: &[u8],
     child: &crate::chunks::Chunk,
 ) -> Result<Option<String>, FramingError> {
-    view_child_checksum_warning(ctx, data, child, std::iter::once(Ok(child.body())))
+    view_child_checksum_warning(ctx, data, child, std::iter::once(child.body()).map(Ok))
 }
 
 fn view_child_checksum_warning_excluding(
@@ -1589,7 +1589,7 @@ fn parse_list(
         ) {
             Ok(value) => {
                 ctx.reserve_vec(&mut views, 1, "Rhino view list records").map_err(crate::chunks::FramingError::from)
-                    .map_err(codec_error)?;
+                    .or_else(|error| Err(codec_error(ctx, error)?))?;
                 views.push(value);
             }
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
@@ -1678,10 +1678,6 @@ fn retain_unbound_view_record(
             record.range.start,
             binding.label()
         ), "Rhino unbound view loss message")?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(message.len()),
-        "Rhino unbound view loss message",
-    )?;
     losses.push(located_presentation_loss(record.range.start, tag, message));
     ctx.reserve_vec(opaque_records, 1, "Rhino opaque view records")?;
     opaque_records.push(OpaqueRecord {
@@ -1729,7 +1725,7 @@ pub(crate) fn install(
                             "Rhino document construction planes",
                         )
                         .map_err(crate::chunks::FramingError::from)
-                        .map_err(codec_error)?;
+                        .or_else(|error| Err(codec_error(ctx, error)?))?;
                         cplanes.extend(values);
                     }
                     Err(FramingError::Resource(limit)) => {
@@ -1786,7 +1782,7 @@ pub(crate) fn install(
                 let has_parse_losses = !parse_losses.is_empty();
                 ctx.reserve_vec(&mut views, parsed.len(), "Rhino document views")
                     .map_err(crate::chunks::FramingError::from)
-                    .map_err(codec_error)?;
+                    .or_else(|error| Err(codec_error(ctx, error)?))?;
                 views.extend(parsed);
                 ctx.reserve_vec(&mut losses, parse_losses.len(), "Rhino view setting losses")?;
                 losses.append(&mut parse_losses);
@@ -1822,7 +1818,7 @@ pub(crate) fn install(
                 let has_parse_losses = !parse_losses.is_empty();
                 ctx.reserve_vec(&mut views, parsed.len(), "Rhino document views")
                     .map_err(crate::chunks::FramingError::from)
-                    .map_err(codec_error)?;
+                    .or_else(|error| Err(codec_error(ctx, error)?))?;
                 views.extend(parsed);
                 ctx.reserve_vec(&mut losses, parse_losses.len(), "Rhino view setting losses")?;
                 losses.append(&mut parse_losses);
@@ -2747,7 +2743,7 @@ mod tests {
                 .err()
                 .expect("child ceiling refuses the class-end slot");
                 assert!(
-                    matches!(super::codec_error(error), cadmpeg_core::CodecError::ResourceLimit(limit)
+                    matches!(super::codec_error(ctx, error).expect("resource conversion"), cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::Codec("Rhino viewport userdata children")
                     && limit.limit == u64::try_from(cap).expect("fixture count fits")
                     && limit.used == limit.limit && limit.additional == 1

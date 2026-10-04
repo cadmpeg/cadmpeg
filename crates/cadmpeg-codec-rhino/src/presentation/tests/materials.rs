@@ -444,10 +444,13 @@ fn v2_v3_material_minor_zero_uses_source_defaults_without_fabricating_identity()
 
 #[test]
 fn physically_based_material_reads_versioned_prefix_and_suffix() {
+        let arena = cadmpeg_core::decode::DecodeArena::default();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     let bytes = physically_based_payload(2, &[0xaa, 0xbb]);
     let payload = chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V8, false)
         .expect("outer userdata payload");
-    let material = parse_physically_based_material(&bytes, payload.body(), ArchiveVersion::V8)
+    let material = parse_physically_based_material(&ctx, &bytes, payload.body(), ArchiveVersion::V8)
         .expect("physically based material");
     assert_eq!(material.revision.version(), 2);
     assert_eq!(
@@ -497,10 +500,13 @@ fn physically_based_material_reads_versioned_prefix_and_suffix() {
 
 #[test]
 fn physically_based_material_version_one_defaults_alpha() {
+        let arena = cadmpeg_core::decode::DecodeArena::default();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     let bytes = physically_based_payload(1, &[0xcc, 0xdd]);
     let payload = chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V8, false)
         .expect("outer userdata payload");
-    let material = parse_physically_based_material(&bytes, payload.body(), ArchiveVersion::V8)
+    let material = parse_physically_based_material(&ctx, &bytes, payload.body(), ArchiveVersion::V8)
         .expect("version one physically based material");
     assert_eq!(material.revision.version(), 1);
     assert_eq!(material.revision.alpha(), crate::test_support::finite(1.0));

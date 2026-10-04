@@ -54,18 +54,18 @@ pub(crate) fn decode_payload(
     let decoded =
         STANDARD
             .decode_slice(&compact, &mut cms)
-            .map_err(|error| ParseError::Syntax {
+            .or_else(|error| Err(ParseError::Syntax {
                 offset: payload.start,
-                message: format!("invalid SIGNATURE Base64 payload: {error}"),
-            })?;
+                message: ctx.format_retained(format_args!("invalid SIGNATURE Base64 payload: {error}"), "STEP decode_payload text")?,
+            }))?;
     cms.truncate(decoded);
     // SG-04: this is a structural detached-CMS gate. It does not compute the
     // Part 21 alphabet digest, verify a signer key, or apply caller policy;
     // the codec retains an admitted signature as opaque source data.
-    validate_detached_cms(&cms).map_err(|message| ParseError::Syntax {
+    validate_detached_cms(&cms).or_else(|message| Err(ParseError::Syntax {
         offset: payload.start,
-        message: format!("invalid detached CMS SIGNATURE payload: {message}"),
-    })?;
+        message: ctx.format_retained(format_args!("invalid detached CMS SIGNATURE payload: {message}"), "STEP decode_payload text")?,
+    }))?;
     Ok(cms)
 }
 

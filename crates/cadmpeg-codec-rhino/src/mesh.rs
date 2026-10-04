@@ -59,12 +59,12 @@ impl<'a> MeshExpand<'a> {
 }
 
 /// Maps an expansion refusal to the mesh decoder error type.
-fn expansion_refused(offset: usize, refusal: CodecError) -> GeometryError {
+fn expansion_refused(ctx: &cadmpeg_core::decode::DecodeContext<'_>, offset: usize, refusal: CodecError) -> Result<GeometryError, cadmpeg_core::CodecError> { Ok(
     match refusal {
         resource @ CodecError::ResourceLimit(_) => GeometryError::Codec(resource),
-        other => error(offset, format!("mesh buffer expansion refused: {other}")),
+        other => error(offset, ctx.format_retained(format_args!("mesh buffer expansion refused: {other}"), "Rhino expansion_refused text")?),
     }
-}
+) }
 
 /// `ON_Mesh` class UUID.
 pub(crate) const ON_MESH: Uuid = Uuid::from_canonical([
@@ -227,14 +227,14 @@ impl MeshId {
                     format_args!("rhino:extrusion:mesh-cache#{index}"),
                     "Rhino extrusion mesh-cache ID",
                 )?)
-                .map_err(|error| CodecError::Malformed(error.to_string()))
+                .or_else(|error| Err(CodecError::Malformed(ctx.format_retained(format_args!("{}", error), "Rhino into_tessellation_id text")?)))
             }
             Self::V5ExtrusionCache(index) => {
                 cadmpeg_ir::tessellation::TessellationId::mint(ctx.format_retained(
                     format_args!("rhino:extrusion:v5-mesh-cache#{index}"),
                     "Rhino V5 extrusion mesh-cache ID",
                 )?)
-                .map_err(|error| CodecError::Malformed(error.to_string()))
+                .or_else(|error| Err(CodecError::Malformed(ctx.format_retained(format_args!("{}", error), "Rhino into_tessellation_id text")?)))
             }
         }
     }
@@ -372,7 +372,7 @@ pub(crate) fn decode(
         if let Some(bytes) = surface {
             decoded
                 .channels
-                .push(channel(CHANNEL_SURFACE_PARAMETERS, 16, bytes.into_owned())?);
+                .push(channel(expand.ctx(), CHANNEL_SURFACE_PARAMETERS, 16, bytes.into_owned())?);
         }
     }
     let post_2006_fields =
@@ -624,10 +624,10 @@ pub(crate) fn decode(
                 triangles,
                 decoded.normals,
             )
-            .map_err(|lanes| error(reader.position(), lanes.to_string()))?,
+            .or_else(|lanes| Err(error(reader.position(), expand.ctx().format_retained(format_args!("{}", lanes), "Rhino decode text")?)))?,
             decoded.channels,
         )
-        .map_err(|err| error(reader.position(), err.to_string()))?
+        .or_else(|err| Err(error(reader.position(), expand.ctx().format_retained(format_args!("{}", err), "Rhino decode text")?)))?
         .with_source_object(association),
         warnings: decoded.warnings,
         losses: decoded.losses,
@@ -898,7 +898,7 @@ fn read_raw_channels(
     }
     let uv = read_counted_raw(ctx, reader, vertices, 8, "UV", warnings)?;
     if let Some(bytes) = uv {
-        channels.push(channel(
+        channels.push(channel(ctx, 
             CHANNEL_UV,
             8,
             ctx.copy_retained(bytes, "Rhino mesh raw UV channel")?,
@@ -906,7 +906,7 @@ fn read_raw_channels(
     }
     let curvature = read_counted_raw(ctx, reader, vertices, 16, "curvature", warnings)?;
     if let Some(bytes) = curvature {
-        channels.push(channel(
+        channels.push(channel(ctx, 
             CHANNEL_CURVATURE,
             16,
             ctx.copy_retained(bytes, "Rhino mesh raw curvature channel")?,
@@ -914,7 +914,7 @@ fn read_raw_channels(
     }
     let colors = read_counted_raw(ctx, reader, vertices, 4, "colors", warnings)?;
     if let Some(bytes) = colors {
-        channels.push(channel(
+        channels.push(channel(ctx, 
             CHANNEL_COLOR,
             4,
             ctx.copy_retained(bytes, "Rhino mesh raw color channel")?,
@@ -1010,7 +1010,7 @@ fn read_compressed_channels(
             MeshChannelAction::Raw(kind) => {
                 decoded
                     .channels
-                    .push(channel(kind, spec.item_size, bytes.into_owned())?);
+                    .push(channel(expand.ctx(), kind, spec.item_size, bytes.into_owned())?);
             }
         }
     }
@@ -1242,7 +1242,7 @@ fn inflate<'a>(
         source,
         ExpandSpec::Exact(cadmpeg_core::decode::u64_from_index(expected)),
     )
-    .map_err(|refusal| expansion_refused(base, refusal))
+    .or_else(|refusal| Err(expansion_refused(expand.ctx(), base, refusal)?))
 }
 
 fn read_ngons(
@@ -1719,7 +1719,7 @@ fn v5_synchronization_ok(double: &[[f64; 3]], float: &[[FiniteBinary32; 3]]) -> 
     })
 }
 
-fn channel(kind: u32, item_size: u32, data: Vec<u8>) -> Result<TessellationChannel, GeometryError> {
+fn channel(ctx: &cadmpeg_core::decode::DecodeContext<'_>, kind: u32, item_size: u32, data: Vec<u8>) -> Result<TessellationChannel, GeometryError> {
     TessellationChannel::new(
         cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
         item_size,
@@ -1727,7 +1727,7 @@ fn channel(kind: u32, item_size: u32, data: Vec<u8>) -> Result<TessellationChann
         0,
         data,
     )
-    .map_err(|error| GeometryError::unpositioned(format!("invalid mesh channel: {error}")))
+    .or_else(|error| Err(GeometryError::unpositioned(ctx.format_retained(format_args!("invalid mesh channel: {error}"), "Rhino channel text")?)))
 }
 
 fn interval(reader: &mut BoundedReader<'_>) -> Result<(), FramingError> {

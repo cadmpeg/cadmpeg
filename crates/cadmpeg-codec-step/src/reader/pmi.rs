@@ -232,7 +232,7 @@ pub(super) fn decode(
                 ctx.push_vec(
                     &mut losses,
                     StepLossCode::PmiDatumSystemInvalid
-                        .note(format!("DATUM_SYSTEM #{id} omitted: {error}")),
+                        .note(ctx.format_retained(format_args!("DATUM_SYSTEM #{id} omitted: {error}"), "STEP decode text")?),
                     "step_pmi_losses",
                 )?;
                 continue;

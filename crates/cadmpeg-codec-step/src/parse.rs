@@ -525,7 +525,7 @@ pub(crate) fn parse_with_context(
     input: &[u8],
     ctx: &DecodeContext<'_>,
 ) -> Result<(Exchange, Vec<ParseDiagnostic>), CodecError> {
-    parse_inner(input, ctx).map_err(ParseError::into_codec_error)
+    parse_inner(input, ctx).or_else(|error| Err(error.into_codec_error(ctx)?))
 }
 
 pub(crate) fn parse_inner(
@@ -547,12 +547,12 @@ pub(crate) fn parse_inner(
 }
 
 impl ParseError {
-    fn into_codec_error(self) -> CodecError {
-        match self {
+    fn into_codec_error(self, ctx: &DecodeContext<'_>) -> Result<CodecError, CodecError> {
+        Ok(match self {
             Self::Resource(error) => error,
             Self::Lex(error) => error.into_codec_error(),
-            error @ Self::Syntax { .. } => CodecError::Malformed(error.to_string()),
-        }
+            error @ Self::Syntax { .. } => CodecError::Malformed(ctx.format_retained(format_args!("{error}"), "STEP parse error")?),
+        })
     }
 }
 
@@ -794,7 +794,8 @@ impl Parser<'_, '_, '_> {
         let mut anchors = Vec::new();
         if let Some(level) = implementation_level.edition3_sections_forbidden_by() {
             if self.peek_name("ANCHOR") || self.peek_name("REFERENCE") {
-                return self.err(&format!("{level} forbids ANCHOR and REFERENCE sections"));
+                let (message, _message_storage) = self.budget.format_scoped(format_args!("{level} forbids ANCHOR and REFERENCE sections"), "STEP forbidden section message")?;
+                return self.err(&message);
             }
         }
         if self.peek_name("ANCHOR") {
@@ -988,7 +989,8 @@ impl Parser<'_, '_, '_> {
         let mut signatures = Vec::new();
         if let Some(level) = implementation_level.edition3_sections_forbidden_by() {
             if self.peek_name("SIGNATURE") {
-                return self.err(&format!("{level} forbids SIGNATURE sections"));
+                let (message, _message_storage) = self.budget.format_scoped(format_args!("{level} forbids SIGNATURE sections"), "STEP forbidden section message")?;
+                return self.err(&message);
             }
         }
         while self.peek_name("SIGNATURE") {
@@ -1200,9 +1202,9 @@ impl Parser<'_, '_, '_> {
                 ParseDiagnostic {
                     offset,
                     kind: ParseDiagnosticKind::OmittedEntityName,
-                    message: format!(
+                    message: self.budget.format_retained(format_args!(
                         "recovered {count} simple named carrier instance(s) with an omitted leading name attribute by inserting an empty name"
-                    ),
+                    ), "STEP exchange text")?,
                 },
                 "step_parse_diagnostics",
             )?;
