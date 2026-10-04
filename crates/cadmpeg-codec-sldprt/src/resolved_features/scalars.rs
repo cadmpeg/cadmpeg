@@ -21,7 +21,7 @@ pub(crate) fn named_scalars_charged(
     parent: &str,
     names: &[FeatureInputName],
 ) -> Result<Vec<FeatureInputScalar>, CodecError> {
-    let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
+    let lane_key = ctx.rsplit_once(parent, "#", "split SLDPRT feature-input lane key")?.map_or(parent, |(_, key)| key);
     let mut scalars = Vec::new();
     for name in names {
         let Some(name_offset) = usize::try_from(name.offset).ok() else {
@@ -156,7 +156,7 @@ fn scalar_operands_charged(
     trailer_offset: usize,
     parent: &str,
 ) -> Result<Vec<FeatureInputOperand>, CodecError> {
-    let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
+    let lane_key = ctx.rsplit_once(parent, "#", "split SLDPRT feature-input lane key")?.map_or(parent, |(_, key)| key);
     let mut operands = Vec::new();
     for (offset, kind, entity_index) in operand_cells(payload, trailer_offset).into_iter().flatten()
     {

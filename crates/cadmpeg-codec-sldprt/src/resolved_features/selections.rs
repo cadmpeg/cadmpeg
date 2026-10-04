@@ -108,9 +108,7 @@ pub(super) fn compact_body_selections(
 ) -> Result<Vec<FeatureInputBodySelection>, CodecError> {
     const OPERATION: &str = "decode SLDPRT compact body selections";
     let objects = selection_objects(ctx, histories, lane, OPERATION)?;
-    let lane_key = lane
-        .id
-        .rsplit_once('#')
+    let lane_key = ctx.rsplit_once(&lane.id, "#", "split SLDPRT feature-input lane key")?
         .map_or(lane.id.as_str(), |(_, key)| key);
     ctx.charge_work(u64_from_index(lane.classes.len()), OPERATION)?;
     let state_token = compact_body_state_token(lane);
@@ -388,9 +386,7 @@ pub(super) fn compact_edge_selections(
     const OPERATION: &str = "decode SLDPRT compact edge selections";
     let history_features = history_features_with_object_sources(ctx, histories, lane)?;
     let objects = selection_objects(ctx, histories, lane, OPERATION)?;
-    let lane_key = lane
-        .id
-        .rsplit_once('#')
+    let lane_key = ctx.rsplit_once(&lane.id, "#", "split SLDPRT feature-input lane key")?
         .map_or(lane.id.as_str(), |(_, key)| key);
     let mut result = Vec::new();
     ctx.charge_work(u64_from_index(lane.classes.len()), OPERATION)?;
@@ -662,9 +658,7 @@ pub(super) fn compact_surface_selections(
     }
     let mirror_surface_prefix = mirror_surface_type_prefix(lane);
     let objects = selection_objects(ctx, histories, lane, OPERATION)?;
-    let lane_key = lane
-        .id
-        .rsplit_once('#')
+    let lane_key = ctx.rsplit_once(&lane.id, "#", "split SLDPRT feature-input lane key")?
         .map_or(lane.id.as_str(), |(_, key)| key);
     let mut result = Vec::new();
     for (index, &(name, feature, _)) in objects.iter().enumerate() {
@@ -3017,9 +3011,7 @@ pub(crate) fn generated_surface_identities(
         Ord::cmp,
         "sort SLDPRT generated surface identities",
     )?;
-    let lane_key = lane
-        .id
-        .rsplit_once('#')
+    let lane_key = ctx.rsplit_once(&lane.id, "#", "split SLDPRT feature-input lane key")?
         .map_or(lane.id.as_str(), |(_, key)| key);
     let mut identities = Vec::new();
     ctx.reserve_vec(&mut identities, result.len(), OPERATION)?;

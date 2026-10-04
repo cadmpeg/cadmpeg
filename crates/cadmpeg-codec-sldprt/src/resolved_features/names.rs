@@ -77,7 +77,7 @@ pub(crate) fn object_names(
     payload: &[u8],
     parent: &str,
 ) -> Result<Vec<FeatureInputName>, cadmpeg_core::CodecError> {
-    let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
+    let lane_key = ctx.rsplit_once(parent, "#", "split SLDPRT feature-input lane key")?.map_or(parent, |(_, key)| key);
     let mut names = Vec::new();
     ctx.charge_work(
         u64_from_index(payload.len()),
@@ -204,11 +204,12 @@ fn payload_classes(payload: &[u8]) -> impl Iterator<Item = (usize, &str)> {
 }
 
 pub(crate) fn class_declarations_match(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     parent: &str,
     classes: &[FeatureInputClass],
-) -> bool {
-    let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
+) -> Result<bool, cadmpeg_core::CodecError> {
+    let lane_key = ctx.rsplit_once(parent, "#", "split SLDPRT feature-input lane key")?.map_or(parent, |(_, key)| key);
     let mut expected = payload_classes(payload).enumerate();
     let matches = classes.iter().enumerate().all(|(ordinal, actual)| {
         expected.next().is_some_and(|(index, (offset, name))| {
@@ -220,15 +221,16 @@ pub(crate) fn class_declarations_match(
                 && actual.name == name
         })
     });
-    matches && expected.next().is_none()
+    Ok(matches && expected.next().is_none())
 }
 
 pub(crate) fn object_names_structure_match(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     parent: &str,
     names: &[FeatureInputName],
-) -> bool {
-    let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
+) -> Result<bool, cadmpeg_core::CodecError> {
+    let lane_key = ctx.rsplit_once(parent, "#", "split SLDPRT feature-input lane key")?.map_or(parent, |(_, key)| key);
     let mut expected = payload_names(payload).enumerate();
     let matches = names.iter().enumerate().all(|(ordinal, actual)| {
         expected
@@ -242,7 +244,7 @@ pub(crate) fn object_names_structure_match(
                     && actual.object_id == object_id
             })
     });
-    matches && expected.next().is_none()
+    Ok(matches && expected.next().is_none())
 }
 
 pub(crate) fn first_object_name_value_mismatch<'a>(
@@ -300,7 +302,7 @@ pub(crate) fn class_declarations(
     payload: &[u8],
     parent: &str,
 ) -> Result<Vec<FeatureInputClass>, cadmpeg_core::CodecError> {
-    let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
+    let lane_key = ctx.rsplit_once(parent, "#", "split SLDPRT feature-input lane key")?.map_or(parent, |(_, key)| key);
     let mut classes = Vec::new();
     for (ordinal, (offset, name)) in payload_classes(payload).enumerate() {
         let id = record_id(ctx, "class", lane_key, offset)?;
