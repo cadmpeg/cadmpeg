@@ -1538,7 +1538,7 @@ fn grouped_component_insert_identity_with_layout<'a>(
             carrier_at + grouped_identity_layout::FIRST_COMPONENT_GUID,
             36..=36,
         ));
-        if !component_guid.is_guid_relaxed() {
+        if !admitted_value!(component_guid.is_guid_relaxed(ctx)) {
             return None;
         }
         if bytes.get(at) != Some(&0) {
@@ -1555,9 +1555,10 @@ fn grouped_component_insert_identity_with_layout<'a>(
         let role_bounds = if variable_role { 36..=256 } else { 36..=36 };
         let (role, next) = admitted_option!(lp_utf16_bounded_view(ctx, bytes, at, role_bounds.clone()));
         let valid_role = if variable_role {
-            role.is_guid_relaxed() || role.is_guid_urn_role()
+            admitted_value!(role.is_guid_relaxed(ctx))
+                || admitted_value!(role.is_guid_urn_role(ctx))
         } else {
-            role.is_guid_relaxed()
+            admitted_value!(role.is_guid_relaxed(ctx))
         };
         if !valid_role {
             return None;
@@ -1578,12 +1579,12 @@ fn grouped_component_insert_identity_with_layout<'a>(
         at += marker_after_role.len();
 
         let (metadata_guid_a, next) = admitted_option!(lp_utf16_bounded_view(ctx, bytes, at, 36..=36));
-        if !metadata_guid_a.is_guid_relaxed() {
+        if !admitted_value!(metadata_guid_a.is_guid_relaxed(ctx)) {
             return None;
         }
         at = next;
         let (metadata_guid_b, next) = admitted_option!(lp_utf16_bounded_view(ctx, bytes, at, 36..=36));
-        if !metadata_guid_b.is_guid_relaxed() {
+        if !admitted_value!(metadata_guid_b.is_guid_relaxed(ctx)) {
             return None;
         }
         at = next;
@@ -1606,7 +1607,7 @@ fn grouped_component_insert_identity_with_layout<'a>(
         }
 
         let (repeated_component_guid, next) = admitted_option!(lp_utf16_bounded_view(ctx, bytes, at, 36..=36));
-        if !repeated_component_guid.is_guid_relaxed()
+        if !admitted_value!(repeated_component_guid.is_guid_relaxed(ctx))
             || !admitted_value!(repeated_component_guid.eq_ignore_ascii_case(ctx, component_guid))
         {
             return None;
@@ -1710,6 +1711,14 @@ fn legacy_occurrence_placement<'a>(
             }
         };
     }
+    macro_rules! admitted_bool {
+        ($result:expr) => {
+            match $result {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            }
+        };
+    }
     let parsed = (|| {
         let mut at = admitted_option!(legacy_occurrence_prefix(ctx, body));
         let identity_marker = *body.get(at)?;
@@ -1728,7 +1737,7 @@ fn legacy_occurrence_placement<'a>(
         }
         at += 4;
         let (link_name, after_role) = admitted_option!(lp_utf16_bounded_view(ctx, body, at, 36..=36));
-        if !link_name.is_guid_relaxed() {
+        if !admitted_bool!(link_name.is_guid_relaxed(ctx)) {
             return None;
         }
         at = after_role;
@@ -1759,6 +1768,14 @@ fn legacy_occurrence_role<'a>(
             }
         };
     }
+    macro_rules! admitted_bool {
+        ($result:expr) => {
+            match $result {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            }
+        };
+    }
     let parsed = (|| {
         let mut at = admitted_option!(legacy_occurrence_prefix(ctx, body));
         match *body.get(at)? {
@@ -1771,7 +1788,7 @@ fn legacy_occurrence_role<'a>(
         }
         at += 4;
         let (link_name, _) = admitted_option!(lp_utf16_bounded_view(ctx, body, at, 36..=36));
-        link_name.is_guid_relaxed().then_some(Ok(link_name))
+        admitted_bool!(link_name.is_guid_relaxed(ctx)).then_some(Ok(link_name))
     })();
     parsed.transpose()
 }
@@ -1786,6 +1803,14 @@ fn legacy_occurrence_prefix(
             match $result {
                 Ok(Some(value)) => value,
                 Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            }
+        };
+    }
+    macro_rules! admitted_bool {
+        ($result:expr) => {
+            match $result {
+                Ok(value) => value,
                 Err(error) => return Some(Err(error)),
             }
         };
@@ -1820,7 +1845,7 @@ fn legacy_occurrence_prefix(
         at += 4;
         for _ in 0..2 {
             let (guid, next) = admitted_option!(lp_utf16_bounded_view(ctx, body, at, 36..=36));
-            if !guid.is_guid_relaxed() {
+            if !admitted_bool!(guid.is_guid_relaxed(ctx)) {
                 return None;
             }
             at = next;

@@ -1471,3 +1471,32 @@ fn mesh_texture_table_scan_preserves_work_refusal() {
         |ctx| super::super::clone_mesh_texture_table(ctx, &table),
     );
 }
+
+#[test]
+fn missing_geometry_loss_growth_preserves_collection_refusal() {
+    let bytes = crate::test_support::assembly_test::f3d_without_brep("Design", "Own", &[]);
+    let arena = DecodeArena::new();
+    let (scan_ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let scan = crate::container::scan(&scan_ctx, root).unwrap();
+    let policy = DecodePolicy::service();
+    let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let losses = super::super::container_losses(&decode, &scan).unwrap();
+    assert_eq!(losses.len(), 4);
+    assert!(losses[3].message.contains("no ASM BREP stream"));
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D container losses",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = super::super::container_losses(&decode, &scan);
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(ref limit)) = result {
+                assert_eq!(decode.resource_refusal().as_ref(), Some(limit));
+            }
+            result
+        },
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D container losses"));
+}

@@ -244,3 +244,52 @@ fn persistent_subentity_order_finding_refuses_collection_limit() {
         if limit.operation == "collect F3D native validation findings")
     );
 }
+
+#[test]
+fn persistent_body_target_and_order_scans_preserve_work_refusal() {
+    crate::test_support::with_decode_context(|service| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let mut native = crate::native::F3dNative::default();
+        native.persistent_design_links.push(body_link(
+            cadmpeg_ir::attributes::AttributeTarget::Body(ir.model.bodies[0].id.clone()), 0,
+        ));
+        for operation in ["find F3D persistent body target", "validate F3D persistent body link ordering"] {
+            let error = crate::test_support::resource_refusal_at(
+                cadmpeg_core::decode::ResourceDimension::WorkUnits, operation, 0,
+                |decode| {
+                    let mut ctx = super::super::Ctx::new(&ir, &native, service)?;
+                    ctx.decode = decode;
+                    super::super::validate_body_links(&ctx, &mut Vec::new())
+                },
+            );
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == operation));
+        }
+    });
+}
+
+#[test]
+fn persistent_subentity_target_and_order_scans_preserve_work_refusal() {
+    crate::test_support::with_decode_context(|service| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let mut native = crate::native::F3dNative::default();
+        native.persistent_subentity_tags.push(subentity_tag(
+            cadmpeg_ir::attributes::AttributeTarget::Face(ir.model.faces[0].id.clone()), 0,
+        ));
+        native.persistent_subentity_tags.push(subentity_tag(
+            cadmpeg_ir::attributes::AttributeTarget::Edge(ir.model.edges[0].id.clone()), 0,
+        ));
+        for operation in ["find F3D persistent face target", "find F3D persistent edge target", "validate F3D persistent subentity tag ordering"] {
+            let error = crate::test_support::resource_refusal_at(
+                cadmpeg_core::decode::ResourceDimension::WorkUnits, operation, 0,
+                |decode| {
+                    let mut ctx = super::super::Ctx::new(&ir, &native, service)?;
+                    ctx.decode = decode;
+                    super::super::validate_subentity_tags(&ctx, &mut Vec::new())
+                },
+            );
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == operation));
+        }
+    });
+}

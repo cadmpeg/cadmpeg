@@ -406,7 +406,11 @@ fn exact_assembly_axial_component_operand_at(
             Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         };
-        if !first.selects_same_object(&second)
+        let same_object = match first.selects_same_object(ctx, &second) {
+            Ok(value) => value,
+            Err(error) => return Some(Err(error)),
+        };
+        if !same_object
             || !first
                 .occurrence_role
                 .as_str()

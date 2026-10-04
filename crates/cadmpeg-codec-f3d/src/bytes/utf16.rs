@@ -48,11 +48,30 @@ impl<'a> Utf16View<'a> {
         // Construction validates every code unit before this iterator is available.
         char::decode_utf16(std::iter::from_fn(move || view.u16_le())).flatten()
     }
+    fn utf16_units(
+        self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<impl Iterator<Item = u16> + 'a, CodecError> {
+        let mut view = View::over_retained(self.raw);
+        let mut admitted = ctx.admit_iter(self.raw, operation)?;
+        Ok(std::iter::from_fn(move || {
+            admitted.next()?;
+            admitted.next()?;
+            view.u16_le()
+        }))
+    }
     pub(crate) fn is_empty(self) -> bool {
         self.utf8_len == 0
     }
-    pub(crate) fn is_guid_hyphenated(self) -> bool {
-        self.len() == 36 && self.guid_prefix()
+    pub(crate) fn is_guid_hyphenated(
+        self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<bool, CodecError> {
+        if self.len() != 36 {
+            return Ok(false);
+        }
+        self.guid_prefix(ctx)
     }
     pub(crate) fn len(self) -> usize {
         self.utf8_len
@@ -74,24 +93,64 @@ impl<'a> Utf16View<'a> {
         let right = other.to_scoped(ctx, "compare F3D UTF-16 text")?;
         ctx.eq_ignore_ascii_case(&left.0, &right.0, "compare F3D UTF-16 text")
     }
-    pub(crate) fn is_guid_relaxed(self) -> bool {
-        matches!(self.len(), 36..=38)
-            && self.chars().all(|character| {
-                character.is_ascii_alphanumeric() || matches!(character, '-' | '_')
-            })
+    pub(crate) fn is_guid_relaxed(self, ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
+        if !matches!(self.len(), 36..=38) {
+            return Ok(false);
+        }
+        Ok(self.utf16_units(ctx, "validate F3D relaxed UTF-16 GUID")?.all(|unit| {
+            let Ok(byte) = u8::try_from(unit) else {
+                return false;
+            };
+            byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_')
+        }))
     }
-    fn guid_prefix(self) -> bool {
-        self.len() >= 36
-            && self.chars().take(36).enumerate().all(|(index, character)| {
+    fn guid_prefix(self, ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
+        if self.len() < 36 {
+            return Ok(false);
+        }
+        Ok(self
+            .utf16_units(ctx, "validate F3D UTF-16 GUID prefix")?
+            .take(36)
+            .enumerate()
+            .all(|(index, unit)| {
+                let Ok(byte) = u8::try_from(unit) else {
+                    return false;
+                };
                 if matches!(index, 8 | 13 | 18 | 23) {
-                    character == '-'
+                    byte == b'-'
                 } else {
-                    character.is_ascii_hexdigit()
+                    byte.is_ascii_hexdigit()
                 }
-            })
+            }))
     }
-    pub(crate) fn is_guid_urn_role(self) -> bool {
-        self.guid_prefix() && self.chars().skip(36).take(5).eq("_urn:".chars())
+    pub(crate) fn is_guid_urn_role(self, ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
+        if !self.guid_prefix(ctx)? {
+            return Ok(false);
+        }
+        let mut suffix = [0u16; 5];
+        let mut count = 0usize;
+        for unit in self
+            .utf16_units(ctx, "validate F3D UTF-16 GUID role")?
+            .skip(36)
+            .take(5)
+        {
+            suffix[count] = unit;
+            count += 1;
+        }
+        if count != suffix.len() {
+            return Ok(false);
+        }
+        ctx.equal(
+            &suffix,
+            &[
+                u16::from(b'_'),
+                u16::from(b'u'),
+                u16::from(b'r'),
+                u16::from(b'n'),
+                u16::from(b':'),
+            ],
+            "compare F3D UTF-16 GUID role",
+        )
     }
     pub(crate) fn to_retained(
         self,
@@ -140,6 +199,23 @@ mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
+    fn assert_fused_work_refusal<T>(
+        ctx: &DecodeContext<'_>,
+        result: Result<T, CodecError>,
+        operation: &'static str,
+    ) {
+        assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits && limit.operation == operation));
+        let refusal = ctx.resource_refusal().expect("operation refusal is fused");
+        assert_eq!(refusal.operation, operation);
+        let CodecError::ResourceLimit(fused) = ctx.charge_work(0, "repeat UTF-16 test refusal")
+            .expect_err("the original refusal remains fused")
+        else {
+            panic!("resource refusal remains fused");
+        };
+        assert_eq!(fused, refusal);
+    }
+
     #[test]
     fn utf16_validation_propagates_work_refusal() {
         let raw = [b'A', 0];
@@ -171,5 +247,77 @@ mod tests {
                 assert!(ctx.charge_retained(1, "after F3D text").is_err());
             }
         }
+    }
+
+    #[test]
+    fn utf16_guid_scans_propagate_work_refusal() {
+        let guid = "01234567-89AB-CDEF-0123-456789ABCDEF";
+        let raw: Vec<u8> = guid.encode_utf16().flat_map(u16::to_le_bytes).collect();
+        let view = crate::test_support::with_decode_context(|ctx| {
+            Utf16View::new(ctx, &raw).unwrap().unwrap()
+        });
+        let role: Vec<u8> = format!("{guid}_urn:")
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect();
+        let role_view = crate::test_support::with_decode_context(|ctx| {
+            Utf16View::new(ctx, &role).unwrap().unwrap()
+        });
+        crate::test_support::with_decode_context(|ctx| {
+            assert!(view.is_guid_hyphenated(ctx).unwrap());
+            assert!(view.is_guid_relaxed(ctx).unwrap());
+            assert!(role_view.is_guid_urn_role(ctx).unwrap());
+        });
+
+        for text in [format!("{}😀", "0".repeat(32)), format!("{}é", "0".repeat(34))] {
+            assert_eq!(text.len(), 36);
+            let raw: Vec<u8> = text.encode_utf16().flat_map(u16::to_le_bytes).collect();
+            let view = crate::test_support::with_decode_context(|ctx| {
+                Utf16View::new(ctx, &raw).unwrap().unwrap()
+            });
+            crate::test_support::with_decode_context(|ctx| {
+                assert!(!view.is_guid_hyphenated(ctx).unwrap());
+                assert!(!view.is_guid_relaxed(ctx).unwrap());
+            });
+        }
+
+        let unicode_role: Vec<u8> = format!("{guid}_urn😀")
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect();
+        let unicode_role_view = crate::test_support::with_decode_context(|ctx| {
+            Utf16View::new(ctx, &unicode_role).unwrap().unwrap()
+        });
+        crate::test_support::with_decode_context(|ctx| {
+            assert!(!unicode_role_view.is_guid_urn_role(ctx).unwrap());
+        });
+
+        for check in 0..2 {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+            let result = if check == 0 {
+                view.is_guid_hyphenated(&ctx)
+            } else {
+                view.is_guid_relaxed(&ctx)
+            };
+            let operation = if check == 0 {
+                "validate F3D UTF-16 GUID prefix"
+            } else {
+                "validate F3D relaxed UTF-16 GUID"
+            };
+            assert_fused_work_refusal(&ctx, result, operation);
+        }
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::try_from(role.len()).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        assert_fused_work_refusal(
+            &ctx,
+            role_view.is_guid_urn_role(&ctx),
+            "validate F3D UTF-16 GUID role",
+        );
     }
 }

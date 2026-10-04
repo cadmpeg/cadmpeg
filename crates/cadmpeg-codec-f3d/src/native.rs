@@ -72,15 +72,15 @@ use cadmpeg_asm::brep::records::{
     TransformHints, VertexOwnership, WireTopology,
 };
 
-fn owner_indices<'a>(
+fn owner_indices<T>(
     ctx: &DecodeContext<'_>,
-    ids: impl ExactSizeIterator<Item = &'a str>,
+    records: &[T],
+    id: impl Fn(&T) -> &str,
 ) -> Result<HashMap<String, usize>, cadmpeg_ir::NativeConvertError> {
     let mut indexed = HashMap::new();
-    ctx.reserve_map(&mut indexed, ids.len(), "index F3D native owners")?;
-    for (ordinal, id) in ids.enumerate() {
-        let key = ctx.copy_retained_text(id, "retain F3D native owner id")?;
-        indexed.insert(key, ordinal);
+    for (ordinal, record) in ctx.admit_iter(records, "scan F3D native owners").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+        let key = ctx.copy_retained_text(id(record), "retain F3D native owner id")?;
+        ctx.insert_hash_map(&mut indexed, key, ordinal, "index F3D native owners")?;
     }
     Ok(indexed)
 }
@@ -97,7 +97,7 @@ fn group_by_owner<T>(
         ctx.collect_indexed_vec(owner_count, "group F3D native owners", |_| Ok(Vec::new()))?;
     for record in records {
         let parent = owner(&record);
-        let ordinal = owners.get(parent).ok_or_else(|| {
+        let ordinal = ctx.get_hash_map(owners, parent, "find F3D native record owner")?.ok_or_else(|| {
             match ctx.format_retained(format_args!("orphaned or ambiguously parented records: child {} refers to missing parent {parent}", id(&record)), "report F3D native missing owner") {
                 Ok(text) => cadmpeg_ir::NativeConvertError::InvalidOwner(text),
                 Err(error) => cadmpeg_ir::NativeConvertError::Resource(error),
@@ -836,7 +836,7 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |ctx, model, row, namespace| {
-            for configuration in &model.design_configurations {
+            for configuration in ctx.admit_iter(&model.design_configurations, "scan F3D configuration variants for serialization").map_err(cadmpeg_core::CodecError::from)? {
                 let count = u64::try_from(configuration.variants().len()).map_err(|_| {
                     ctx.refuse_codec_limit(
                         "sort F3D configuration variants",
@@ -1453,7 +1453,10 @@ impl F3dNative {
                         cadmpeg_core::CodecError::ResourceLimit(_) => {
                             cadmpeg_ir::NativeConvertError::Resource(error)
                         }
-                        _ => cadmpeg_ir::NativeConvertError::InvalidCollection(error.to_string()),
+                        _ => match ctx.format_retained(format_args!("{error}"), "report F3D invalid sketch relation") {
+                            Ok(text) => cadmpeg_ir::NativeConvertError::InvalidCollection(text),
+                            Err(refusal) => cadmpeg_ir::NativeConvertError::Resource(refusal),
+                        },
                     })?,
                 );
             }
@@ -1555,7 +1558,7 @@ impl F3dNative {
             read_arena!("asm_entity_changes");
         let records: Vec<crate::history_records::AsmHistoryRecord> =
             read_arena!("asm_history_records");
-        let board_indices = owner_indices(ctx, boards.iter().map(|board| board.id.as_str()))?;
+        let board_indices = owner_indices(ctx, &boards, |board| board.id.as_str())?;
         let changes_by_board = group_by_owner(
             ctx,
             changes,
@@ -1577,7 +1580,7 @@ impl F3dNative {
             attached_boards.push(board);
         }
         let boards = attached_boards;
-        let state_indices = owner_indices(ctx, states.iter().map(|state| state.id.as_str()))?;
+        let state_indices = owner_indices(ctx, &states, |state| state.id.as_str())?;
         let boards_by_state = group_by_owner(
             ctx,
             boards,
@@ -1614,10 +1617,8 @@ impl F3dNative {
         let states = attached_states;
         let history_indices = owner_indices(
             ctx,
-            native
-                .asm_histories
-                .iter()
-                .map(|history| history.id.as_str()),
+            &native.asm_histories,
+            |history| history.id.as_str(),
         )?;
         let states_by_history = group_by_owner(
             ctx,

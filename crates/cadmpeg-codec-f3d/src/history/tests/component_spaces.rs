@@ -9,7 +9,7 @@
 use crate::history::{
     bind_historical_recipe_reference_candidates, direct_face_recipe_candidates,
     historical_recipe_faces, recipe_reference_common_vertex,
-    selection::bind_extrude_selection_history,
+    selection::{bind_extrude_selection_history, historical_extrude_selection_identity_kind},
 };
 use crate::history_records::{
     AsmDeltaState, AsmHistoricalCoedge, AsmHistoricalEdge, AsmHistoricalRelation,
@@ -163,6 +163,73 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
         Some(42)
     );
     assert_eq!(members[0].historical.as_ref().unwrap().state_ids, [2]);
+}
+
+#[test]
+fn component_history_context_comparison_propagates_work_refusal() {
+    let design_stream = "Asset/Design1/BulkStream.dat";
+    let naming_spaces = [crate::records::recipes::DesignComponentNamingSpace {
+        id: crate::ids::native_design_component_naming_space_id(design_stream, 0),
+        byte_offset: 0,
+        component_record_index: 10,
+        context_uuid: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+            .to_owned()
+            .try_into()
+            .expect("GUID"),
+        context_uuid_offset: 12,
+    }];
+    let member = crate::records::topology::extrude_selection::DesignExtrudeSelectionMember::try_new(
+        crate::records::topology::extrude_selection::DesignExtrudeSelectionMemberDraft {
+            id: crate::ids::native_scoped_id(design_stream, "extrude-selection-member", 400),
+            group_record_index: 1,
+            group_member_ordinal: 0,
+            record_index: 2,
+            byte_offset: 400,
+            class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned())
+                .unwrap(),
+            local_id: 42,
+            local_id_offset: 421,
+            asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                "11111111-2222-4333-8444-555555555555".to_owned(),
+            )
+            .unwrap(),
+            asset_id_offset: 433,
+            context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee".to_owned(),
+            )
+            .unwrap(),
+            context_id_offset: 505,
+            tail_slot_present: false,
+            tail_slot_offset: 581,
+            resolved_geometry: None,
+            operand_identity_ids: Vec::new(),
+            historical: None,
+            next_record_index: 3,
+            next_byte_offset: 590,
+        },
+    )
+    .unwrap();
+
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "compare F3D component context UUID",
+        0,
+        |decode| {
+            historical_extrude_selection_identity_kind(
+                decode,
+                &member,
+                &naming_spaces,
+                &[],
+                &[],
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "compare F3D component context UUID"
+    ));
 }
 
 #[test]

@@ -546,17 +546,29 @@ pub(super) fn resolved_edge_treatment_group_with_corners(
     let Some(state_id) = previous_state_id else {
         return native_edge_selection(group, ctx);
     };
-    let mut states = histories
-        .iter()
-        .filter(|history| ids::same_native_occurrence(&history.id, &group.id))
-        .flat_map(|history| &history.states)
-        .filter(|state| state.state_id == state_id);
-    let Some(topology) = states.next().and_then(|state| state.topology()) else {
+    let mut topology = None;
+    let mut multiple_states = false;
+    'histories: for history in histories {
+        if !ids::same_native_occurrence(ctx, &history.id, &group.id)? {
+            continue;
+        }
+        for state in &history.states {
+            if state.state_id != state_id {
+                continue;
+            }
+            if topology.is_some() {
+                multiple_states = true;
+                break 'histories;
+            }
+            let Some(found_topology) = state.topology() else {
+                break 'histories;
+            };
+            topology = Some(found_topology);
+        }
+    }
+    let Some(topology) = topology.filter(|_| !multiple_states) else {
         return native_edge_selection(group, ctx);
     };
-    if states.next().is_some() {
-        return native_edge_selection(group, ctx);
-    }
     let mut endpoints = HashSet::new();
     for edge in edges {
         let Some(edge_slot) = edge

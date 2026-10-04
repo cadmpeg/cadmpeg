@@ -178,10 +178,27 @@ fn mirror_face_recipe_accepts_coincident_preceding_plane_faces() {
         }],
     };
 
-    let plane = historical_mirror_face_operand_plane(&operand, &history, 1)
-        .expect("coincident preceding faces share one mirror plane");
-    assert_eq!(plane.origin, Point3::new(1.0, 2.0, 3.0));
-    assert_eq!(plane.normal, Vector3::new(0.0, 0.0, 1.0));
+    crate::test_support::with_decode_context(|decode| {
+        let plane = historical_mirror_face_operand_plane(decode, &operand, &history, 1)
+            .expect("mirror face admission")
+            .expect("coincident preceding faces share one mirror plane");
+        assert_eq!(plane.origin, Point3::new(1.0, 2.0, 3.0));
+        assert_eq!(plane.normal, Vector3::new(0.0, 0.0, 1.0));
+    });
+
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan F3D preceding mirror face candidates",
+        0,
+        |decode| {
+            historical_mirror_face_operand_plane(decode, &operand, &history, 1).map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "scan F3D preceding mirror face candidates"
+    ));
 
     let mut noncoincident = history;
     noncoincident.states[0]
@@ -190,7 +207,11 @@ fn mirror_face_recipe_accepts_coincident_preceding_plane_faces() {
         .surface_planes[1]
         .origin
         .z = 4.0;
-    assert!(historical_mirror_face_operand_plane(&operand, &noncoincident, 1).is_none());
+    let result = crate::test_support::with_decode_context(|decode| {
+        historical_mirror_face_operand_plane(decode, &operand, &noncoincident, 1)
+    })
+    .expect("mirror face admission");
+    assert!(result.is_none());
 }
 
 #[test]

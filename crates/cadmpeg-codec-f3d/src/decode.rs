@@ -396,18 +396,19 @@ fn face_selection_is_resolved(selection: &cadmpeg_ir::features::FaceSelection) -
 }
 
 fn draft_neutral_plane_is_resolved(
+    ctx: &DecodeContext<'_>,
     selection: &cadmpeg_ir::features::FaceSelection,
     pull_plane: Option<&cadmpeg_ir::features::FeatureId>,
     pull_direction: Option<&cadmpeg_ir::math::Vector3>,
-) -> bool {
-    face_selection_is_resolved(selection)
+) -> Result<bool, CodecError> {
+    Ok(face_selection_is_resolved(selection)
         || match selection {
             cadmpeg_ir::features::FaceSelection::Native(native) => {
-                pull_plane.is_some_and(|plane| plane.as_str() == *native)
+                (match pull_plane { Some(plane) => ctx.equal(plane.as_str(), native.as_str(), "compare F3D Draft neutral plane")?, None => false })
                     && pull_direction.is_some_and(|direction| direction.unit().is_some())
             }
             _ => false,
-        }
+        })
 }
 
 fn edge_selection_is_resolved(selection: &cadmpeg_ir::features::EdgeSelection) -> bool {
@@ -436,17 +437,18 @@ fn datum_plane_reference_is_resolved(
 }
 
 fn datum_point_construction_is_resolved(
+    ctx: &DecodeContext<'_>,
     construction: &cadmpeg_ir::features::DatumPointConstruction,
-) -> bool {
+) -> Result<bool, CodecError> {
     use cadmpeg_ir::features::{DatumPointConstruction, SketchPointSelection, VertexSelection};
 
-    match construction {
+    Ok(match construction {
         DatumPointConstruction::CircleCenter { edge } => edge_selection_is_resolved(edge),
         DatumPointConstruction::TwoEdgeIntersection { edges } => {
             edges.iter().all(edge_selection_is_resolved)
         }
         DatumPointConstruction::ThreePlaneIntersection { planes } => {
-            planes.iter().all(datum_plane_reference_is_resolved)
+            ctx.admit_iter(planes.as_ref(), "scan F3D datum point construction planes")?.all(datum_plane_reference_is_resolved)
         }
         DatumPointConstruction::Vertex { vertex } => matches!(
             vertex,
@@ -460,7 +462,7 @@ fn datum_point_construction_is_resolved(
             edge_selection_is_resolved(edge) && datum_plane_reference_is_resolved(plane)
         }
         DatumPointConstruction::DistanceOnEdge { edge, .. } => edge_selection_is_resolved(edge),
-    }
+    })
 }
 
 fn body_selection_is_resolved(selection: &cadmpeg_ir::features::BodySelection) -> bool {
@@ -593,10 +595,10 @@ fn loft_path_is_resolved(path: &cadmpeg_ir::features::PathRef) -> bool {
     }
 }
 
-fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDefinition) -> bool {
+fn feature_definition_is_incomplete(ctx: &DecodeContext<'_>, definition: &cadmpeg_ir::features::FeatureDefinition) -> Result<bool, CodecError> {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, NativeFeatureKind};
 
-    match definition {
+    Ok(match definition {
         FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) => {
             !matches!(kind, NativeFeatureKind::Canvas | NativeFeatureKind::Decal)
         }
@@ -631,7 +633,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { .. }) => false,
         FeatureDefinition::Operation(FeatureOperation::DatumThreePointPlane { frame, points }) => {
             !datum_plane_frame_is_resolved(*frame)
-                || !points.iter().all(|point| {
+                || !ctx.admit_iter(&**points, "scan F3D three-point plane construction")?.all(|point| {
                     matches!(
                         point,
                         cadmpeg_ir::features::VertexSelection::Generated { .. }
@@ -712,10 +714,17 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
 
             let mode = shape.mode();
 
-            let sections_are_resolved = !shape.any_section_is_unresolved()
-                && shape
-                    .referenced_profiles()
-                    .all(planar_profile_ref_is_resolved);
+            let sections_are_resolved = match shape {
+                cadmpeg_ir::features::SweepShape::Unresolved { section, sections }
+                | cadmpeg_ir::features::SweepShape::Surface { section, sections } => !section.is_unresolved()
+                    && section.referenced_profile().is_none_or(planar_profile_ref_is_resolved)
+                    && ctx.admit_iter(sections.as_slice(), "scan F3D Sweep completeness sections")?.all(|section| !section.is_unresolved()
+                        && section.referenced_profile().is_none_or(planar_profile_ref_is_resolved)),
+                cadmpeg_ir::features::SweepShape::Solid { section, sections, .. } => !section.is_unresolved()
+                    && section.referenced_profile().is_none_or(planar_profile_ref_is_resolved)
+                    && ctx.admit_iter(sections.as_slice(), "scan F3D Sweep completeness sections")?.all(|section| !section.is_unresolved()
+                        && section.referenced_profile().is_none_or(planar_profile_ref_is_resolved)),
+            };
             let mode_is_resolved = match mode {
                 SweepMode::Unresolved {} => false,
                 SweepMode::Solid {
@@ -757,19 +766,19 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
 
             let cadmpeg_ir::features::holes::HoleConstruction::Form { kind, .. } = shape.construction()
             else {
-                return true;
+                return Ok(true);
             };
             let diameter = shape.diameter();
 
             let support_is_resolved = profile.as_ref().is_some_and(planar_profile_ref_is_resolved)
                 || face.as_ref().is_some_and(face_selection_is_resolved);
-            let placements_are_resolved = placements.as_ref().is_some_and(|placements| {
+            let placements_are_resolved = placements.as_ref().map(|placements| Ok::<_, CodecError>(
                 !placements.is_empty()
-                    && placements.iter().all(|placement| match placement {
+                    && ctx.admit_iter(placements.as_slice(), "scan F3D Hole completeness placements")?.all(|placement| match placement {
                         HolePlacement::Directed { direction, .. } => direction.unit().is_some(),
                         HolePlacement::Axis { axis, .. } => axis.unit().is_some(),
                     })
-            });
+            )).transpose()?.unwrap_or(false);
 
             !support_is_resolved
                 || !placements_are_resolved
@@ -811,10 +820,10 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                     }
                     cadmpeg_ir::features::DraftAnchor::NeutralPlane { plane, pull } => {
                         !draft_neutral_plane_is_resolved(
-                            plane,
+                            ctx, plane,
                             pull.as_ref().and_then(|pull| pull.plane.as_ref()),
                             pull.as_ref().map(|pull| &*pull.direction),
-                        )
+                        )?
                     }
                 }
         }
@@ -822,7 +831,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::Operation(FeatureOperation::DatumPoint { construction, .. }) => {
             construction
                 .as_deref()
-                .is_none_or(|construction| !datum_point_construction_is_resolved(construction))
+                .map(|construction| datum_point_construction_is_resolved(ctx, construction).map(|resolved| !resolved)).transpose()?.unwrap_or(true)
         }
         FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch }) => {
             sketch.is_none()
@@ -924,14 +933,13 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         }
         FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. }) => {
             groups.is_empty()
-                || groups.iter().any(|group| {
+                || ctx.admit_iter(groups.as_slice(), "scan F3D treatment completeness groups")?.any(|group| {
                     !edge_selection_is_resolved(&group.edges) || group.spec.is_unresolved()
                 })
         }
         FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) => {
             groups.is_empty()
-                || groups
-                    .iter()
+                || ctx.admit_iter(groups.as_slice(), "scan F3D Fillet completeness groups")?
                     .any(|group| !edge_selection_is_resolved(&group.edges))
         }
         FeatureDefinition::Operation(FeatureOperation::DeleteFace { faces, .. }) => {
@@ -998,14 +1006,14 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         }) => {
             let guidance_incomplete = match guidance {
                 cadmpeg_ir::features::LoftGuidance::Guides(paths) => {
-                    paths.iter().any(|path| !loft_path_is_resolved(path))
+                    ctx.admit_iter(paths.as_slice(), "scan F3D Loft completeness guides")?.any(|path| !loft_path_is_resolved(path))
                 }
                 cadmpeg_ir::features::LoftGuidance::Centerline(path) => {
                     !loft_path_is_resolved(path)
                 }
             };
             sections.len() < 2
-                || sections.iter().any(|section| match section {
+                || ctx.admit_iter(sections.as_slice(), "scan F3D Loft completeness sections")?.any(|section| match section {
                     cadmpeg_ir::features::LoftSection::Profile(profile) => {
                         !profile_ref_is_resolved(profile)
                     }
@@ -1041,7 +1049,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             };
             let support_is_required = continuity
                 .resolved()
-                .is_some_and(|continuity| continuity.conditions.iter().copied().any(needs_support));
+                .map(|continuity| Ok::<_, CodecError>(ctx.admit_iter(continuity.conditions.as_slice(), "scan F3D surface continuity conditions")?.copied().any(needs_support))).transpose()?.unwrap_or(false);
 
             !boundary_is_resolved
                 || !continuity_is_resolved
@@ -1050,7 +1058,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         }
         FeatureDefinition::Operation(FeatureOperation::FullRoundFillet { groups }) => {
             groups.is_empty()
-                || groups.iter().any(|group| {
+                || ctx.admit_iter(groups.as_slice(), "scan F3D treatment completeness groups")?.any(|group| {
                     !face_selection_is_resolved(group.center_faces())
                         || matches!(
                             group.side_one_faces(),
@@ -1080,7 +1088,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         // A typed family is not replayable until this match states and checks
         // its complete construction invariants.
         _ => true,
-    }
+    })
 }
 
 fn incomplete_feature_families<'a, 'ctx>(
@@ -1091,7 +1099,7 @@ fn incomplete_feature_families<'a, 'ctx>(
     let mut storage = ctx.reserve_scoped(0, operation)?;
     let mut families = std::collections::BTreeMap::<&str, usize>::new();
     for feature in ctx.admit_iter(&ir.model.features, "scan F3D ir model features")? {
-        if !feature_definition_is_incomplete(feature.evaluation.definition()) {
+        if !feature_definition_is_incomplete(ctx, feature.evaluation.definition())? {
             continue;
         }
         let family = feature.source_tag.as_deref().unwrap_or_else(|| {
@@ -1105,9 +1113,12 @@ fn incomplete_feature_families<'a, 'ctx>(
             }
         });
         storage.with_storage(|| {
-            let count = ctx.entry_btree_map(&mut families, family, operation)?.or_default();
-            *count = count.checked_add(1)
-                .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+            if let Some(count) = ctx.get_mut_btree_map(&mut families, family, operation)? {
+                *count = count.checked_add(1)
+                    .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+            } else {
+                ctx.insert_btree_map(&mut families, family, 1, operation)?;
+            }
             Ok::<(), CodecError>(())
         })?;
     }
@@ -1138,62 +1149,44 @@ fn design_projection_gaps(
     )?;
     let mut complete_edge_selection_native_ids = HashSet::<String>::new();
     let projected_constraint_refs = ctx.collect_hash_set(
-        ir.model
-            .sketch_constraints
-            .iter()
+        ctx.admit_iter(&ir.model.sketch_constraints, "scan F3D projection sketch_constraints")?
             .filter_map(|constraint| constraint.native_ref.as_deref())
             .chain(
-                ir.model
-                    .spatial_sketch_constraints
-                    .iter()
+                ctx.admit_iter(&ir.model.spatial_sketch_constraints, "scan F3D projection spatial_sketch_constraints")?
                     .filter_map(|constraint| constraint.native_ref.as_deref()),
             ),
         "index projected F3D constraints",
     )?;
     let projected_sketch_refs = ctx.collect_hash_set(
-        ir.model
-            .sketches
-            .iter()
+        ctx.admit_iter(&ir.model.sketches, "scan F3D projection sketches")?
             .filter_map(|sketch| sketch.native_ref.as_deref())
             .chain(
-                ir.model
-                    .spatial_sketches
-                    .iter()
+                ctx.admit_iter(&ir.model.spatial_sketches, "scan F3D projection spatial_sketches")?
                     .filter_map(|sketch| sketch.native_ref.as_deref()),
             ),
         "index projected F3D sketches",
     )?;
     let projected_sketch_entity_refs = ctx.collect_hash_set(
-        ir.model
-            .sketch_entities
-            .iter()
+        ctx.admit_iter(&ir.model.sketch_entities, "scan F3D projection sketch_entities")?
             .filter_map(|entity| entity.native_ref.as_deref())
             .chain(
-                ir.model
-                    .spatial_sketch_entities
-                    .iter()
+                ctx.admit_iter(&ir.model.spatial_sketch_entities, "scan F3D projection spatial_sketch_entities")?
                     .filter_map(|entity| entity.native_ref.as_deref()),
             ),
         "index projected F3D sketch entities",
     )?;
     let projected_feature_refs = ctx.collect_hash_set(
-        ir.model
-            .features
-            .iter()
+        ctx.admit_iter(&ir.model.features, "scan F3D projection features")?
             .filter_map(|feature| feature.native_ref.as_deref()),
         "index projected F3D features",
     )?;
     let projected_parameter_refs = ctx.collect_hash_set(
-        ir.model
-            .parameters
-            .iter()
+        ctx.admit_iter(&ir.model.parameters, "scan F3D projection parameters")?
             .filter_map(|parameter| parameter.native_ref.as_deref()),
         "index projected F3D parameters",
     )?;
     let projected_features = ctx.collect_hash_map(
-        ir.model
-            .features
-            .iter()
+        ctx.admit_iter(&ir.model.features, "scan F3D projection features")?
             .filter_map(|feature| Some((feature.native_ref.as_deref()?, feature))),
         "index projected F3D feature records",
     )?;
@@ -1230,18 +1223,16 @@ fn design_projection_gaps(
             unprojected_history_dependencies += 1;
             continue;
         };
-        if predecessor.id != feature.id && !feature.dependencies.contains(&predecessor.id) {
+        if !ctx.equal(&predecessor.id, &feature.id, "compare F3D projected dependency IDs")? && !ctx.contains(feature.dependencies.as_slice(), &predecessor.id, "find F3D projected dependency")? {
             unprojected_history_dependencies += 1;
         }
     }
-    let projected_dimension_parameters = ctx.collect_hash_set(ir.model
-            .sketch_constraints
-            .iter()
+    let projected_dimension_parameters = ctx.collect_hash_set(ctx.admit_iter(&ir.model.sketch_constraints, "scan F3D projection sketch_constraints")?
             .flat_map(|constraint| {
                 crate::design::dimensions::constraint_parameters(constraint.definition.kind())
             })
             .chain(
-                ir.model.spatial_sketch_constraints.iter().filter_map(
+                ctx.admit_iter(&ir.model.spatial_sketch_constraints, "scan F3D projection spatial_sketch_constraints")?.filter_map(
                     |constraint| match constraint.definition.kind() {
                         cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::Native {
                             parameter,
@@ -1303,7 +1294,7 @@ fn design_projection_gaps(
         if constraint
             .native_ref
             .as_deref()
-            .is_some_and(|native_ref| native_sketch_relation_ids.contains(native_ref))
+            .map(|native_ref| ctx.contains_hash_set(&native_sketch_relation_ids, native_ref, "find F3D native sketch relation")).transpose()?.unwrap_or(false)
         {
             native_sketch_relations += 1;
         } else {
@@ -1320,7 +1311,7 @@ fn design_projection_gaps(
         if constraint
             .native_ref
             .as_deref()
-            .is_some_and(|native_ref| native_sketch_relation_ids.contains(native_ref))
+            .map(|native_ref| ctx.contains_hash_set(&native_sketch_relation_ids, native_ref, "find F3D native sketch relation")).transpose()?.unwrap_or(false)
         {
             native_sketch_relations += 1;
         } else {
@@ -1338,58 +1329,46 @@ fn design_projection_gaps(
         Err(_) => None,
     };
     let mut gaps = DesignProjectionGaps {
-        unresolved_body_bindings: native
-            .design_body_bindings
-            .iter()
-            .filter(|binding| binding.body.is_none())
-            .count(),
+        unresolved_body_bindings: ctx.admit_iter(&native.design_body_bindings, "scan F3D projection design_body_bindings")?
+            .try_fold(0usize, |count, binding| { let selected = binding.body.is_none(); count.checked_add(usize::from(selected)).ok_or_else(|| ctx.refuse_codec_limit("count F3D projection gaps", u64::MAX - 1, u64::MAX)) })?,
         unprojected_history_dependencies,
         ambiguous_history_dependencies,
-        unprojected_feature_scopes: native
-            .design_parameter_scopes
-            .iter()
-            .filter(|scope| {
-                let authored = authored_scopes.as_ref().map_or_else(
-                    || {
+        unprojected_feature_scopes: ctx.admit_iter(&native.design_parameter_scopes, "scan F3D projection design_parameter_scopes")?
+            .try_fold(0usize, |count, scope| { let selected = {
+                let authored = match authored_scopes.as_ref() {
+                    None => {
                         scope
                             .assembly_alignment()
                             .and_then(super::records::feature::assembly::DesignAssemblyAlignment::joint_origin_scope_record_index)
                             .is_none()
                     },
-                    |ordinals| {
+                    Some(ordinals) => {
                         let stream = crate::ids::native_stream(&scope.id)
                             .unwrap_or(crate::ids::DEFAULT_STREAM);
-                        ordinals.contains_key(&(stream, scope.record_index))
+                        ctx.contains_key_hash_map(ordinals, &(stream, scope.record_index), "find F3D authored scope ordinal")?
                     },
-                );
-                authored && !projected_feature_refs.contains(scope.id.as_str())
-            })
-            .count(),
-        unprojected_parameters: native
-            .design_parameters
-            .iter()
-            .filter(|parameter| !projected_parameter_refs.contains(parameter.id.as_str()))
-            .count(),
-        unresolved_parameter_owners: native
-            .design_parameters
-            .iter()
-            .filter(|parameter| {
+                };
+                authored && !ctx.contains_hash_set(&projected_feature_refs, scope.id.as_str(), "find F3D projection projected_feature_refs")?
+            }; count.checked_add(usize::from(selected)).ok_or_else(|| ctx.refuse_codec_limit("count F3D projection gaps", u64::MAX - 1, u64::MAX)) })?,
+        unprojected_parameters: ctx.admit_iter(&native.design_parameters, "scan F3D projection design_parameters")?
+            .try_fold(0usize, |count, parameter| { let selected = !ctx.contains_hash_set(&projected_parameter_refs, parameter.id.as_str(), "find F3D projection projected_parameter_refs")?; count.checked_add(usize::from(selected)).ok_or_else(|| ctx.refuse_codec_limit("count F3D projection gaps", u64::MAX - 1, u64::MAX)) })?,
+        unresolved_parameter_owners: ctx.admit_iter(&native.design_parameters, "scan F3D projection design_parameters")?
+            .try_fold(0usize, |count, parameter| { let selected = {
                 let Some(owner_record_index) = parameter.owner_record_index() else {
-                    return false;
+                    return Ok(count);
                 };
                 let Some(stream) = crate::ids::native_stream(&parameter.id) else {
-                    return true;
+                    return count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("count F3D projection gaps", u64::MAX - 1, u64::MAX));
                 };
-                !native.design_parameter_owners.iter().any(|owner| {
-                    crate::ids::native_stream(owner.id()) == Some(stream)
+                !ctx.any_by(native.design_parameter_owners.as_slice(), |owner| { Ok(
+                    ctx.equal(&crate::ids::native_stream(owner.id()), &Some(stream), "compare F3D parameter owner streams")?
                         && owner.record_index() == owner_record_index
-                        && native.design_parameter_scopes.iter().any(|scope| {
-                            crate::ids::native_stream(&scope.id) == Some(stream)
-                                && scope.record_index == owner.scope_record_index()
-                        })
-                })
-            })
-            .count(),
+                        && ctx.any_by(native.design_parameter_scopes.as_slice(), |scope| { Ok(
+                            ctx.equal(&crate::ids::native_stream(&scope.id), &Some(stream), "compare F3D parameter scope streams")?
+                                && scope.record_index == owner.scope_record_index())
+                        }, "find F3D parameter owner scope")?)
+                }, "find F3D parameter owner")?
+            }; count.checked_add(usize::from(selected)).ok_or_else(|| ctx.refuse_codec_limit("count F3D projection gaps", u64::MAX - 1, u64::MAX)) })?,
         untyped_parameter_units: crate::design::feature_project::untyped_parameter_unit_count(
             &native.design_parameters,
         ),
@@ -1397,49 +1376,30 @@ fn design_projection_gaps(
             crate::design::dimensions::unresolved_parameter_expression_dependency_count(ctx, &native.design_parameters, &ir.model.parameters)?,
         native_sketch_relations,
         native_dimensions,
-        unprojected_sketch_placements: native
-            .design_sketch_placements
-            .iter()
-            .filter(|placement| !projected_sketch_refs.contains(placement.id.as_str()))
-            .count(),
-        unprojected_sketch_points: native
-            .sketch_points
-            .iter()
-            .filter(|point| {
+        unprojected_sketch_placements: ctx.admit_iter(&native.design_sketch_placements, "scan F3D projection design_sketch_placements")?
+            .try_fold(0usize, |count, placement| { let selected = !ctx.contains_hash_set(&projected_sketch_refs, placement.id.as_str(), "find F3D projection projected_sketch_refs")?; count.checked_add(usize::from(selected)).ok_or_else(|| ctx.refuse_codec_limit("count F3D projection gaps", u64::MAX - 1, u64::MAX)) })?,
+        unprojected_sketch_points: ctx.admit_iter(&native.sketch_points, "scan F3D projection sketch_points")?
+            .try_fold(0usize, |count, point| { let selected = {
                 point.owner_reference.is_some()
-                    && !projected_sketch_entity_refs.contains(point.id.as_str())
-            })
-            .count(),
-        unprojected_sketch_curves: native
-            .sketch_curve_identities
-            .iter()
-            .filter(|curve| {
+                    && !ctx.contains_hash_set(&projected_sketch_entity_refs, point.id.as_str(), "find F3D projection projected_sketch_entity_refs")?
+            }; count.checked_add(usize::from(selected)).ok_or_else(|| ctx.refuse_codec_limit("count F3D projection gaps", u64::MAX - 1, u64::MAX)) })?,
+        unprojected_sketch_curves: ctx.admit_iter(&native.sketch_curve_identities, "scan F3D projection sketch_curve_identities")?
+            .try_fold(0usize, |count, curve| { let selected = {
                 curve.owner_reference.is_some()
-                    && !projected_sketch_entity_refs.contains(curve.id.as_str())
-            })
-            .count(),
-        unprojected_sketch_surfaces: native
-            .sketch_surfaces
-            .iter()
-            .filter(|surface| {
+                    && !ctx.contains_hash_set(&projected_sketch_entity_refs, curve.id.as_str(), "find F3D projection projected_sketch_entity_refs")?
+            }; count.checked_add(usize::from(selected)).ok_or_else(|| ctx.refuse_codec_limit("count F3D projection gaps", u64::MAX - 1, u64::MAX)) })?,
+        unprojected_sketch_surfaces: ctx.admit_iter(&native.sketch_surfaces, "scan F3D projection sketch_surfaces")?
+            .try_fold(0usize, |count, surface| { let selected = {
                 surface.owner_reference.is_some()
-                    && !projected_sketch_entity_refs.contains(surface.id.as_str())
-            })
-            .count(),
-        unprojected_sketch_texts: native
-            .sketch_texts
-            .iter()
-            .filter(|text| !projected_sketch_entity_refs.contains(text.id.as_str()))
-            .count(),
-        unprojected_sketch_relations: native
-            .sketch_relations
-            .iter()
-            .filter(|relation| !projected_constraint_refs.contains(relation.id.as_str()))
-            .count(),
+                    && !ctx.contains_hash_set(&projected_sketch_entity_refs, surface.id.as_str(), "find F3D projection projected_sketch_entity_refs")?
+            }; count.checked_add(usize::from(selected)).ok_or_else(|| ctx.refuse_codec_limit("count F3D projection gaps", u64::MAX - 1, u64::MAX)) })?,
+        unprojected_sketch_texts: ctx.admit_iter(&native.sketch_texts, "scan F3D projection sketch_texts")?
+            .try_fold(0usize, |count, text| { let selected = !ctx.contains_hash_set(&projected_sketch_entity_refs, text.id.as_str(), "find F3D projection projected_sketch_entity_refs")?; count.checked_add(usize::from(selected)).ok_or_else(|| ctx.refuse_codec_limit("count F3D projection gaps", u64::MAX - 1, u64::MAX)) })?,
+        unprojected_sketch_relations: ctx.admit_iter(&native.sketch_relations, "scan F3D projection sketch_relations")?
+            .try_fold(0usize, |count, relation| { let selected = !ctx.contains_hash_set(&projected_constraint_refs, relation.id.as_str(), "find F3D projection projected_constraint_refs")?; count.checked_add(usize::from(selected)).ok_or_else(|| ctx.refuse_codec_limit("count F3D projection gaps", u64::MAX - 1, u64::MAX)) })?,
         unprojected_dimensions: {
             let container_only = container_only_dimension_parameters(ctx, native)?;
-            let relation_bearing_companions = ctx.collect_hash_set(native.design_parameter_companions
-                .iter()
+            let relation_bearing_companions = ctx.collect_hash_set(ctx.admit_iter(&native.design_parameter_companions, "scan F3D projection design_parameter_companions")?
                 .filter(|companion| {
                     companion
                         .payload()
@@ -1452,9 +1412,7 @@ fn design_projection_gaps(
                     ))
                 })
                 .chain(
-                    native
-                        .design_dimension_locus_pairs
-                        .iter()
+                    ctx.admit_iter(&*native.design_dimension_locus_pairs, "scan F3D projection design_dimension_locus_pairs")?
                         .filter_map(|pair| {
                             Some((
                                 crate::ids::native_stream(&pair.id)?,
@@ -1463,9 +1421,7 @@ fn design_projection_gaps(
                         }),
                 )
                 .chain(
-                    native
-                        .design_dimension_null_locus_pairs
-                        .iter()
+                    ctx.admit_iter(&*native.design_dimension_null_locus_pairs, "scan F3D projection design_dimension_null_locus_pairs")?
                         .filter_map(|pair| {
                             Some((
                                 crate::ids::native_stream(&pair.id)?,
@@ -1474,9 +1430,7 @@ fn design_projection_gaps(
                         }),
                 )
                 .chain(
-                    native
-                        .design_dimension_annotation_frames
-                        .iter()
+                    ctx.admit_iter(&native.design_dimension_annotation_frames, "scan F3D projection design_dimension_annotation_frames")?
                         .filter_map(|frame| {
                             Some((
                                 crate::ids::native_stream(&frame.id)?,
@@ -1485,9 +1439,7 @@ fn design_projection_gaps(
                         }),
                 )
                 .chain(
-                    native
-                        .design_dimension_locus_groups
-                        .iter()
+                    ctx.admit_iter(&native.design_dimension_locus_groups, "scan F3D projection design_dimension_locus_groups")?
                         .filter_map(|group| {
                             Some((
                                 crate::ids::native_stream(&group.id)?,
@@ -1496,9 +1448,7 @@ fn design_projection_gaps(
                         }),
                 )
                 .chain(
-                    native
-                        .design_dimension_recipe_records
-                        .iter()
+                    ctx.admit_iter(&native.design_dimension_recipe_records, "scan F3D projection design_dimension_recipe_records")?
                         .filter_map(|record| {
                             Some((
                                 crate::ids::native_stream(&record.id)?,
@@ -1506,36 +1456,33 @@ fn design_projection_gaps(
                             ))
                         }),
                 ), "index F3D relation-bearing companions")?;
-            let relation_bearing_parameters = ctx.collect_hash_set(native.design_parameter_owners.iter().filter_map(|owner| {
-                    let stream = crate::ids::native_stream(owner.id())?;
-                    relation_bearing_companions
-                        .contains(&(stream, owner.companion_record_index()))
-                        .then_some((stream, owner.parameter_record_index()))
-                }), "index F3D relation-bearing parameters")?;
-            native
-                .design_parameters
-                .iter()
+            let mut relation_storage = ctx.reserve_scoped(0, "hold F3D relation-bearing parameters")?;
+            let mut relation_bearing_parameters = HashSet::new();
+            for owner in ctx.admit_iter(&native.design_parameter_owners, "scan F3D relation-bearing parameter owners")? {
+                let Some(stream) = crate::ids::native_stream(owner.id()) else { continue; };
+                if ctx.contains_hash_set(&relation_bearing_companions, &(stream, owner.companion_record_index()), "find F3D relation-bearing companion")? {
+                    relation_storage.with_storage(|| ctx.insert_hash_set(&mut relation_bearing_parameters, (stream, owner.parameter_record_index()), "index F3D relation-bearing parameters"))?;
+                }
+            }
+            ctx.admit_iter(&native.design_parameters, "scan F3D projection design_parameters")?
                 .try_fold(0usize, |count, parameter| {
                     let stream = crate::ids::native_stream(&parameter.id)
                         .unwrap_or(crate::ids::DEFAULT_STREAM);
                     if parameter.kind() != crate::records::parameters::DesignParameterKind::Dimension
-                        || !relation_bearing_parameters.contains(&(stream, parameter.record_index))
+                        || !ctx.contains_hash_set(&relation_bearing_parameters, &(stream, parameter.record_index), "find F3D projection relation_bearing_parameters")?
                     {
                         return Ok(count);
                     }
                     let id = crate::ids::neutral_parameter_id_charged(ctx, parameter)?;
-                    Ok::<_, CodecError>(count + usize::from(
-                        !projected_dimension_parameters.contains(&id)
-                            && !container_only.contains(&id),
-                    ))
+                    count.checked_add(usize::from(
+                        !ctx.contains_hash_set(&projected_dimension_parameters, &id, "find F3D projection projected_dimension_parameters")?
+                            && !ctx.contains_hash_set(&container_only, &id, "find F3D projection container_only")?,
+                    )).ok_or_else(|| ctx.refuse_codec_limit("count F3D unprojected dimensions", u64::MAX - 1, u64::MAX))
                 })
                 ?
         },
-        active_face_substitutions: native
-            .design_face_operands
-            .iter()
-            .filter(|operand| operand.resolved_active_face.is_some())
-            .count(),
+        active_face_substitutions: ctx.admit_iter(&native.design_face_operands, "scan F3D projection design_face_operands")?
+            .try_fold(0usize, |count, operand| { let selected = operand.resolved_active_face.is_some(); count.checked_add(usize::from(selected)).ok_or_else(|| ctx.refuse_codec_limit("count F3D projection gaps", u64::MAX - 1, u64::MAX)) })?,
         ..DesignProjectionGaps::default()
     };
     let mut edge_selection = |selection: &EdgeSelection| -> Result<(), CodecError> {
@@ -1543,10 +1490,9 @@ fn design_projection_gaps(
             EdgeSelection::Native(_) => gaps.native_edge_selections += 1,
             EdgeSelection::Unresolved => gaps.unresolved_edge_selections += 1,
             EdgeSelection::HistoricalPartial { unresolved, .. } => {
-                gaps.partially_resolved_edge_members += unresolved
-                    .iter()
-                    .filter(|id| !source_lost_edge_reference_ids.contains(id.as_str()))
-                    .count();
+                let unresolved_count = ctx.admit_iter(unresolved.as_slice(), "scan F3D unresolved historical edges")?
+                    .try_fold(0usize, |count, id| { let selected = !ctx.contains_hash_set(&source_lost_edge_reference_ids, id.as_str(), "find F3D projection source_lost_edge_reference_ids")?; count.checked_add(usize::from(selected)).ok_or_else(|| ctx.refuse_codec_limit("count F3D projection gaps", u64::MAX - 1, u64::MAX)) })?;
+                gaps.partially_resolved_edge_members = gaps.partially_resolved_edge_members.checked_add(unresolved_count).ok_or_else(|| ctx.refuse_codec_limit("count F3D unresolved historical edges", u64::MAX - 1, u64::MAX))?;
             }
             EdgeSelection::Resolved { native, .. } => ctx
                 .insert_string_set(
@@ -1596,8 +1542,8 @@ fn design_projection_gaps(
     };
     for feature in ctx.admit_iter(&ir.model.features, "scan F3D ir model features")? {
         gaps.incomplete_features += usize::from(feature_definition_is_incomplete(
-            feature.evaluation.definition(),
-        ));
+            ctx, feature.evaluation.definition(),
+        )?);
         gaps.native_reference_images += usize::from(matches!(
             feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Native {
@@ -1690,15 +1636,32 @@ fn design_projection_gaps(
                 if shape.any_section_names_an_unresolved_carrier() {
                     gaps.profile_selections += 1;
                 }
-                for profile in shape.referenced_profiles() {
-                    if matches!(
-                        profile,
-                        PlanarProfileRef::Native(_)
-                            | PlanarProfileRef::Unresolved(_)
-                            | PlanarProfileRef::SketchSelection { .. }
-                    ) {
-                        gaps.profile_selections += 1;
+                let (primary, sheet_sections, solid_sections): (
+                    Option<&PlanarProfileRef>,
+                    &[cadmpeg_ir::features::SheetSweepSection],
+                    &[cadmpeg_ir::features::SweepSection],
+                ) = match shape {
+                    cadmpeg_ir::features::SweepShape::Unresolved { section, sections }
+                    | cadmpeg_ir::features::SweepShape::Surface { section, sections } =>
+                        (section.referenced_profile(), sections.as_slice(), &[]),
+                    cadmpeg_ir::features::SweepShape::Solid { section, sections, .. } =>
+                        (section.referenced_profile(), &[], sections.as_slice()),
+                };
+                let mut count_profile = |profile: &PlanarProfileRef| -> Result<(), CodecError> {
+                    if matches!(profile, PlanarProfileRef::Native(_)
+                        | PlanarProfileRef::Unresolved(_)
+                        | PlanarProfileRef::SketchSelection { .. }) {
+                        gaps.profile_selections = gaps.profile_selections.checked_add(1)
+                            .ok_or_else(|| ctx.refuse_codec_limit("count F3D Sweep profile gaps", u64::MAX - 1, u64::MAX))?;
                     }
+                    Ok(())
+                };
+                if let Some(profile) = primary { count_profile(profile)?; }
+                for profile in ctx.admit_iter(sheet_sections, "scan F3D sheet Sweep sections")?
+                    .filter_map(cadmpeg_ir::features::SweepSection::referenced_profile)
+                    .chain(ctx.admit_iter(solid_sections, "scan F3D solid Sweep sections")?
+                        .filter_map(cadmpeg_ir::features::SweepSection::referenced_profile)) {
+                    count_profile(profile)?;
                 }
                 if path.as_ref().is_some_and(|path| {
                     matches!(
@@ -1741,7 +1704,7 @@ fn design_projection_gaps(
                         }
                     }
                     DatumPointConstruction::ThreePlaneIntersection { planes } => {
-                        planes.iter().for_each(&mut plane);
+                        for reference in ctx.admit_iter(planes.as_ref(), "scan F3D datum point planes")? { plane(reference); }
                     }
                     DatumPointConstruction::Vertex { .. }
                     | DatumPointConstruction::SketchPoint { .. } => {}
@@ -1770,25 +1733,23 @@ fn design_projection_gaps(
             FeatureDefinition::Operation(FeatureOperation::Loft {
                 sections, guidance, ..
             }) => {
-                gaps.profile_selections += sections
-                    .iter()
-                    .filter(|section| {
+                let section_gaps = ctx.admit_iter(sections.as_slice(), "scan F3D Loft section projections")?
+                    .try_fold(0usize, |count, section| { let selected = {
                         matches!(
                             section,
                             cadmpeg_ir::features::LoftSection::Profile(profile)
                                 if !profile_ref_is_resolved(profile)
                         )
-                    })
-                    .count();
-                gaps.path_selections += match guidance {
-                    cadmpeg_ir::features::LoftGuidance::Guides(paths) => paths
-                        .iter()
-                        .filter(|path| !loft_path_is_resolved(path))
-                        .count(),
+                    }; count.checked_add(usize::from(selected)).ok_or_else(|| ctx.refuse_codec_limit("count F3D projection gaps", u64::MAX - 1, u64::MAX)) })?;
+                gaps.profile_selections = gaps.profile_selections.checked_add(section_gaps).ok_or_else(|| ctx.refuse_codec_limit("count F3D Loft profile gaps", u64::MAX - 1, u64::MAX))?;
+                let guide_gaps = match guidance {
+                    cadmpeg_ir::features::LoftGuidance::Guides(paths) => ctx.admit_iter(paths.as_slice(), "scan F3D Loft guide projections")?
+                        .try_fold(0usize, |count, path| { let selected = !loft_path_is_resolved(path); count.checked_add(usize::from(selected)).ok_or_else(|| ctx.refuse_codec_limit("count F3D projection gaps", u64::MAX - 1, u64::MAX)) })?,
                     cadmpeg_ir::features::LoftGuidance::Centerline(path) => {
                         usize::from(!loft_path_is_resolved(path))
                     }
                 };
+                gaps.path_selections = gaps.path_selections.checked_add(guide_gaps).ok_or_else(|| ctx.refuse_codec_limit("count F3D Loft path gaps", u64::MAX - 1, u64::MAX))?;
             }
             FeatureDefinition::Operation(FeatureOperation::Shell {
                 bodies,
@@ -1832,19 +1793,20 @@ fn design_projection_gaps(
             _ => {}
         }
     }
-    let repaired_lost_edge_reference_ids = ctx.collect_hash_set(
-        native
-            .design_construction_operand_groups
-            .iter()
-            .filter(|group| complete_edge_selection_native_ids.contains(group.id.as_str()))
-            .flat_map(|group| group.lost_edge_references.iter().map(String::as_str)),
-        "index repaired F3D lost edge references",
-    )?;
-    gaps.unrepaired_lost_edge_references = native
-        .lost_edge_references
-        .iter()
-        .filter(|reference| !repaired_lost_edge_reference_ids.contains(reference.id.as_str()))
-        .count();
+    let mut repaired_storage = ctx.reserve_scoped(0, "hold F3D repaired lost-edge index")?;
+    let mut repaired_lost_edge_reference_ids = HashSet::new();
+    for group in ctx.admit_iter(&native.design_construction_operand_groups, "scan F3D complete edge groups")? {
+        if ctx.contains_hash_set(&complete_edge_selection_native_ids, group.id.as_str(), "find F3D complete edge group")? {
+            for id in ctx.admit_iter(&group.lost_edge_references, "scan F3D repaired lost-edge references")? {
+                repaired_storage.with_storage(|| ctx.insert_hash_set(&mut repaired_lost_edge_reference_ids, id.as_str(), "index repaired F3D lost edge references"))?;
+            }
+        }
+    }
+    gaps.unrepaired_lost_edge_references = ctx.admit_iter(&native.lost_edge_references, "scan F3D projection lost_edge_references")?
+        .try_fold(0usize, |count, reference| {
+            let selected = !ctx.contains_hash_set(&repaired_lost_edge_reference_ids, reference.id.as_str(), "find F3D repaired lost-edge reference")?;
+            count.checked_add(usize::from(selected)).ok_or_else(|| ctx.refuse_codec_limit("count F3D projection gaps", u64::MAX - 1, u64::MAX))
+        })?;
     Ok(gaps)
 }
 
@@ -4618,8 +4580,9 @@ fn populate_annotations(
     for constraint in ctx.admit_iter(&ir.model.sketch_constraints, "scan F3D ir model sketch constraints")? {
         if let Some(native_ref) = constraint.native_ref.as_deref() {
             constraint_storage.with_storage(|| {
-                ctx.entry_hash_map(&mut constraints_by_native, native_ref, "index F3D annotation constraints")?
-                    .or_insert(constraint.id.as_str());
+                if !ctx.contains_key_hash_map(&constraints_by_native, native_ref, "index F3D annotation constraints")? {
+                    ctx.insert_hash_map(&mut constraints_by_native, native_ref, constraint.id.as_str(), "index F3D annotation constraints")?;
+                }
                 Ok::<(), CodecError>(())
             })?;
         }
@@ -4629,8 +4592,9 @@ fn populate_annotations(
     for entity in ctx.admit_iter(&ir.model.sketch_entities, "scan F3D ir model sketch entities")? {
         if let Some(native_ref) = entity.native_ref.as_deref() {
             entity_storage.with_storage(|| {
-                ctx.entry_hash_map(&mut entities_by_native, native_ref, "index F3D annotation entities")?
-                    .or_insert(entity.id().as_str());
+                if !ctx.contains_key_hash_map(&entities_by_native, native_ref, "index F3D annotation entities")? {
+                    ctx.insert_hash_map(&mut entities_by_native, native_ref, entity.id().as_str(), "index F3D annotation entities")?;
+                }
                 Ok::<(), CodecError>(())
             })?;
         }
@@ -6161,7 +6125,7 @@ fn container_losses(
     // An absent carrier and an unselectable carrier produce different findings.
     // Full decode rejects an ambiguous selection before it builds this report.
     if selected.is_none() {
-        losses.push(F3dLossCode::MissingGeometryStream.note(
+        ctx.push_vec(&mut losses, F3dLossCode::MissingGeometryStream.note(
             if brep_count == 0 && text_count != 0 {
                 format!(
                     "{text_count} ASM BREP stream(s) are present in the text encoding (.sat/.smt) and \
@@ -6175,7 +6139,7 @@ fn container_losses(
                      the document's geometry stream"
                 )
             },
-        ));
+        ), "collect F3D container losses")?;
     }
 
     Ok(losses)

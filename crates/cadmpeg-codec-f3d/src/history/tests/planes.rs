@@ -33,6 +33,27 @@ fn mirror_plane_candidate_uses_unique_primary_when_persistent_identity_is_absent
             Some(primary.clone())
         );
 
+        let primary = candidate("history-a", 10);
+        let persistent = candidate("history-a", 10);
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "retain F3D persistent mirror candidates",
+            0,
+            |decode| {
+                super::super::selection::unique_mirror_plane_candidate(
+                    decode,
+                    vec![primary.clone()],
+                    vec![persistent.clone()],
+                )
+                .map(|_| ())
+            },
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "retain F3D persistent mirror candidates"
+        ));
+
         let second_primary = candidate("history-b", 20);
         assert_eq!(
             unique(vec![primary.clone(), second_primary.clone()], Vec::new()),
@@ -289,6 +310,17 @@ fn historical_loop_plane_requires_coincident_axis_bearing_curves() {
     .expect("coincident loop curve planes");
     assert_eq!(plane.origin, Point3::new(1.0, 2.0, 3.0));
     assert_eq!(plane.normal, Vector3::new(0.0, 0.0, 1.0));
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "compare F3D loop mirror planes",
+        0,
+        |decode_ctx| historical_loop_plane(decode_ctx, 5, &topology),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "compare F3D loop mirror planes"
+    ));
 
     topology.curve_axes[1].origin.z = 4.0;
     assert!(
@@ -372,6 +404,49 @@ fn historical_mirror_coedge_plane_refuses_collection_limit() {
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D mirror coedges")
     );
+}
+
+#[test]
+fn historical_mirror_coedge_plane_refuses_radial_cycle_and_relation_work_limits() {
+    use crate::history_records::{AsmHistoricalCoedge, AsmHistoricalRelation};
+    let topology = AsmHistoricalTopology {
+        loop_coedges: vec![AsmHistoricalRelation {
+            owner_ref: 5,
+            member_refs: vec![6],
+        }],
+        coedge_topology: vec![AsmHistoricalCoedge {
+            coedge: 6,
+            owner_loop: 5,
+            edge: 10,
+            next: 6,
+            previous: 6,
+            radial_next: 6,
+        }],
+        ..Default::default()
+    };
+    let radial_cycle_error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "follow F3D mirror radial cycle",
+        0,
+        |decode_ctx| historical_mirror_coedge_plane(decode_ctx, 6, &topology),
+    );
+    assert!(matches!(
+        radial_cycle_error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "follow F3D mirror radial cycle"
+    ));
+
+    let relation_scan_error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan F3D mirror loop relations",
+        0,
+        |decode_ctx| historical_mirror_coedge_plane(decode_ctx, 6, &topology),
+    );
+    assert!(matches!(
+        relation_scan_error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "scan F3D mirror loop relations"
+    ));
 }
 
 #[test]

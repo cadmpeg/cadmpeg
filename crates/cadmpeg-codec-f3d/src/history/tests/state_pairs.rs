@@ -829,7 +829,14 @@ fn historical_pattern_face_axis_uses_one_analytic_surface_carrier() {
     .unwrap()
     .is_empty());
     let identities = crate::test_support::with_decode_context(|decode_ctx| {
-        HistoricalIdentityIndex::build(decode_ctx, std::slice::from_ref(&missing_carrier), [11])
+        HistoricalIdentityIndex::build(
+            decode_ctx,
+            std::slice::from_ref(&missing_carrier),
+            decode_ctx
+                .admit_iter(&[11], "scan F3D identity local IDs")
+                .expect("test identity local ID admission"),
+            |local_id| std::iter::once(*local_id).chain(None),
+        )
     })
     .unwrap();
     assert_eq!(

@@ -1387,17 +1387,7 @@ pub(crate) fn bind_sweep_result_modes(
             .map(|_| ())
         })?;
     }
-    let mut feature_position_storage =
-        ctx.reserve_scoped(0, "stage F3D sweep feature positions")?;
-    let feature_positions = feature_position_storage.with_storage(|| {
-        ctx.collect_indexed_vec(
-            features.len(),
-            "stage F3D sweep feature positions",
-            |index| Ok(index),
-        )
-    })?;
-    for index in ctx.admit_iter(&feature_positions, "scan F3D sweep features")? {
-        let feature = &mut features[*index];
+    for feature in features {
         let FeatureDefinition::Operation(FeatureOperation::Sweep {
             shape: SweepShape::Unresolved { sections, .. },
             ..
@@ -1411,7 +1401,10 @@ pub(crate) fn bind_sweep_result_modes(
         let section_count = sections.len();
         let mut all_sheet = true;
         let mut all_solid = true;
-        for output in feature.evaluation.outputs() {
+        for output in ctx.admit_iter(
+            feature.evaluation.outputs(),
+            "scan F3D sweep output bodies",
+        )? {
             match ctx.get_hash_map(&body_kinds, output, "resolve F3D sweep output kind")? {
                 Some(BodyKind::Sheet) => all_solid = false,
                 Some(BodyKind::Solid) => all_sheet = false,
@@ -1504,8 +1497,10 @@ pub(crate) fn bind_feature_body_selections(
     let shells = inputs.shells;
 
     bind_pattern_body_selections(ctx, features, inputs)?;
+    let mut pattern_body_slots_storage =
+        ctx.reserve_scoped(0, "index F3D pattern body features")?;
     let mut pattern_body_slots = HashMap::new();
-    'pattern: for feature in features.iter() {
+    for feature in ctx.admit_iter(&*features, "scan F3D pattern body features")? {
         let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) =
             feature.evaluation.definition()
         else {
@@ -1532,34 +1527,37 @@ pub(crate) fn bind_feature_body_selections(
         if feature.evaluation.outputs().len().checked_add(1) != Some(expected_count) {
             continue;
         }
-        let mut slots = BTreeSet::new();
-        for slot in std::iter::once(historical_body_slot(seed_body.as_str())).chain(
-            feature
-                .evaluation
-                .outputs()
-                .iter()
-                .map(|body| stable_ref(body.as_str())),
-        ) {
-            let Some(slot) = slot else {
-                continue 'pattern;
-            };
-            ctx.insert_btree_set(&mut slots, slot, "index F3D pattern body slots")
-                .map(|_| ())?;
-        }
-        if slots.len() != expected_count {
+        let Some(seed_slot) = historical_body_slot(seed_body.as_str()) else {
             continue;
-        }
-        let feature_id = feature
-            .id
-            .try_clone_for_decode(ctx, "copy F3D pattern body feature ID")?;
-        if !pattern_body_slots.contains_key(&feature_id) {
-            ctx.reserve_map(
+        };
+        pattern_body_slots_storage.with_storage(|| {
+            let mut slots = BTreeSet::new();
+            ctx.insert_btree_set(&mut slots, seed_slot, "index F3D pattern body slots")
+                .map(|_| ())?;
+            for body in ctx.admit_iter(
+                feature.evaluation.outputs(),
+                "scan F3D pattern body outputs",
+            )? {
+                let Some(slot) = stable_ref(body.as_str()) else {
+                    return Ok(());
+                };
+                ctx.insert_btree_set(&mut slots, slot, "index F3D pattern body slots")
+                    .map(|_| ())?;
+            }
+            if slots.len() != expected_count {
+                return Ok(());
+            }
+            let feature_id = feature
+                .id
+                .try_clone_for_decode(ctx, "copy F3D pattern body feature ID")?;
+            ctx.insert_hash_map(
                 &mut pattern_body_slots,
-                1,
+                feature_id,
+                slots,
                 "index F3D pattern body features",
-            )?;
-        }
-        pattern_body_slots.insert(feature_id, slots);
+            )
+            .map(|_| ())
+        })?;
     }
 
     for feature in features {
@@ -1839,10 +1837,25 @@ pub(crate) fn bind_feature_body_selections(
                                 };
                                 return;
                             }
-                            let mut dependency_sets = dependencies.iter()
-                                .filter_map(|dependency| pattern_body_slots.get(dependency));
-                            let pattern_bodies = dependency_sets.next();
-                            if dependency_sets.next().is_none() {
+                            let mut pattern_bodies = None;
+                            let mut multiple_pattern_bodies = false;
+                            for dependency in admitted!(ctx.admit_iter(
+                                dependencies.as_slice(),
+                                "scan F3D pattern body dependencies",
+                            ).map_err(cadmpeg_core::CodecError::ResourceLimit)) {
+                                if let Some(bodies) = admitted!(ctx.get_hash_map(
+                                    &pattern_body_slots,
+                                    dependency,
+                                    "find F3D pattern body dependency",
+                                )) {
+                                    if pattern_bodies.is_some() {
+                                        multiple_pattern_bodies = true;
+                                        break;
+                                    }
+                                    pattern_bodies = Some(bodies);
+                                }
+                            }
+                            if !multiple_pattern_bodies {
                               if let Some(pattern_bodies) = pattern_bodies {
                                 if let Some(tool_slots) = admitted!(pattern_combine_tool_slots(
                                     ctx,
@@ -2129,36 +2142,80 @@ fn combine_recipe_family_tool_slots(
             return Ok(None);
         }
     }
+    let mut recipes_by_id_storage = ctx.reserve_scoped(0, "index F3D Combine recipes")?;
     let mut recipes_by_id =
         HashMap::<&str, Option<&crate::records::recipes::ConstructionRecipe>>::new();
-    for recipe in recipes.iter().filter(|recipe| {
-        recipe.kind == crate::records::recipes::ConstructionRecipeKind::Body
-            && crate::ids::native_stream(&recipe.id) == Some(stream)
-    }) {
-        if !recipes_by_id.contains_key(recipe.id.as_str()) {
-            ctx.reserve_map(&mut recipes_by_id, 1, "index F3D Combine recipes")?;
+    for recipe in ctx.admit_iter(recipes, "scan F3D Combine recipes")? {
+        if recipe.kind != crate::records::recipes::ConstructionRecipeKind::Body {
+            continue;
         }
-        recipes_by_id
-            .entry(recipe.id.as_str())
-            .and_modify(|entry| *entry = None)
-            .or_insert(Some(recipe));
+        let Some(recipe_stream) = crate::ids::native_stream(&recipe.id) else {
+            continue;
+        };
+        if !ctx.equal(
+            recipe_stream,
+            stream,
+            "compare F3D Combine recipe streams",
+        )? {
+            continue;
+        }
+        recipes_by_id_storage.with_storage(|| -> Result<(), cadmpeg_core::CodecError> {
+            match ctx.entry_hash_map(
+                &mut recipes_by_id,
+                recipe.id.as_str(),
+                "index F3D Combine recipes",
+            )? {
+                std::collections::hash_map::Entry::Occupied(mut entry) => *entry.get_mut() = None,
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(Some(recipe));
+                }
+            }
+            Ok(())
+        })?;
     }
     let mut families = BTreeMap::<FamilyKey<'_>, Vec<FamilyMember<'_>>>::new();
     for record_index in ctx.admit_iter(tool_record_indices, "scan F3D Combine tool record indices")? {
-        let mut matching = operands.iter().filter(|operand| {
-            crate::ids::native_stream(&operand.id) == Some(stream)
-                && operand.scope_record_index == scope_record_index
-                && matches!(
-                    operand.owner,
-                    crate::records::topology::body_recipe::DesignOperandOwner::ScopeReference { .. }
-                )
-                && operand.record_index() == *record_index
-        });
-        let operand = required!(matching.next());
-        if matching.next().is_some() || operand.references().len() != 1 {
+        let mut operand_matches =
+            |operand: &crate::records::topology::body_recipe::DesignBodyRecipeOperand| {
+                let Some(operand_stream) = crate::ids::native_stream(&operand.id) else {
+                    return Ok(false);
+                };
+                Ok(ctx.equal(
+                    operand_stream,
+                    stream,
+                    "compare F3D Combine operand streams",
+                )? && operand.scope_record_index == scope_record_index
+                    && matches!(
+                        operand.owner,
+                        crate::records::topology::body_recipe::DesignOperandOwner::ScopeReference { .. }
+                    )
+                    && operand.record_index() == *record_index)
+            };
+        let Some(operand_index) = ctx.position_by(
+            operands,
+            &mut operand_matches,
+            "find F3D Combine tool operand",
+        )? else {
+            return Ok(None);
+        };
+        if ctx
+            .position_by(
+                &operands[operand_index + 1..],
+                &mut operand_matches,
+                "find additional F3D Combine tool operand",
+            )?
+            .is_some()
+            || operands[operand_index].references().len() != 1
+        {
             return Ok(None);
         }
-        let recipe = required!(required!(recipes_by_id.get(operand.recipe_id.as_str())).as_ref());
+        let operand = &operands[operand_index];
+        let recipe = required!(ctx.get_hash_map(
+            &recipes_by_id,
+            operand.recipe_id.as_str(),
+            "find F3D Combine recipe",
+        )?);
+        let recipe = required!(*recipe);
         let design = required!(recipe.design.as_ref());
         let selector = required!(design.selector).value;
         if selector == 0 {
@@ -2398,16 +2455,29 @@ fn unique_external_body_candidate(
         regions.iter().map(|region| (&region.id, &region.body)),
         "index F3D external body regions",
     )?;
-    let body_by_face = ctx.collect_hash_map(
-        shells
-            .iter()
-            .filter_map(|shell| {
-                let body = body_by_region.get(&shell.region)?;
-                Some(shell.faces().iter().map(move |face| (face, *body)))
-            })
-            .flatten(),
-        "index F3D external body faces",
-    )?;
+    let mut body_by_face_storage =
+        ctx.reserve_scoped(0, "index F3D external body faces")?;
+    let mut body_by_face = HashMap::new();
+    for shell in ctx.admit_iter(shells, "scan F3D external body shells")? {
+        let Some(body) = ctx.get_hash_map(
+            &body_by_region,
+            &shell.region,
+            "find F3D external shell body",
+        )? else {
+            continue;
+        };
+        for face in ctx.admit_iter(shell.faces(), "scan F3D external shell faces")? {
+            body_by_face_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut body_by_face,
+                    face,
+                    *body,
+                    "index F3D external body faces",
+                )
+                .map(|_| ())
+            })?;
+        }
+    }
     let body_metadata = ctx.collect_hash_map(
         bodies.iter().map(|body| (&body.id, body)),
         "index F3D external body metadata",
@@ -2429,16 +2499,26 @@ fn unique_external_body_candidate(
         for face in ctx
             .admit_iter(&reference.candidate_faces, "scan F3D reference candidate faces")?
         {
-            let Some(body) = body_by_face.get(face).copied() else {
+            let Some(body) = ctx
+                .get_hash_map(&body_by_face, face, "find F3D external face body")?
+                .copied()
+            else {
                 continue;
             };
-            if current_prefix
-                .as_ref()
-                .is_some_and(|prefix| body.as_str().starts_with(prefix))
-            {
-                continue;
+            if let Some(prefix) = current_prefix.as_ref() {
+                if ctx.starts_with(
+                    body.as_str(),
+                    prefix,
+                    "check F3D external body history prefix",
+                )? {
+                    continue;
+                }
             }
-            if !reference_candidates.contains(body) {
+            if !ctx.contains_btree_set(
+                &reference_candidates,
+                body,
+                "check F3D external body candidate",
+            )? {
                 let id = body.try_clone_for_decode(ctx, "copy F3D external body candidate")?;
                 ctx.insert_btree_set(
                     &mut reference_candidates,
@@ -2451,7 +2531,26 @@ fn unique_external_body_candidate(
             if reference_candidates.is_empty() {
                 return Ok(None);
             }
-            candidates.retain(|body| reference_candidates.contains(body));
+            let mut refusal = None;
+            candidates.retain(|body| {
+                if refusal.is_some() {
+                    return true;
+                }
+                match ctx.contains_btree_set(
+                    &reference_candidates,
+                    body,
+                    "intersect F3D external body candidates",
+                ) {
+                    Ok(contains) => contains,
+                    Err(error) => {
+                        refusal = Some(error);
+                        true
+                    }
+                }
+            });
+            if let Some(error) = refusal {
+                return Err(error);
+            }
         } else {
             candidates = Some(reference_candidates);
         }
@@ -2460,11 +2559,17 @@ fn unique_external_body_candidate(
         return Ok(None);
     };
     let mut displayed = BTreeSet::new();
-    for body in candidates.iter().filter(|body| {
-        body_metadata
-            .get(body)
-            .is_some_and(|body| body.visible == Some(true))
-    }) {
+    for body in ctx.admit_iter(&candidates, "scan F3D displayed external body candidates")? {
+        let Some(metadata) = ctx.get_hash_map(
+            &body_metadata,
+            &body,
+            "find F3D external body metadata",
+        )? else {
+            continue;
+        };
+        if metadata.visible != Some(true) {
+            continue;
+        }
         let id = body.try_clone_for_decode(ctx, "copy F3D displayed external body")?;
         ctx.insert_btree_set(&mut displayed, id, "collect F3D displayed external bodies")?;
     }
@@ -3963,47 +4068,86 @@ pub(crate) fn bind_vertex_recipe_history(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let source_ordinals =
         crate::design::feature_project::authored_scope_ordinals_per_stream(ctx, scopes, timelines)?;
+    let mut input_states_storage =
+        ctx.reserve_scoped(0, "index F3D vertex recipe input states")?;
     let mut input_states = HashMap::new();
-    for scope in scopes.iter().filter(|scope| {
-        matches!(
+    for scope in ctx.admit_iter(scopes, "scan F3D vertex recipe scopes")? {
+        if !matches!(
             scope.kind(),
             crate::records::feature::scope::DesignFeatureKind::WorkPlane
                 | crate::records::feature::scope::DesignFeatureKind::WorkPoint
-        )
-    }) {
+        ) {
+            continue;
+        }
         let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
-        let Some(&ordinal) = source_ordinals.get(&(stream, scope.record_index)) else {
+        let Some(&ordinal) = ctx
+            .get_hash_map(
+                &source_ordinals,
+                &(stream, scope.record_index),
+                "find F3D vertex recipe scope ordinal",
+            )?
+        else {
             continue;
         };
-        let mut predecessors = scopes.iter().filter_map(|candidate| {
+        let mut predecessor = None;
+        for candidate in ctx.admit_iter(scopes, "scan F3D vertex recipe predecessors")? {
             let candidate_stream =
                 crate::ids::native_stream(&candidate.id).unwrap_or(crate::ids::DEFAULT_STREAM);
-            let candidate_ordinal =
-                *source_ordinals.get(&(candidate_stream, candidate.record_index))?;
-            (candidate_stream == stream && candidate_ordinal < ordinal)
-                .then_some((candidate_ordinal, candidate.history_state_id()?))
-        });
-        let Some(predecessor) = predecessors.next() else {
+            let Some(&candidate_ordinal) = ctx
+                .get_hash_map(
+                    &source_ordinals,
+                    &(candidate_stream, candidate.record_index),
+                    "find F3D predecessor scope ordinal",
+                )?
+            else {
+                continue;
+            };
+            if !ctx.equal(
+                candidate_stream,
+                stream,
+                "compare F3D vertex recipe scope streams",
+            )? || candidate_ordinal >= ordinal
+            {
+                continue;
+            }
+            let Some(candidate_state_id) = candidate.history_state_id() else {
+                continue;
+            };
+            let candidate = (candidate_ordinal, candidate_state_id);
+            if predecessor.is_none_or(|latest: (u64, i64)| candidate.0 > latest.0) {
+                predecessor = Some(candidate);
+            }
+        }
+        let Some(predecessor) = predecessor else {
             continue;
         };
-        let predecessor = predecessors.fold(predecessor, |latest, candidate| {
-            if candidate.0 > latest.0 {
-                candidate
-            } else {
-                latest
-            }
-        });
-        let id = ctx.copy_retained_text(&scope.id, "copy F3D vertex recipe scope identity")?;
-        if !input_states.contains_key(&id) {
-            ctx.reserve_map(&mut input_states, 1, "index F3D vertex recipe input states")?;
-        }
-        input_states.insert(id, predecessor.1);
+        input_states_storage.with_storage(|| {
+            let id = ctx.copy_retained_text(&scope.id, "copy F3D vertex recipe scope identity")?;
+            ctx.insert_hash_map(
+                &mut input_states,
+                id,
+                predecessor.1,
+                "index F3D vertex recipe input states",
+            )
+            .map(|_| ())
+        })?;
     }
 
-    for scope in scopes.iter_mut().filter(|scope| {
-        scope.kind() == crate::records::feature::scope::DesignFeatureKind::WorkPoint
-    }) {
-        let state_id = input_states.get(&scope.id).copied();
+    for scope in scopes.iter_mut() {
+        if !ctx.equal(
+            &scope.kind(),
+            &crate::records::feature::scope::DesignFeatureKind::WorkPoint,
+            "compare F3D work point recipe scope kind",
+        )? {
+            continue;
+        }
+        let state_id = ctx
+            .get_hash_map(
+                &input_states,
+                &scope.id,
+                "find F3D vertex recipe input state",
+            )?
+            .copied();
         let Some(construction) = scope.work_point_construction_mut() else {
             continue;
         };
@@ -4035,11 +4179,22 @@ pub(crate) fn bind_vertex_recipe_history(
         }
     }
 
-    for scope in scopes.iter_mut().filter(|scope| {
-        scope.kind() == crate::records::feature::scope::DesignFeatureKind::WorkPlane
-    }) {
+    for scope in scopes.iter_mut() {
+        if !ctx.equal(
+            &scope.kind(),
+            &crate::records::feature::scope::DesignFeatureKind::WorkPlane,
+            "compare F3D work plane recipe scope kind",
+        )? {
+            continue;
+        }
         let transform = scope.work_plane_transform();
-        let state_id = input_states.get(&scope.id).copied();
+        let state_id = ctx
+            .get_hash_map(
+                &input_states,
+                &scope.id,
+                "find F3D work plane recipe input state",
+            )?
+            .copied();
         let Some(construction) = scope.work_plane_construction_mut() else {
             continue;
         };
@@ -4842,9 +4997,6 @@ fn insert_scope_history_binding(
     scope_id: &str,
     history_id: &str,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    if !resolved.contains_key(scope_id) {
-        decode.reserve_map(resolved, 1, "index F3D scope history bindings")?;
-    }
     let scope = {
         let ctx = decode;
         ctx.copy_retained_text(scope_id, "copy F3D bound scope identity")?
@@ -4853,7 +5005,13 @@ fn insert_scope_history_binding(
         let ctx = decode;
         ctx.copy_retained_text(history_id, "copy F3D bound history identity")?
     };
-    resolved.insert(scope, history);
+    decode.insert_hash_map(
+        resolved,
+        scope,
+        history,
+        "index F3D scope history bindings",
+    )
+    .map(|_| ())?;
     Ok(())
 }
 
@@ -4948,22 +5106,42 @@ pub(crate) fn bind_scope_histories(
             insert_scope_history_binding(decode, &mut resolved, &scope.id, &candidates[0].id)?;
             continue;
         }
-        let next_scope_record_index = scopes
-            .iter()
-            .filter(|candidate| {
-                crate::ids::same_native_occurrence(&candidate.id, &scope.id)
+        let next_scope_record_index = decode.fold(
+            scopes,
+            None::<u32>,
+            |next, candidate| {
+                if crate::ids::same_native_occurrence(decode, &candidate.id, &scope.id)?
                     && candidate.record_index > scope.record_index
-            })
-            .map(|candidate| candidate.record_index)
-            .min();
-        let mut output_bindings = body_bindings.iter().filter(|binding| {
-            crate::ids::same_native_occurrence(binding.id(), &scope.id)
+                {
+                    Ok(Some(next.map_or(candidate.record_index, |record_index| {
+                        record_index.min(candidate.record_index)
+                    })))
+                } else {
+                    Ok(next)
+                }
+            },
+            "find F3D next scope record index",
+        )?;
+        let mut is_output_binding = |binding: &crate::records::bodies::DesignBodyBinding| {
+            Ok(crate::ids::same_native_occurrence(decode, binding.id(), &scope.id)?
                 && binding.entity_suffix > u64::from(scope.record_index)
                 && next_scope_record_index
-                    .is_none_or(|next| binding.entity_suffix < u64::from(next))
-        });
-        if let Some(binding) = output_bindings.next() {
-            if output_bindings.next().is_none() {
+                    .is_none_or(|next| binding.entity_suffix < u64::from(next)))
+        };
+        if let Some(binding_index) = decode.position_by(
+            body_bindings,
+            &mut is_output_binding,
+            "find F3D output body binding",
+        )? {
+            if decode
+                .position_by(
+                    &body_bindings[binding_index + 1..],
+                    &mut is_output_binding,
+                    "find F3D output body binding",
+                )?
+                .is_none()
+            {
+                let binding = &body_bindings[binding_index];
                 let mut matching = candidates.iter().filter(|history| {
                     historical_brep_source(&history.id).is_some_and(|source| {
                         binding.blob_name().strip_prefix("BREP.") == Some(source)
@@ -4975,51 +5153,133 @@ pub(crate) fn bind_scope_histories(
                 }
             }
         }
-        let candidate_faces = body_recipe_operands
-            .iter()
-            .filter(|operand| {
-                crate::ids::same_native_occurrence(&operand.id, &scope.id)
-                    && operand.scope_record_index == scope.record_index
-            })
-            .flat_map(super::records::topology::body_recipe::DesignBodyRecipeOperand::references)
-            .flat_map(|reference| &reference.candidate_faces);
-        if candidate_faces.clone().next().is_some() {
-            let mut matching = candidates.iter().filter(|history| {
-                historical_brep_source(&history.id).is_some_and(|source| {
-                    candidate_faces
-                        .clone()
-                        .any(|face| active_brep_face_matches_source(face, source))
-                })
-            });
-            if let Some(history) = matching.next().filter(|_| matching.next().is_none()) {
-                insert_scope_history_binding(decode, &mut resolved, &scope.id, &history.id)?;
-                continue;
+        let candidate_has_face = |source: Option<&str>| -> Result<
+            bool,
+            cadmpeg_core::CodecError,
+        > {
+            for operand in decode.admit_iter(
+                body_recipe_operands,
+                "scan F3D body recipe candidate operands",
+            )? {
+                if !crate::ids::same_native_occurrence(decode, &operand.id, &scope.id)?
+                    || operand.scope_record_index != scope.record_index
+                {
+                    continue;
+                }
+                for reference in decode.admit_iter(
+                    operand.references(),
+                    "scan F3D body recipe candidate references",
+                )? {
+                    for face in decode.admit_iter(
+                        &reference.candidate_faces,
+                        "scan F3D body recipe candidate faces",
+                    )? {
+                        let matches_source = match source {
+                            Some(source) => active_brep_face_matches_source(face, source),
+                            None => true,
+                        };
+                        if matches_source {
+                            return Ok(true);
+                        }
+                    }
+                }
+            }
+            Ok(false)
+        };
+        if candidate_has_face(None)? {
+            let mut matching_history = None;
+            let mut ambiguous_history = false;
+            for history in decode.admit_iter(
+                candidates.as_slice(),
+                "scan F3D candidate face histories",
+            )? {
+                let Some(source) = historical_brep_source(&history.id) else {
+                    continue;
+                };
+                if candidate_has_face(Some(source))? {
+                    if matching_history.is_some() {
+                        ambiguous_history = true;
+                        break;
+                    }
+                    matching_history = Some(*history);
+                }
+            }
+            if !ambiguous_history {
+                if let Some(history) = matching_history {
+                    insert_scope_history_binding(decode, &mut resolved, &scope.id, &history.id)?;
+                    continue;
+                }
             }
         }
         let Some(construction) = scope.base_feature_construction() else {
             continue;
         };
-        let mut referenced_histories = construction.body_reference_records().filter_map(|suffix| {
-            let mut bindings = body_bindings.iter().filter(|binding| {
-                crate::ids::same_native_occurrence(binding.id(), &scope.id)
-                    && binding.entity_suffix == u64::from(suffix)
-            });
-            let binding = bindings.next()?;
-            if bindings.next().is_some() {
-                return None;
+        let mut referenced_history_id = None;
+        let mut ambiguous_referenced_history = false;
+        for suffix in construction.body_reference_records() {
+            let mut binding_matches_reference =
+                |binding: &crate::records::bodies::DesignBodyBinding| {
+                    Ok(crate::ids::same_native_occurrence(decode, binding.id(), &scope.id)?
+                        && binding.entity_suffix == u64::from(suffix))
+                };
+            let Some(binding_index) = decode.position_by(
+                body_bindings,
+                &mut binding_matches_reference,
+                "find F3D referenced body binding",
+            )? else {
+                continue;
+            };
+            if decode
+                .position_by(
+                    &body_bindings[binding_index + 1..],
+                    &mut binding_matches_reference,
+                    "find F3D referenced body binding",
+                )?
+                .is_some()
+            {
+                continue;
             }
-            let mut matching = candidates.iter().filter(|history| {
-                historical_brep_source(&history.id)
-                    .is_some_and(|source| binding.blob_name().strip_prefix("BREP.") == Some(source))
-            });
-            let history = matching.next()?;
-            matching.next().is_none().then_some(history.id.as_str())
-        });
-        let Some(history_id) = referenced_histories.next() else {
-            continue;
-        };
-        if referenced_histories.all(|candidate| candidate == history_id) {
-            insert_scope_history_binding(decode, &mut resolved, &scope.id, history_id)?;
+            let binding = &body_bindings[binding_index];
+            let mut history_matches_binding = |history: &&AsmHistory| {
+                let Some(source) = historical_brep_source(&history.id) else {
+                    return Ok(false);
+                };
+                let Some(blob_source) = binding.blob_name().strip_prefix("BREP.") else {
+                    return Ok(false);
+                };
+                Ok(blob_source == source)
+            };
+            let Some(history_index) = decode.position_by(
+                candidates.as_slice(),
+                &mut history_matches_binding,
+                "find F3D referenced BREP history",
+            )? else {
+                continue;
+            };
+            if decode
+                .position_by(
+                    &candidates.as_slice()[history_index + 1..],
+                    &mut history_matches_binding,
+                    "find F3D referenced BREP history",
+                )?
+                .is_some()
+            {
+                continue;
+            }
+            let history_id = candidates[history_index].id.as_str();
+            if let Some(previous_history_id) = referenced_history_id {
+                if previous_history_id != history_id {
+                    ambiguous_referenced_history = true;
+                    break;
+                }
+            } else {
+                referenced_history_id = Some(history_id);
+            }
+        }
+        if !ambiguous_referenced_history {
+            if let Some(history_id) = referenced_history_id {
+                insert_scope_history_binding(decode, &mut resolved, &scope.id, history_id)?;
+            }
         }
     }
     let mut groups = HashMap::<(&str, i64, Option<i64>), Vec<usize>>::new();
@@ -5059,7 +5319,11 @@ pub(crate) fn bind_scope_histories(
         loop {
             let mut assigned = HashSet::new();
             for index in members {
-                if let Some(history_id) = resolved.get(&candidates[*index].0.id) {
+                if let Some(history_id) = decode.get_hash_map(
+                    &resolved,
+                    &candidates[*index].0.id,
+                    "find F3D assigned history identity",
+                )? {
                     let copy = {
                         let ctx = decode;
                         ctx.copy_retained_text(history_id, "copy F3D assigned history identity")?
@@ -5071,18 +5335,33 @@ pub(crate) fn bind_scope_histories(
                     )?;
                 }
             }
-            if assigned.len()
-                != members
-                    .iter()
-                    .filter(|index| resolved.contains_key(&candidates[**index].0.id))
-                    .count()
-            {
+            let mut resolved_member_count: usize = 0;
+            for index in decode.admit_iter(members, "count F3D resolved history members")? {
+                if decode.contains_key_hash_map(
+                    &resolved,
+                    &candidates[*index].0.id,
+                    "check F3D resolved history member",
+                )? {
+                    resolved_member_count = resolved_member_count.checked_add(1).ok_or_else(|| {
+                        decode.refuse_codec_limit(
+                            "count F3D resolved history members",
+                            u64::MAX - 1,
+                            u64::MAX,
+                        )
+                    })?;
+                }
+            }
+            if assigned.len() != resolved_member_count {
                 break;
             }
             let mut progress = false;
-            for index in members {
+            for index in decode.admit_iter(members, "scan F3D unresolved history members")? {
                 let (scope, scope_candidates) = &candidates[*index];
-                if resolved.contains_key(&scope.id) {
+                if decode.contains_key_hash_map(
+                    &resolved,
+                    &scope.id,
+                    "check F3D scope history resolution",
+                )? {
                     continue;
                 }
                 let mut remaining = scope_candidates
@@ -5387,12 +5666,23 @@ pub(crate) fn bind_face_operand_history_candidates(
     if projection_was_finalized(decode, histories)? {
         return Ok(());
     }
-    let recipe_record_indices = decode.collect_hash_map(
-        recipes
-            .iter()
-            .filter_map(|recipe| Some((recipe.id.as_str(), recipe.record_index?.value))),
-        "index F3D face operand recipe records",
-    )?;
+    let mut recipe_record_indices_storage =
+        decode.reserve_scoped(0, "index F3D face operand recipe records")?;
+    let mut recipe_record_indices = HashMap::new();
+    for recipe in decode.admit_iter(recipes, "scan F3D face operand recipe records")? {
+        let Some(record_index) = recipe.record_index else {
+            continue;
+        };
+        recipe_record_indices_storage.with_storage(|| {
+            decode.insert_hash_map(
+                &mut recipe_record_indices,
+                recipe.id.as_str(),
+                record_index.value,
+                "index F3D face operand recipe records",
+            )
+            .map(|_| ())
+        })?;
+    }
     for operand in &mut *operands {
         operand.preceding_candidate_faces.clear();
         operand.changed_candidate_faces.clear();
@@ -5410,7 +5700,11 @@ pub(crate) fn bind_face_operand_history_candidates(
         if matching_scopes.next().is_some() {
             continue;
         }
-        let scoped_history = if scope_histories.contains_key(&scope.id) {
+        let scoped_history = if decode.contains_key_hash_map(
+            scope_histories,
+            &scope.id,
+            "check F3D profile scope history binding",
+        )? {
             let Some(history) = bound_scope_history(decode, &scope.id, scope_histories, histories)? else {
                 continue;
             };
@@ -5448,7 +5742,11 @@ pub(crate) fn bind_face_operand_history_candidates(
         for reference in &mut operand.recipe_references {
             bind_historical_recipe_reference_candidates(decode, reference, topology)?;
         }
-        if let Some(recipe_record_index) = recipe_record_indices.get(operand.recipe_id.as_str()) {
+        if let Some(recipe_record_index) = decode.get_hash_map(
+            &recipe_record_indices,
+            operand.recipe_id.as_str(),
+            "find F3D face operand recipe record",
+        )? {
             operand.candidate_faces =
                 historical_recipe_faces(decode, i64::from(*recipe_record_index), topology)?;
             operand.unreferenced_candidate_faces = decode.try_collect_vec(
@@ -5470,7 +5768,11 @@ pub(crate) fn bind_face_operand_history_candidates(
             continue;
         };
         let direct_face_candidates =
-            if let Some(record_index) = recipe_record_indices.get(operand.recipe_id.as_str()) {
+            if let Some(record_index) = decode.get_hash_map(
+                &recipe_record_indices,
+                operand.recipe_id.as_str(),
+                "find F3D direct face recipe record",
+            )? {
                 direct_face_recipe_candidates(
                     decode,
                     operand.recipe_kind,
@@ -5548,7 +5850,11 @@ pub(crate) fn bind_face_operand_history_candidates(
             if groups.next().is_some() {
                 return Ok(None);
             }
-            let Some(recipe_record_index) = recipe_record_indices.get(operand.recipe_id.as_str())
+            let Some(recipe_record_index) = decode.get_hash_map(
+                &recipe_record_indices,
+                operand.recipe_id.as_str(),
+                "find F3D edge operand recipe record",
+            )?
             else {
                 return Ok(None);
             };
@@ -6470,28 +6776,47 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
             operand.resolved_body_slot = intersection.into_iter().next();
         }
     }
+    let mut recipes_by_id_storage = decode.reserve_scoped(0, "index F3D body recipes by id")?;
     let mut recipes_by_id =
         HashMap::<_, Option<&crate::records::recipes::ConstructionRecipe>>::new();
     for recipe in decode.admit_iter(recipes, "scan F3D body recipes")? {
-        if !recipes_by_id.contains_key(recipe.id.as_str()) {
-            decode.reserve_map(&mut recipes_by_id, 1, "index F3D body recipes by id")?;
-        }
-        recipes_by_id
-            .entry(recipe.id.as_str())
-            .and_modify(|recipe| *recipe = None)
-            .or_insert(Some(recipe));
+        recipes_by_id_storage.with_storage(|| -> Result<(), cadmpeg_core::CodecError> {
+            match decode.entry_hash_map(
+                &mut recipes_by_id,
+                recipe.id.as_str(),
+                "index F3D body recipes by id",
+            )? {
+                std::collections::hash_map::Entry::Occupied(mut entry) => *entry.get_mut() = None,
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(Some(recipe));
+                }
+            }
+            Ok::<(), cadmpeg_core::CodecError>(())
+        })?;
     }
     let identity = |operand: &crate::records::topology::body_recipe::DesignBodyRecipeOperand| -> Result<Option<_>, cadmpeg_core::CodecError> {
         let Some(stream) = crate::ids::native_stream(&operand.id) else { return Ok(None) };
-        let Some(recipe) = recipes_by_id
-            .get(operand.recipe_id.as_str())
-            .and_then(|recipe| *recipe) else { return Ok(None) };
+        let Some(recipe) = decode
+            .get_hash_map(
+                &recipes_by_id,
+                operand.recipe_id.as_str(),
+                "find F3D body recipe identity",
+            )?
+            .copied()
+            .flatten()
+        else {
+            return Ok(None);
+        };
         let Some(design) = recipe.design.as_ref() else { return Ok(None) };
         let Some(selector) = design.selector else { return Ok(None) };
         Ok(Some((
             decode.copy_retained_text(stream, "copy F3D body recipe identity stream")?,
-            operand.asset_id.clone(),
-            operand.context_id.clone(),
+            operand
+                .asset_id
+                .try_clone_for_decode(decode, "copy F3D body recipe asset ID")?,
+            operand
+                .context_id
+                .try_clone_for_decode(decode, "copy F3D body recipe context ID")?,
             decode.collect_vec(operand
                 .references()
                 .iter()
@@ -6500,34 +6825,44 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
             selector.value,
         )))
     };
+    let mut resolved_by_identity_storage =
+        decode.reserve_scoped(0, "index F3D resolved body recipe identities")?;
     let mut resolved_by_identity = HashMap::new();
-    for operand in decode
-        .admit_iter(&*operands, "scan F3D operands")?
-    {
-        let (Some(identity), Some(body)) = (identity(operand)?, operand.resolved_body_slot) else {
-            continue;
-        };
-        if !resolved_by_identity.contains_key(&identity) {
-            decode.reserve_map(
+    for operand in decode.admit_iter(&*operands, "scan F3D operands")? {
+        resolved_by_identity_storage.with_storage(|| -> Result<(), cadmpeg_core::CodecError> {
+            let (Some(identity), Some(body)) = (identity(operand)?, operand.resolved_body_slot)
+            else {
+                return Ok(());
+            };
+            match decode.entry_hash_map(
                 &mut resolved_by_identity,
-                1,
+                identity,
                 "index F3D resolved body recipe identities",
-            )?;
-        }
-        resolved_by_identity
-            .entry(identity)
-            .and_modify(|resolved| {
-                if *resolved != Some(body) {
-                    *resolved = None;
+            )? {
+                std::collections::hash_map::Entry::Occupied(mut entry) => {
+                    if *entry.get() != Some(body) {
+                        *entry.get_mut() = None;
+                    }
                 }
-            })
-            .or_insert(Some(body));
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(Some(body));
+                }
+            }
+            Ok(())
+        })?;
     }
     for operand in operands {
         if operand.resolved_body_slot.is_none() {
-            operand.resolved_body_slot = identity(operand)?
-                .and_then(|identity| resolved_by_identity.get(&identity).copied())
-                .flatten();
+            if let Some(identity) = identity(operand)? {
+                operand.resolved_body_slot = decode
+                    .get_hash_map(
+                        &resolved_by_identity,
+                        &identity,
+                        "find F3D resolved body recipe identity",
+                    )?
+                    .copied()
+                    .flatten();
+            }
         }
         let Some(body_slot) = operand.resolved_body_slot else {
             continue;
@@ -6924,7 +7259,11 @@ fn bind_profile_face_group_cardinality(
     scope_histories: &HashMap<String, String>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     for scope in decode.admit_iter(scopes, "scan F3D profile face scopes")? {
-        let scoped_history = if scope_histories.contains_key(&scope.id) {
+        let scoped_history = if decode.contains_key_hash_map(
+            scope_histories,
+            &scope.id,
+            "check F3D edge scope history binding",
+        )? {
             let Some(history) = bound_scope_history(decode, &scope.id, scope_histories, histories)? else {
                 continue;
             };
@@ -7797,13 +8136,21 @@ pub(crate) fn bind_edge_operand_history_candidates(
     if projection_was_finalized(decode, histories)? {
         return Ok(());
     }
+    let mut recipe_record_indices_storage =
+        decode.reserve_scoped(0, "index F3D edge recipes")?;
     let mut recipe_record_indices = HashMap::new();
     for recipe in decode.admit_iter(recipes, "scan F3D edge recipes")? {
         if let Some(index) = recipe.record_index {
-            if !recipe_record_indices.contains_key(recipe.id.as_str()) {
-                decode.reserve_map(&mut recipe_record_indices, 1, "index F3D edge recipes")?;
-            }
-            recipe_record_indices.insert(recipe.id.as_str(), index.value);
+            recipe_record_indices_storage.with_storage(|| {
+                decode
+                    .insert_hash_map(
+                        &mut recipe_record_indices,
+                        recipe.id.as_str(),
+                        index.value,
+                        "index F3D edge recipes",
+                    )
+                    .map(|_| ())
+            })?;
         }
     }
     let mut terminal_topologies = Vec::new();
@@ -7896,7 +8243,11 @@ pub(crate) fn bind_edge_operand_history_candidates(
         for reference in &mut operand.recipe_references {
             bind_historical_recipe_reference_candidates(decode, reference, topology)?;
         }
-        if let Some(recipe_record_index) = recipe_record_indices.get(operand.recipe_id.as_str()) {
+        if let Some(recipe_record_index) = decode.get_hash_map(
+            &recipe_record_indices,
+            operand.recipe_id.as_str(),
+            "find F3D edge recipe record",
+        )? {
             operand.candidate_faces =
                 historical_recipe_faces(decode, i64::from(*recipe_record_index), topology)?;
         }
