@@ -1067,7 +1067,7 @@ impl<'a> IndexedSection<'a> {
         }
         let mut expressions = Vec::new();
         for (record_ordinal, (offset, bytes, object_id)) in records.into_iter().enumerate() {
-            if let Some(expression) = numeric_expression_at(bytes, offset, object_id) {
+            if let Some(expression) = numeric_expression_at(ctx, bytes, offset, object_id)? {
                 ctx.reserve_vec(&mut expressions, 1, "nx indexed numeric expression records")?;
                 expressions.push((record_ordinal, expression));
             }
@@ -4310,7 +4310,7 @@ pub(crate) fn numeric_expressions<'a>(
         let Some(start) = offset.checked_sub(3) else {
             continue;
         };
-        let Some(expression) = numeric_expression_at(&bytes[start..], start, None) else {
+        let Some(expression) = numeric_expression_at(ctx, &bytes[start..], start, None)? else {
             continue;
         };
         ctx.reserve_vec(&mut expressions, 1, "nx numeric expressions")?;
@@ -5034,45 +5034,71 @@ pub(crate) fn offset_store_control_form(
     }
 }
 
-fn numeric_expression_at(
-    bytes: &[u8],
+fn numeric_expression_at<'a>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
     base_offset: usize,
     object_id: Option<u32>,
-) -> Option<NumericExpression<'_>> {
+) -> Result<Option<NumericExpression<'a>>, CodecError> {
     const PREFIX: &[u8] = b"(Number [";
-    let relative = bytes
+    let Some(relative) = bytes
         .windows(PREFIX.len())
-        .position(|window| window == PREFIX)?;
+        .position(|window| window == PREFIX) else {
+        return Ok(None);
+    };
     if relative < 3 || bytes.get(relative - 2) != Some(&0x04) {
-        return None;
+        return Ok(None);
     }
-    let declared = usize::from(*bytes.get(relative - 1)?);
-    let text_len = declared.checked_sub(2)?;
-    let text_end = relative.checked_add(text_len)?;
-    (bytes.get(text_end) == Some(&0)).then_some(())?;
-    let text = std::str::from_utf8(bytes.get(relative..text_end)?).ok()?;
-    let text = text.strip_prefix("(Number [")?;
-    let (unit, rest) = text.split_once("]) ")?;
-    let unit = crate::om_tokens::unit_for(unit)?;
-    let (name, value_tail) = rest.split_once(": ")?;
+    let Some(declared) = bytes.get(relative - 1).copied().map(usize::from) else {
+        return Ok(None);
+    };
+    let Some(text_len) = declared.checked_sub(2) else {
+        return Ok(None);
+    };
+    let Some(text_end) = relative.checked_add(text_len) else {
+        return Ok(None);
+    };
+    if bytes.get(text_end) != Some(&0) {
+        return Ok(None);
+    }
+    let Some(raw) = bytes.get(relative..text_end) else {
+        return Ok(None);
+    };
+    let Ok(text) = std::str::from_utf8(raw) else {
+        return Ok(None);
+    };
+    let Some(text) = text.strip_prefix("(Number [") else {
+        return Ok(None);
+    };
+    let Some((unit, rest)) = text.split_once("]) ") else {
+        return Ok(None);
+    };
+    let Some(unit) = crate::om_tokens::unit_for(ctx, unit)? else {
+        return Ok(None);
+    };
+    let Some((name, value_tail)) = rest.split_once(": ") else {
+        return Ok(None);
+    };
     if name.is_empty()
         || !name
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
     {
-        return None;
+        return Ok(None);
     }
-    let (value_text, comment) = value_tail.split_once("; ")?;
+    let Some((value_text, comment)) = value_tail.split_once("; ") else {
+        return Ok(None);
+    };
     if !comment.is_empty() && !numeric_expression_comment_is_valid(comment) {
-        return None;
+        return Ok(None);
     }
-    Some(NumericExpression {
+    Ok(Some(NumericExpression {
         object_id,
         offset: base_offset + relative,
         name: ParameterName::new(name),
         unit,
         expression: value_text,
-    })
+    }))
 }
 
 fn numeric_expression_comment_is_valid(comment: &str) -> bool {

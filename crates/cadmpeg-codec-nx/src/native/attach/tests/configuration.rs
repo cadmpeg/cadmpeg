@@ -1776,60 +1776,65 @@ fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
         LinearTermination, PlanarProfileRef, ProfileRef,
     };
 
-    assert_eq!(
-        extrude_feature_definition(
-            Some("nx:profile#1"),
-            None,
-            BooleanOp::NewBody,
-            &[cadmpeg_ir::topology::BodyKind::Solid],
-        ),
-        FeatureDefinition::Operation(FeatureOperation::Extrude {
-            profile: ProfileRef::Planar(PlanarProfileRef::Native("nx:profile#1".to_string())),
-            direction: cadmpeg_ir::features::ExtrudeDirection::Unresolved {},
-            extent: ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: LinearTermination::Unresolved {},
-                    draft: None,
+    crate::test_support::with_decode_context(|ctx| {
+        assert_eq!(
+            extrude_feature_definition(
+                ctx,
+                Some("nx:profile#1"),
+                None,
+                BooleanOp::NewBody,
+                &[cadmpeg_ir::topology::BodyKind::Solid],
+            ).unwrap(),
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
+                profile: ProfileRef::Planar(PlanarProfileRef::Native("nx:profile#1".to_string())),
+                direction: cadmpeg_ir::features::ExtrudeDirection::Unresolved {},
+                extent: ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: LinearTermination::Unresolved {},
+                        draft: None,
+                    },
                 },
-            },
-            op: BooleanOp::NewBody,
-            start: cadmpeg_ir::features::ExtrudeStart::Unresolved {},
-            solid: Some(true),
-            face_maker: None,
-            inner_wire_taper: None,
-            length_along_profile_normal: None,
-            allow_multi_profile_faces: None,
-        })
-    );
-    assert!(matches!(
-        extrude_feature_definition(
-            None,
-            None,
-            BooleanOp::Unresolved,
-            &[cadmpeg_ir::topology::BodyKind::Sheet],
-        ),
-        FeatureDefinition::Operation(FeatureOperation::Extrude {
-            profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(_)),
-            solid: Some(false),
-            ..
-        })
-    ));
-    assert!(matches!(
-        extrude_feature_definition(
-            Some("nx:profile#1"),
-            Some("nx:profile#2"),
-            BooleanOp::Unresolved,
-            &[
-                cadmpeg_ir::topology::BodyKind::Solid,
-                cadmpeg_ir::topology::BodyKind::Sheet,
-            ],
-        ),
-        FeatureDefinition::Operation(FeatureOperation::Extrude {
-            profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(_)),
-            solid: None,
-            ..
-        })
-    ));
+                op: BooleanOp::NewBody,
+                start: cadmpeg_ir::features::ExtrudeStart::Unresolved {},
+                solid: Some(true),
+                face_maker: None,
+                inner_wire_taper: None,
+                length_along_profile_normal: None,
+                allow_multi_profile_faces: None,
+            })
+        );
+        assert!(matches!(
+            extrude_feature_definition(
+                ctx,
+                None,
+                None,
+                BooleanOp::Unresolved,
+                &[cadmpeg_ir::topology::BodyKind::Sheet],
+            ).unwrap(),
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
+                profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(_)),
+                solid: Some(false),
+                ..
+            })
+        ));
+        assert!(matches!(
+            extrude_feature_definition(
+                ctx,
+                Some("nx:profile#1"),
+                Some("nx:profile#2"),
+                BooleanOp::Unresolved,
+                &[
+                    cadmpeg_ir::topology::BodyKind::Solid,
+                    cadmpeg_ir::topology::BodyKind::Sheet,
+                ],
+            ).unwrap(),
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
+                profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(_)),
+                solid: None,
+                ..
+            })
+        ));
+    });
 }
 
 #[test]
@@ -1901,3 +1906,4 @@ mod colors;
 mod body_selection;
 
 mod parameter_projection;
+mod formatting;

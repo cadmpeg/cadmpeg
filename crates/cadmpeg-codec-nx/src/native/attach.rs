@@ -512,29 +512,14 @@ fn attach_part_attributes<'a>(
             .map_err(cadmpeg_core::CodecError::from)?;
         ctx.charge_collection_items(1, "NX attached part attributes")?;
         ctx.charge_collection_items(1, "NX part attribute values")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(
-                attribute_title
-                    .len()
-                    .checked_add(attribute_value.len())
-                    .ok_or_else(|| {
-                        ctx.refuse_codec_limit(
-                            "NX part attribute value",
-                            0,
-                            cadmpeg_core::decode::u64_from_index(attribute_value.len()),
-                        )
-                    })?,
-            ),
-            "NX part attribute values",
-        )?;
         let mut values = Vec::new();
         ctx.reserve_capacity(&mut values, 1, "NX part attribute values")?;
-        values.push(AttributeValue::String(attribute_value.to_string()));
+        values.push(AttributeValue::String(ctx.format_retained(format_args!("{attribute_value}"), "NX part attribute values")?));
         ctx.reserve_capacity(&mut ir.model.attributes, 1, "NX attached part attributes")?;
         ir.model.attributes.push(SourceAttribute {
             id,
             target: AttributeTarget::Document,
-            name: attribute_title.to_string(),
+            name: ctx.format_retained(format_args!("{attribute_title}"), "NX part attribute name")?,
             values,
         });
     }
@@ -617,30 +602,12 @@ fn attach_configurations<'a>(
             cadmpeg_core::decode::u64_from_index(std::mem::size_of::<DesignConfiguration>()),
             "NX attached configurations",
         )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(configuration_id.len()),
-            "NX configuration native reference",
-        )?;
         let mut properties = BTreeMap::new();
         if let Some(relation) = active_attribute_use {
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<(String, String)>()
-                        .checked_add(relation.len())
-                        .ok_or_else(|| {
-                            ctx.refuse_codec_limit(
-                                "NX active configuration property",
-                                0,
-                                cadmpeg_core::decode::u64_from_index(relation.len()),
-                            )
-                        })?,
-                ),
-                "NX active configuration property",
-            )?;
             ctx.insert_btree_map(
                 &mut properties,
                 cadmpeg_core::nonblank_literal!("active_attribute_use"),
-                relation.to_string(),
+                ctx.format_retained(format_args!("{relation}"), "NX active configuration property")?,
                 "NX active configuration property",
             )?;
         }
@@ -661,7 +628,7 @@ fn attach_configurations<'a>(
             bodies,
             parameter_values: BTreeMap::new(),
             feature_states: BTreeMap::new(),
-            native_ref: Some(configuration_id.to_string()),
+            native_ref: Some(ctx.format_retained(format_args!("{configuration_id}"), "NX configuration native reference")?),
         });
     }
     Ok(())
@@ -5242,20 +5209,13 @@ fn attach_feature_operations(
             let structured_construction = extrude_32_constructions_by_operation
                 .get(label.id.as_str())
                 .map(|construction| construction.id.as_str());
-            if let (Some(profile), None) | (None, Some(profile)) =
-                (construction_profile, structured_construction)
-            {
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(profile.len()),
-                    "NX extrude construction profile",
-                )?;
-            }
             Some(extrude_feature_definition(
+                ctx,
                 construction_profile,
                 structured_construction,
                 op,
                 &output_kinds,
-            ))
+            )?)
         } else {
             None
         };
@@ -5767,15 +5727,20 @@ fn append_feature_result_topology(
     members: FeatureResultGroupMembers,
     native_ref: String,
 ) -> Result<(), CodecError> {
-    let members = cadmpeg_ir::features::FeatureResultMembers::new(
+    let members = match cadmpeg_ir::features::FeatureResultMembers::new(
         bodies,
         members.faces,
         members.edges,
         members.vertices,
         ctx,
         "NX result topology member validation",
-    )?
-    .map_err(|error| CodecError::Malformed(error.to_string()))?;
+    )? {
+        Ok(members) => members,
+        Err(error) => return Err(CodecError::Malformed(ctx.format_retained(
+            format_args!("{error}"),
+            "NX result topology member error",
+        )?)),
+    };
     ctx.reserve_vec_limit(
         &mut ir.model.feature_result_topologies,
         1,
@@ -8276,14 +8241,15 @@ pub(super) fn parameter_owner_dependencies(
 }
 
 fn extrude_feature_definition(
+    ctx: &DecodeContext<'_>,
     construction_profile: Option<&str>,
     structured_construction: Option<&str>,
     op: BooleanOp,
     output_kinds: &[cadmpeg_ir::topology::BodyKind],
-) -> FeatureDefinition {
+) -> Result<FeatureDefinition, CodecError> {
     let profile = match (construction_profile, structured_construction) {
         (Some(construction), None) | (None, Some(construction)) => {
-            ProfileRef::Planar(PlanarProfileRef::Native(construction.to_string()))
+            ProfileRef::Planar(PlanarProfileRef::Native(ctx.format_retained(format_args!("{construction}"), "NX extrude construction profile")?))
         }
         _ => ProfileRef::Planar(PlanarProfileRef::Unresolved("EXTRUDE".to_string())),
     };
@@ -8304,7 +8270,7 @@ fn extrude_feature_definition(
         }
         _ => None,
     };
-    FeatureDefinition::Operation(FeatureOperation::Extrude {
+    Ok(FeatureDefinition::Operation(FeatureOperation::Extrude {
         profile,
         direction: cadmpeg_ir::features::ExtrudeDirection::Unresolved {},
         start: cadmpeg_ir::features::ExtrudeStart::Unresolved {},
@@ -8320,7 +8286,7 @@ fn extrude_feature_definition(
         inner_wire_taper: None,
         length_along_profile_normal: None,
         allow_multi_profile_faces: None,
-    })
+    }))
 }
 
 fn extrude_boolean_op(

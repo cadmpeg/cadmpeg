@@ -1997,7 +1997,7 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
 
             keep: BodyTrimSide::Unresolved,
         }),
-        "EXTRUDE" => extrude_feature_definition(None, None, BooleanOp::Unresolved, &[]),
+        "EXTRUDE" => extrude_feature_definition(ctx, None, None, BooleanOp::Unresolved, &[])?,
         "OFFSET" => FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
             faces: FaceSelection::Unresolved,
             distance: None,
