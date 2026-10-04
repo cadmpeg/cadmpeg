@@ -192,7 +192,7 @@ impl DecodeContext<'_> {
         Ok(left.eq_ignore_ascii_case(right))
     }
 
-    /// Admits the collection traversal before visiting any element. Iterator adapters
+    /// Admits the source traversal before visiting any element. Iterator adapters
     /// run on the admitted result; callbacks admit their own child work.
     pub fn admit_iter<'values, S: IterSource + ?Sized>(
         &self,
@@ -546,9 +546,9 @@ impl DecodeContext<'_> {
 
 #[cfg(test)]
 mod tests {
-    use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use crate::decode::iter_source::IterSource;
     use crate::decode::ResourceFailure;
+    use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use crate::CodecError;
 
     fn assert_range_overflow<S: IterSource + ?Sized>(source: &S, prior_work: u64) {
@@ -559,9 +559,8 @@ mod tests {
         ctx.charge_work(prior_work, "prior range work")
             .expect("prior work fits");
 
-        let first = match ctx.admit_iter(source, "range bound") {
-            Err(failure) => failure,
-            Ok(_) => panic!("unrepresentable range bound refuses"),
+        let Err(first) = ctx.admit_iter(source, "range bound") else {
+            panic!("unrepresentable range bound refuses");
         };
         assert_eq!(first.dimension, ResourceDimension::WorkUnits);
         assert_eq!(first.reason, ResourceFailure::BudgetExceeded);
@@ -982,7 +981,12 @@ mod tests {
         let reversed_inclusive = std::ops::RangeInclusive::new(3_u32, 2_u32);
         let reversed_usize = std::ops::RangeInclusive::new(5_usize, 2_usize);
         assert_eq!(ctx.admit_iter(&empty, "empty").expect("empty").count(), 0);
-        assert_eq!(ctx.admit_iter(&reversed, "reversed").expect("empty").count(), 0);
+        assert_eq!(
+            ctx.admit_iter(&reversed, "reversed")
+                .expect("empty")
+                .count(),
+            0
+        );
         assert_eq!(
             ctx.admit_iter(&reversed_inclusive, "reversed")
                 .expect("empty")
