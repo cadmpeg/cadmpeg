@@ -295,19 +295,19 @@ pub(in super::super) fn nurbs_plane_boundary_curve(
         }) { continue; }
         let mut outside_exists = false;
         visit_surface_poles(ctx, nurbs, |index, _| {
-            if !boundary.control_indices.contains(&index) { outside_exists = true; return Ok(false); }
+            if !ctx.contains(&boundary.control_indices, &index, "creo NURBS boundary control index membership")? { outside_exists = true; return Ok(false); }
             Ok(true)
         })?;
         if !outside_exists { continue; }
         let mut positive = true;
         visit_surface_poles(ctx, nurbs, |index, point| {
-            if !boundary.control_indices.contains(&index) { positive = signed_distance(&point) > tolerance; }
+            if !ctx.contains(&boundary.control_indices, &index, "creo NURBS boundary control index membership")? { positive = signed_distance(&point) > tolerance; }
             Ok(positive)
         })?;
         let one_side = if positive { true } else {
             let mut negative = true;
             visit_surface_poles(ctx, nurbs, |index, point| {
-                if !boundary.control_indices.contains(&index) { negative = signed_distance(&point) < -tolerance; }
+                if !ctx.contains(&boundary.control_indices, &index, "creo NURBS boundary control index membership")? { negative = signed_distance(&point) < -tolerance; }
                 Ok(negative)
             })?;
             negative
@@ -472,7 +472,7 @@ fn control_net_on_side(
 ) -> Result<bool, CodecError> {
     let mut on_side = true;
     visit_surface_poles(ctx, surface, |index, point| {
-        if boundary.control_indices.contains(&index) { return Ok(true); }
+        if ctx.contains(&boundary.control_indices, &index, "creo NURBS boundary control index membership")? { return Ok(true); }
         ctx.charge_work(1, "creo generator separation distance tests")?;
         let offset = [point.x - origin.x, point.y - origin.y, point.z - origin.z];
         let distance = dot(normal, offset);
@@ -510,13 +510,13 @@ fn generator_separates_control_nets(
     let second_axis = cross(generator, first_axis);
     let mut first_outside = false;
     visit_surface_poles(ctx, first, |index, _| {
-        first_outside = !first_boundary.control_indices.contains(&index);
+        first_outside = !ctx.contains(&first_boundary.control_indices, &index, "creo NURBS boundary control index membership")?;
         Ok(!first_outside)
     })?;
     if !first_outside { return Ok(false); }
     let mut second_outside = false;
     visit_surface_poles(ctx, second, |index, _| {
-        second_outside = !second_boundary.control_indices.contains(&index);
+        second_outside = !ctx.contains(&second_boundary.control_indices, &index, "creo NURBS boundary control index membership")?;
         Ok(!second_outside)
     })?;
     if !second_outside { return Ok(false); }
@@ -524,7 +524,7 @@ fn generator_separates_control_nets(
     let mut boundary_angles = Vec::new();
     for (surface, boundary) in [(first, first_boundary), (second, second_boundary)] {
         visit_surface_poles(ctx, surface, |index, point| {
-            if boundary.control_indices.contains(&index) { return Ok(true); }
+            if ctx.contains(&boundary.control_indices, &index, "creo NURBS boundary control index membership")? { return Ok(true); }
             let offset = offset(&point);
             let angle = dot(second_axis, offset).atan2(dot(first_axis, offset));
             for angle in [
@@ -1401,6 +1401,80 @@ mod tests {
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "creo NURBS boundary control indices")
+        );
+    }
+
+    #[test]
+    fn nurbs_plane_boundary_control_index_membership_refuses_work_and_preserves_result() {
+        let surface = NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsSurfaceLanes::new(
+                vec![
+                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                    vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+                ],
+                None,
+            ),
+            false,
+        )
+        .expect("fixture constructor admission")
+        .expect("valid plane boundary surface");
+        let result = crate::test_support::assert_work_boundaries(
+            &["creo NURBS boundary control index membership"],
+            |ctx| {
+                super::nurbs_plane_boundary_curve(
+                    ctx,
+                    &surface,
+                    7,
+                    super::PlaneEquation {
+                        origin: [0.0; 3],
+                        normal: [1.0, 0.0, 0.0],
+                    },
+                    &mut crate::lane_refusal::LaneRefusals::new(),
+                )
+            },
+        );
+        let curve = match result {
+            Some(cadmpeg_ir::geometry::CurveGeometry::Solved(
+                cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(curve),
+            )) => curve,
+            _ => panic!("service plane boundary remains a NURBS curve"),
+        };
+        assert_eq!(curve.degree(), 1);
+        assert_eq!(
+            curve.control_points().into_iter().map(|point| point.get()).collect::<Vec<_>>(),
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+        );
+    }
+
+    #[test]
+    fn shared_generator_control_index_membership_refuses_work_and_preserves_result() {
+        let (first, second) = shared_generator_surfaces();
+        let result = crate::test_support::assert_work_boundaries(
+            &["creo NURBS boundary control index membership"],
+            |ctx| {
+                super::shared_extrusion_generator_curve(
+                    ctx,
+                    &first,
+                    7,
+                    &second,
+                    9,
+                    &mut crate::lane_refusal::LaneRefusals::new(),
+                )
+            },
+        );
+        let curve = match result {
+            Some(cadmpeg_ir::geometry::CurveGeometry::Solved(
+                cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(curve),
+            )) => curve,
+            _ => panic!("service shared generator remains a NURBS curve"),
+        };
+        assert_eq!(curve.degree(), 1);
+        assert_eq!(
+            curve.control_points().into_iter().map(|point| point.get()).collect::<Vec<_>>(),
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 1.0)],
         );
     }
 

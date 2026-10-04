@@ -247,11 +247,17 @@ pub(in super::super) fn generated_curve_edge_refs(
             available_features,
             &feature,
             "creo generated curve feature lookup",
-        )?
-            || !result_edge_ids
-                .get(&row.feature_id)
-                .is_some_and(|ids| ids.contains(&curve_id))
-        {
+        )? {
+            return Ok(None);
+        }
+        let Some(ids) = result_edge_ids.get(&row.feature_id) else {
+            return Ok(None);
+        };
+        if !ctx.contains(
+            ids,
+            &curve_id,
+            "creo generated curve result ID lookup",
+        )? {
             return Ok(None);
         }
         let local_id = ctx.format_retained(
@@ -729,6 +735,24 @@ mod tests {
         })
         .expect("service profile preserves the feature-miss result")
         .is_none());
+    }
+
+    #[test]
+    fn generated_curve_result_id_membership_refuses_work_and_preserves_edge() {
+        let rows = one_edge();
+        let available = BTreeSet::from([
+            cadmpeg_ir::features::FeatureId::mint("creo:model:feature#97")
+                .expect("fixture feature ID"),
+        ]);
+        let results = std::collections::BTreeMap::from([(97, vec![77])]);
+        let generated = crate::test_support::assert_work_boundaries(
+            &["creo generated curve result ID lookup"],
+            |ctx| generated_curve_edge_refs(ctx, &[77], &rows, &available, &results),
+        )
+        .expect("the result roster contains the generated curve");
+        assert_eq!(generated.len(), 1);
+        assert_eq!(generated[0].feature.as_str(), "creo:model:feature#97");
+        assert_eq!(generated[0].local_id.as_str(), "curve#77");
     }
 
     #[test]

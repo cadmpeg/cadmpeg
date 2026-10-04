@@ -43,3 +43,62 @@ fn rejection_vertex_lookup_refuses_before_duplicate_skip() {
     assert_eq!(detail.vertex_ids, vec![9]);
     assert_eq!(detail.boundary_half_edges, vec![first, second]);
 }
+
+#[test]
+fn rejection_end_vertex_lookup_refuses_on_first_edge_and_preserves_service_detail() {
+    const LOOKUP: &str = "creo B-rep rejection vertex lookup";
+    let first = crate::topology::HalfEdgeId {
+        curve_id: 4,
+        side: crate::topology::Side::Zero,
+    };
+    let second = crate::topology::HalfEdgeId { curve_id: 5, ..first };
+    let loop_record = crate::test_support::closed_loop(
+        std::num::NonZeroU32::new(17),
+        vec![first, second],
+    );
+    let first_binding = crate::topology::HalfEdgeVertexIncidence {
+        half_edge: first,
+        start_vertex_id: std::num::NonZeroU32::new(9).expect("one-based start vertex"),
+        end_vertex_id: std::num::NonZeroU32::new(10),
+    };
+    let second_binding = crate::topology::HalfEdgeVertexIncidence {
+        half_edge: second,
+        start_vertex_id: std::num::NonZeroU32::new(11).expect("one-based start vertex"),
+        end_vertex_id: std::num::NonZeroU32::new(12),
+    };
+    let incidence = BTreeMap::from([(first, &first_binding), (second, &second_binding)]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // Loop admission spends 1 and half-edge admission spends 2 work units. The
+    // empty start lookup spends none; the first end lookup slot needs one.
+    policy.limits.max_work_units = 3;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let error = FaceAdmissionDetail::unresolved_boundary(
+        &ctx,
+        17,
+        &[&loop_record],
+        &BTreeMap::new(),
+        &incidence,
+    )
+    .expect_err("first edge end-vertex lookup exceeds work limit");
+    let CodecError::ResourceLimit(resource) = error else {
+        panic!("first edge end-vertex lookup must return its work refusal");
+    };
+    assert_eq!(ctx.resource_refusal().as_ref(), Some(&resource));
+    assert_eq!(resource.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(resource.operation, LOOKUP);
+    assert_eq!((resource.used, resource.additional), (3, 1));
+
+    let detail = crate::decode::with_test_decode_ctx(|ctx| {
+        FaceAdmissionDetail::unresolved_boundary(
+            ctx,
+            17,
+            &[&loop_record],
+            &BTreeMap::new(),
+            &incidence,
+        )
+    })
+    .expect("service rejection detail");
+    assert_eq!(detail.boundary_half_edges, vec![first, second]);
+    assert_eq!(detail.vertex_ids, vec![9, 10, 11, 12]);
+}

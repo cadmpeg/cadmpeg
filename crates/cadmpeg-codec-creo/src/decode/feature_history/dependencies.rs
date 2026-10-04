@@ -470,7 +470,11 @@ pub(in super::super) fn add_surface_prototype_feature_dependencies(
             std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
         };
-        if !producers.contains(&producer) {
+        if !ctx.contains(
+            producers.as_slice(),
+            &producer,
+            "creo prototype dependency producer lookup",
+        )? {
             ctx.reserve_vec(producers, 1, "creo prototype dependency producers")?;
             producers.push(producer);
         }
@@ -873,7 +877,11 @@ pub(in super::super) fn reconciled_dependencies(
                 feature_id,
                 "creo native dependency identity comparison",
             )?
-            && !dependencies.contains(&dependency)
+            && !ctx.contains(
+                &dependencies,
+                &dependency,
+                "creo native dependency duplicate lookup",
+            )?
         {
             ctx.reserve_vec(&mut dependencies, 1, "creo reconciled dependencies")?;
             dependencies.push(dependency);

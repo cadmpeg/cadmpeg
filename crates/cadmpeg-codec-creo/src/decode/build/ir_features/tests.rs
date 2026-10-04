@@ -856,3 +856,59 @@ fn model_feature_identity_grammar_refuses_after_formatting() {
         compose_feature_id(ctx, 40).map(|(id, _reservation)| id)
     ).expect("service identity grammar").as_str(), "creo:model:feature#40");
 }
+
+#[test]
+fn combined_feature_output_membership_refuses_work_and_preserves_service_outputs() {
+    let output = cadmpeg_ir::ids::BodyId::mint("creo:feature:extrusion#40:body")
+        .expect("identity grammar");
+    let mut initial = cadmpeg_ir::document::CadIr::empty();
+    initial.model.bodies.push(cadmpeg_ir::topology::Body {
+        id: output.clone(),
+        kind: cadmpeg_ir::topology::BodyKind::Solid,
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+    let mut existing = feature_for_output_refresh();
+    existing.evaluation.set_outputs(
+        crate::decode::with_test_decode_ctx(|ctx| {
+            cadmpeg_ir::features::DistinctMembers::try_from(vec![output.clone()], ctx)
+                .map_err(cadmpeg_core::CodecError::from)
+        })
+        .expect("one existing output body"),
+    );
+    initial.model.features.push(existing);
+
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.features
+        .operations
+        .push(crate::feature::operations::FeatureOperation {
+            feature_id: 40,
+            kind: crate::feature::operations::OperationKind::Native,
+            name: crate::feature::operations::OperationName::Derived,
+            recipe: crate::feature::operations::RecipeResolution::None,
+            display_state_conflict: false,
+            depdb: None,
+            offset: 0,
+            state_offset: 0,
+        });
+
+    let (feature_count, outputs) = crate::test_support::assert_work_boundaries(
+        &["creo combined feature output lookup"],
+        |ctx| {
+            let mut ir = initial.clone();
+            let feature_count = emit_model_features(
+                ctx,
+                &scan,
+                &mut ir,
+                &mut cadmpeg_ir::AnnotationBuilder::new(),
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )?;
+            Ok((feature_count, ir.model.features[0].evaluation.outputs().to_vec()))
+        },
+    );
+    assert_eq!(feature_count, 0);
+    assert_eq!(outputs, vec![output]);
+}

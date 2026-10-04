@@ -523,7 +523,7 @@ pub(super) fn emit_model_features(
                 combined_outputs.push(copy);
             }
             for output in outputs {
-                if !combined_outputs.contains(&output) {
+                if !ctx.contains(&combined_outputs, &output, "creo combined feature output lookup")? {
                     ctx.reserve_vec(&mut combined_outputs, 1, "creo combined feature outputs")?;
                     combined_outputs.push(output);
                 }

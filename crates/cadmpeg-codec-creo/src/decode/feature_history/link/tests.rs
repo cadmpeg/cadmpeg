@@ -261,6 +261,106 @@ fn rowless_generated_profile_requires_a_framed_side_table() {
 }
 
 #[test]
+fn blind_generated_profile_kind_membership_refuses_work_and_stays_lazy() {
+    let entry = |entity_id, class_id, source_entity_id| {
+        crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
+            entity_id,
+            prefixed: false,
+            offset: 0,
+            end_offset: 0,
+        }
+    };
+    let table = crate::feature::entity::FeatureEntityTable::new(
+        7,
+        29,
+        vec![
+            entry(29, 204, None),
+            entry(30, 203, None),
+            entry(31, 200, Some(11)),
+            entry(32, 200, None),
+        ],
+        &std::collections::BTreeSet::new(),
+        0,
+    )
+    .with_surface_ids([30, 32]);
+    let cylinder = crate::surface::SurfaceRow {
+        id: 32,
+        kind: crate::surface::SurfaceKind::Cylinder,
+        feature_id: 7,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: 0,
+    };
+    let tables = [table];
+    let rows = [cylinder];
+    let plane = [crate::surface::SurfaceKind::Plane];
+    let refusal = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "creo blind generated profile surface kind lookup",
+        |ctx| {
+            section_entity_is_generated_profile(
+                ctx,
+                true,
+                Some(7),
+                11,
+                &plane,
+                &tables,
+                &rows,
+            )
+        },
+    );
+    let limit = match refusal {
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "creo blind generated profile surface kind lookup" => limit,
+        error => panic!("expected blind-profile kind lookup refusal, got {error:?}"),
+    };
+    let cap = limit.used.checked_add(limit.additional).expect("work cap");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = cap;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    assert!(!section_entity_is_generated_profile(
+        &ctx,
+        true,
+        Some(7),
+        11,
+        &plane,
+        &tables,
+        &rows,
+    )
+    .expect("the Plane-only gate returns before scanning blind profiles"));
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| {
+        section_entity_is_generated_profile(
+            ctx,
+            true,
+            Some(7),
+            11,
+            &plane,
+            &tables,
+            &rows,
+        )
+    })
+    .expect("service profile preserves the Plane-only nonmatch"));
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        section_entity_is_generated_profile(
+            ctx,
+            true,
+            Some(7),
+            11,
+            &[crate::surface::SurfaceKind::Cylinder],
+            &tables,
+            &rows,
+        )
+    })
+    .expect("service profile admits the matching blind profile"));
+}
+
+#[test]
 fn rowless_generated_profile_rejects_duplicate_entity_ids() {
     let entry =
         |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {

@@ -231,18 +231,20 @@ fn prototype_dependency_producer_vec_refuses_before_growth() {
 
 #[test]
 fn surface_prototype_dependencies_point_from_consumers_to_unique_producers() {
-    let mut dependencies = BTreeMap::new();
-    crate::decode::with_test_decode_ctx(|ctx| {
-        add_surface_prototype_feature_dependencies(
-            ctx,
-            &mut dependencies,
-            40,
-            &[0, 40, 286, 286, 1111],
-        )?;
-        add_surface_prototype_feature_dependencies(ctx, &mut dependencies, 41, &[286])
-    })
-    .expect("service profile admits prototype dependencies");
-
+    let dependencies = crate::test_support::assert_work_boundaries(
+        &["creo prototype dependency producer lookup"],
+        |ctx| {
+            let mut dependencies = BTreeMap::new();
+            add_surface_prototype_feature_dependencies(
+                ctx,
+                &mut dependencies,
+                40,
+                &[0, 40, 286, 286, 1111],
+            )?;
+            add_surface_prototype_feature_dependencies(ctx, &mut dependencies, 41, &[286])?;
+            Ok::<_, CodecError>(dependencies)
+        },
+    );
     assert_eq!(
         dependencies,
         BTreeMap::from([(286, vec![40, 41]), (1111, vec![40])])
@@ -277,6 +279,88 @@ fn dependency_reconciliation_preserves_typed_history_edges() {
         },
     );
     assert_eq!(dependencies, vec![sketch, parent]);
+}
+
+#[test]
+fn native_dependency_duplicate_membership_refuses_work_and_preserves_order() {
+    let owner = IrFeatureId::mint("creo:model:feature#40").expect("identity grammar");
+    let sketch = IrFeatureId::mint("creo:model:sketch_feature#917").expect("identity grammar");
+    let parent = IrFeatureId::mint("creo:model:feature#3").expect("identity grammar");
+    let missing = IrFeatureId::mint("creo:model:feature#999").expect("identity grammar");
+    let emitted = [owner.clone(), sketch.clone(), parent.clone()]
+        .into_iter()
+        .collect();
+    let dependencies = crate::test_support::assert_work_boundaries(
+        &["creo native dependency duplicate lookup"],
+        |ctx| {
+            reconciled_dependencies(
+                ctx,
+                &owner,
+                &[sketch.clone(), missing.clone()],
+                [parent.clone(), sketch.clone(), owner.clone()],
+                &emitted,
+            )
+        },
+    );
+    assert_eq!(dependencies, vec![sketch, parent]);
+}
+
+#[test]
+fn unemitted_native_dependency_skips_duplicate_membership_at_work_limit() {
+    let owner = IrFeatureId::mint("creo:model:feature#40").expect("identity grammar");
+    let parent = IrFeatureId::mint("creo:model:feature#3").expect("identity grammar");
+    let missing = IrFeatureId::mint("creo:model:feature#999").expect("identity grammar");
+    let emitted = std::collections::BTreeSet::from([owner.clone(), parent.clone()]);
+    let refusal = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "creo native dependency emission lookup",
+        |ctx| {
+            reconciled_dependencies(
+                ctx,
+                &owner,
+                std::slice::from_ref(&parent),
+                [missing.clone()],
+                &emitted,
+            )
+        },
+    );
+    let limit = match refusal {
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "creo native dependency emission lookup" => limit,
+        error => panic!("expected native emission membership refusal, got {error:?}"),
+    };
+    let cap = limit.used.checked_add(limit.additional).expect("work cap");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = cap;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    assert_eq!(
+        reconciled_dependencies(
+            &ctx,
+            &owner,
+            std::slice::from_ref(&parent),
+            [missing.clone()],
+            &emitted,
+        )
+        .expect("an un-emitted dependency skips duplicate membership"),
+        vec![parent.clone()]
+    );
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| {
+            reconciled_dependencies(
+                ctx,
+                &owner,
+                std::slice::from_ref(&parent),
+                [missing],
+                &emitted,
+            )
+        })
+        .expect("service profile preserves the established dependency"),
+        vec![parent]
+    );
 }
 
 #[test]
