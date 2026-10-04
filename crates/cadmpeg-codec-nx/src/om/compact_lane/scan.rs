@@ -82,9 +82,8 @@ pub(crate) fn counted_lanes(
             at += token.atom.raw().len();
             members.push(token.atom.into());
         }
-        Ok(CountedIndexMembers::new(members)
-            .ok()
-            .and_then(|members| CountedLane::<(), usize>::new(anchor.atom.into(), members, start))
+        let Ok(members) = CountedIndexMembers::new(members) else { return Ok(None); };
+        Ok(CountedLane::<(), usize>::from_wire(ctx, anchor.atom.into(), members, start)?
             .map(|lane| (lane, end)))
     };
     let mut lanes = Vec::new();

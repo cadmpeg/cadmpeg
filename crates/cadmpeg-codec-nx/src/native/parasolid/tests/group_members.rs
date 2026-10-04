@@ -68,7 +68,7 @@ fn group_member_xmt_is_checked_before_node_identity_fallback() {
     })
     .unwrap();
     let resolve =
-        |member: &ParasolidGroupMember| match member.target.resolve(&graph, member.member_xmt) {
+        |member: &ParasolidGroupMember| match crate::test_support::with_decode_context(|ctx| member.target.resolve(ctx, &graph, member.member_xmt)).unwrap() {
             GroupMemberTarget::Fin => None,
             GroupMemberTarget::Node { current_xmt, .. } => current_xmt,
         };

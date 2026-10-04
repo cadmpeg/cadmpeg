@@ -327,7 +327,7 @@ pub(super) fn fast_load_component_object_groups(
             )?,
             component_uuid: ctx
                 .copy_retained_text(&uuid.id, "retain NX fast-load group component UUID")?,
-            uuid: crate::canonical_uuid::CanonicalUuid::new(uuid_text)
+            uuid: crate::canonical_uuid::CanonicalUuid::from_wire(ctx, uuid_text)?
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             members,
             source_entry: ctx
@@ -522,7 +522,7 @@ pub(super) fn fast_load_component_roster(
         let ordinal = u32::try_from(ordinal)
             .map_err(|_| ctx.refuse_codec_limit("NX fast-load UUID ordinal", 0, 1))?;
         let text = ctx.copy_retained_text(text, "retain NX fast-load UUID text")?;
-        let uuid = crate::canonical_uuid::CanonicalUuid::new(text)
+        let uuid = crate::canonical_uuid::CanonicalUuid::from_wire(ctx, text)?
             .map_err(cadmpeg_core::CodecError::malformed)?;
         uuids.push(FastLoadComponentUuid {
             id: structure_identity(
@@ -671,7 +671,7 @@ fn parse_candidate(
         let uuids_offset = at;
         for _ in 0..uuid_count {
             let uuid = parse_tagged_string(bytes, &mut at, 3)?;
-            crate::canonical_uuid::CanonicalUuid::new(uuid.1).ok()?;
+            propagate_resource!(crate::canonical_uuid::CanonicalUuid::from_wire(ctx, uuid.1)).ok()?;
         }
         take(bytes, &mut at, 1)?.eq(&[1]).then_some(())?;
         (decoded_count(*take(bytes, &mut at, 1)?.first()?)? == occurrence_count).then_some(())?;
@@ -683,7 +683,7 @@ fn parse_candidate(
             })
             .then_some(())?;
 
-        Some(Candidate {
+        Some(Ok(Candidate {
             start,
             end: at,
             prototype_count,
@@ -695,8 +695,8 @@ fn parse_candidate(
             uuid_count,
             uuids_offset,
             uuid_indices_offset,
-        })
-    })();
+        }))
+    })().transpose()?;
     let scanned = at
         .checked_sub(start)
         .ok_or_else(|| ctx.refuse_codec_limit("scan NX fast-load roster candidate", 0, 1))?;

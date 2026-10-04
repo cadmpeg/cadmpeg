@@ -200,14 +200,8 @@ fn value_record_frame_at<'a>(
                 Ok(BorrowedValues::new(ctx, raw)?.map(ValuePayload::Doubles))
             }))?,
             0x54 => propagate_resource!(frame_at(bytes, offset, tag, 1, |raw| {
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(raw.len()),
-                    "validate NX character value",
-                )?;
-                Ok(std::str::from_utf8(raw)
-                    .ok()
-                    .and_then(|text| PrintableString::new(text).ok())
-                    .map(ValuePayload::String))
+                let Ok(text) = std::str::from_utf8(raw) else { return Ok(None); };
+                Ok(PrintableString::from_wire(ctx, text)?.ok().map(ValuePayload::String))
             }))?,
             0x55 => propagate_resource!(frame_at(bytes, offset, tag, 24, |raw| {
                 Ok(BorrowedValues::new(ctx, raw)?.map(ValuePayload::Points))

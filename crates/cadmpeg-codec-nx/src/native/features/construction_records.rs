@@ -51,7 +51,7 @@ pub(super) fn resolved_feature_payload_references(
     decode: impl Fn(
         crate::om::operation_record::OperationPayload<'_>,
         u64,
-    ) -> Option<Vec<(PayloadIndexToken, u64)>>,
+    ) -> Result<Option<Vec<(PayloadIndexToken, u64)>>, CodecError>,
 ) -> Result<Vec<ResolvedFeaturePayloadReference>, cadmpeg_core::CodecError> {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut references = Vec::new();
@@ -63,7 +63,11 @@ pub(super) fn resolved_feature_payload_references(
             if failure.is_some() {
                 return;
             }
-            let Some(decoded) = decode(record.payload_view(), entry_offset) else {
+            let decoded = match decode(record.payload_view(), entry_offset) {
+                Ok(decoded) => decoded,
+                Err(error) => { failure = Some(error); return; }
+            };
+            let Some(decoded) = decoded else {
                 return;
             };
             let projected = (|| -> Result<(), CodecError> {
@@ -102,7 +106,7 @@ pub(in crate::native) fn feature_projected_curve_references(
     container: &Container,
 ) -> Result<Vec<FeatureProjectedCurveReference>, CodecError> {
     let references = resolved_feature_payload_references(ctx, container, |record, base| {
-        crate::om::projected_references::ProjectedCurveReferences::read(record).and_then(|field| {
+        Ok(crate::om::projected_references::ProjectedCurveReferences::read(record).and_then(|field| {
             field
                 .into_references()
                 .into_iter()
@@ -113,7 +117,7 @@ pub(in crate::native) fn feature_projected_curve_references(
                     ))
                 })
                 .collect()
-        })
+        }))
     })?;
     let mut output = Vec::new();
     for reference in references {
@@ -330,7 +334,7 @@ pub(in crate::native) fn feature_projected_curve_construction_strings(
                 ctx.copy_retained_text(&payload.id, "NX projected curve string payload")?;
             let text =
                 ctx.copy_retained_text(value.value.as_str(), "NX projected curve string value")?;
-            let value = crate::printable_string::PrintableString::new(text)
+            let value = crate::printable_string::PrintableString::from_wire(ctx, text)?
                 .map_err(|error| CodecError::Malformed(error.into()))?;
             ctx.reserve_vec(&mut strings, 1, "NX projected curve strings")?;
             strings.push(FeatureProjectedCurveConstructionString {
@@ -555,14 +559,14 @@ pub(in crate::native) fn feature_surface_construction_references(
     container: &Container,
 ) -> Result<Vec<FeatureSurfaceConstructionReference>, CodecError> {
     let references = resolved_feature_payload_references(ctx, container, |record, base| {
-        crate::om::surface_envelope::surface_feature_payload_references(record)
-            .and_then(|field| field.relocate(base))
-            .map(|field| field.references().into_iter().collect())
-            .or_else(|| {
-                crate::om::surface_envelope::thru_curve_payload_references(record)
-                    .and_then(|field| field.relocate(base))
-                    .map(|field| field.references().into_iter().collect())
-            })
+        let surface = crate::om::surface_envelope::surface_feature_payload_references(ctx, record)?
+            .map(|field| field.relocate(ctx, base)).transpose()?.flatten();
+        Ok(match surface {
+            Some(field) => Some(field.references().into_iter().collect()),
+            None => crate::om::surface_envelope::thru_curve_payload_references(record)
+                .and_then(|field| field.relocate(base))
+                .map(|field| field.references().into_iter().collect()),
+        })
     })?;
     let mut output = Vec::new();
     for reference in references {
@@ -930,7 +934,7 @@ pub(in crate::native) fn feature_surface_construction_strings(
             let id = format_feature_child_id(ctx, &payload.id, "-string-", ordinal)?;
             let text =
                 ctx.copy_retained_text(value.value.as_str(), "NX surface payload string text")?;
-            let value = crate::payload_text::PayloadText::new(text)
+            let value = crate::payload_text::PayloadText::from_wire(ctx, text)?
                 .map_err(|error| CodecError::Malformed(error.to_owned()))?;
             ctx.reserve_vec(&mut strings, 1, "NX surface payload strings")?;
             strings.push(FeatureSurfaceConstructionString {
@@ -977,8 +981,10 @@ pub(in crate::native) fn feature_extrude_profile_references(
                     return;
                 }
             };
-            let Some(decoded) = decoded.relocate(entry_offset) else {
-                return;
+            let decoded = match decoded.relocate(ctx, entry_offset) {
+                Ok(Some(decoded)) => decoded,
+                Ok(None) => return,
+                Err(error) => { refusal = Some(error); return; }
             };
             let projected = (|| -> Result<(), CodecError> {
                 for (ordinal, (token, source_offset, witness_source_offset)) in

@@ -58,7 +58,7 @@ pub(super) fn saved_offset_carriers(
 ) -> Result<BTreeMap<u32, (SurfaceId, f64)>, CodecError> {
     let mut face_surfaces = BTreeSet::new();
     for xmt in graph
-        .of_kind(NodeKind::Face)
+        .of_kind(ctx, NodeKind::Face)?
         .filter_map(Node::face_fields)
         .filter_map(|face| face.surface.map(u32::from))
     {

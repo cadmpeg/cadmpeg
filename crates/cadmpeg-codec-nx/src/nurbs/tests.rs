@@ -1326,7 +1326,7 @@ fn nurbs_surface_headers_admit_low_nonnull_identity() {
         for _ in 0..4 {
             bytes.extend_from_slice(&[0, 1, 1]);
         }
-        let result = super::surface_data_header_at(&bytes, 0);
+        let result = crate::test_support::with_decode_context(|ctx| super::surface_data_header_at(ctx, &bytes, 0).unwrap());
         assert_eq!(
             result,
             (identity > 1).then_some((u32::from(identity), bytes.len()))

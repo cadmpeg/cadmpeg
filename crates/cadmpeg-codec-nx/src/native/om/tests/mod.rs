@@ -1123,7 +1123,7 @@ fn om_numeric_expression_retains_formula_without_literal_value() {
         None
     );
     assert_eq!(
-        super::expression_parameter_names(expressions[0].expression).collect::<Vec<_>>(),
+        crate::test_support::with_decode_context(|ctx| super::expression_parameter_names(ctx, expressions[0].expression).collect::<Result<Vec<_>, _>>()).unwrap(),
         vec!["p2", "p7_radius"]
     );
 }

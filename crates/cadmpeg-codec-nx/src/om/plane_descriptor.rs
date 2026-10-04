@@ -13,16 +13,18 @@ pub(crate) struct PlaneDescriptor {
 }
 
 impl PlaneDescriptor {
-    fn parse(bytes: &[u8]) -> Option<(&[u8], CompactIndexAtom, &[u8])> {
+    fn parse<'a, E, I: Iterator<Item = &'a u8>>(
+        bytes: &'a [u8],
+        mut admit: impl FnMut(&'a [u8]) -> Result<I, E>,
+    ) -> Result<Option<(&'a [u8], CompactIndexAtom, &'a [u8])>, E> {
+        (|| {
         if bytes.len() != 40 {
             return None;
         }
-        let delimiter = bytes.iter().position(|byte| *byte == b'?')?;
+        let delimiter = propagate_resource!(admit(bytes)).position(|byte| *byte == b'?')?;
         let identity = bytes.get(..delimiter)?;
         if identity.is_empty()
-            || !identity
-                .iter()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
+            || !propagate_resource!(admit(identity)).all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
         {
             return None;
         }
@@ -36,14 +38,21 @@ impl PlaneDescriptor {
             return None;
         }
         let label = suffix.get(label_start..)?;
-        if label.is_empty() || !label.iter().all(u8::is_ascii_graphic) {
+        if label.is_empty() || !propagate_resource!(admit(label)).all(u8::is_ascii_graphic) {
             return None;
         }
-        Some((identity, schema, label))
+        Some(Ok((identity, schema, label)))
+        })().transpose()
     }
 
     pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
-        let (identity, schema, label) = Self::parse(bytes)?;
+        let parsed = match Self::parse(bytes, |bytes| {
+            Ok::<_, std::convert::Infallible>(bytes.iter())
+        }) {
+            Ok(parsed) => parsed,
+            Err(error) => match error {},
+        };
+        let (identity, schema, label) = parsed?;
         Some(Self {
             identity: identity.iter().copied().map(char::from).collect(),
             schema,
@@ -51,11 +60,13 @@ impl PlaneDescriptor {
         })
     }
 
-    pub(crate) fn read_charged(
+    pub(crate) fn from_bytes(
         ctx: &DecodeContext<'_>,
         bytes: &[u8],
     ) -> Result<Option<Self>, CodecError> {
-        let Some((identity, schema, label)) = Self::parse(bytes) else {
+        let Some((identity, schema, label)) = Self::parse(bytes, |bytes| {
+            ctx.admit_iter(bytes, "NX datum plane descriptor validation")
+        })? else {
             return Ok(None);
         };
         let identity = ctx.copy_retained(identity, "NX datum plane descriptor identity")?;
@@ -148,5 +159,17 @@ mod tests {
             bytes.pop();
             assert!(PlaneDescriptor::read(&bytes).is_none());
         }
+    }
+
+    #[test]
+    fn plane_descriptor_iteration_refusal_propagates() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_core::CodecError;
+        let error = crate::test_support::resource_refusal_at(
+            &[], ResourceDimension::WorkUnits, "NX datum plane descriptor validation",
+            |ctx| { PlaneDescriptor::from_bytes(ctx, b"012345678901234567890123456789?A\x00\xff\x02\x01abcd") },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "NX datum plane descriptor validation"));
     }
 }

@@ -670,9 +670,9 @@ pub(in crate::native) fn feature_draft_construction_references(
     container: &Container,
 ) -> Result<Vec<FeatureDraftConstructionReference>, cadmpeg_core::CodecError> {
     let references = resolved_feature_payload_references(ctx, container, |record, base| {
-        crate::om::draft_references::draft_feature_payload_references(record)
+        Ok(crate::om::draft_references::draft_feature_payload_references(record)
             .and_then(|field| field.relocate(base))
-            .map(|field| field.references().into_iter().collect())
+            .map(|field| field.references().into_iter().collect()))
     })?;
     let mut output = Vec::new();
     for reference in references {
@@ -1080,9 +1080,9 @@ pub(in crate::native) fn feature_draft_construction_graph_strings(
             let graph_payload = ctx.copy_retained_text(&payload.id, "NX draft string graph")?;
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX draft string ordinal", 0, 1))?;
-            let value = PrintableString::new(
+            let value = PrintableString::from_wire(ctx,
                 ctx.copy_retained_text(value.value.as_str(), "NX draft construction string")?,
-            )
+            )?
             .map_err(|reason| CodecError::Malformed(reason.into()))?;
             ctx.reserve_vec(&mut strings, 1, "NX draft construction graph strings")?;
             strings.push(FeatureDraftConstructionGraphString {

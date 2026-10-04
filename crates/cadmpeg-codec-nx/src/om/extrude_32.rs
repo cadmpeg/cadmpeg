@@ -12,6 +12,8 @@ use cadmpeg_core::CodecError;
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Extrude32Frame<B> {
     origin: u64,
+    second_position: u64,
+    terminal_position: u64,
     scalar: ShiftedBinary64,
     atoms: BranchItems<(WrappedCompactIndex, B)>,
     first: BranchItems<(CompactIndexAtom, B)>,
@@ -28,22 +30,40 @@ impl<B> Extrude32Frame<B> {
         second: BranchItems<(CompactIndexAtom, B)>,
         terminal: FeatureReferenceToken,
     ) -> Result<Self, &'static str> {
-        let frame = Self {
-            origin,
-            scalar,
-            atoms,
-            first,
-            second,
-            terminal,
+        let (second_position, terminal_position) = match Self::extent(origin, atoms.len(), first.as_slice(), second.as_slice(), terminal, |tokens| {
+            Ok::<_, std::convert::Infallible>(tokens.iter())
+        }) {
+            Ok(positions) => positions?,
+            Err(error) => match error {},
         };
-        origin
-            .checked_add(
-                frame.terminal_position()
-                    + cadmpeg_core::decode::u64_from_index(frame.terminal.raw().len())
-                    + 2,
-            )
-            .ok_or("source_offset: extrusion branch end overflows")?;
-        Ok(frame)
+        Ok(Self { origin, second_position, terminal_position, scalar, atoms, first, second, terminal })
+    }
+
+    fn from_wire(ctx: &DecodeContext<'_>, origin: u64, scalar: ShiftedBinary64, atoms: BranchItems<(WrappedCompactIndex, B)>, first: BranchItems<(CompactIndexAtom, B)>, second: BranchItems<(CompactIndexAtom, B)>, terminal: FeatureReferenceToken) -> Result<Result<Self, &'static str>, CodecError> {
+        Ok(Self::extent(origin, atoms.len(), first.as_slice(), second.as_slice(), terminal, |tokens| {
+            ctx.admit_iter(tokens, "NX extrusion branch token widths")
+        })?.map(|(second_position, terminal_position)| Self { origin, second_position, terminal_position, scalar, atoms, first, second, terminal }))
+    }
+
+    fn extent<'a, E, I: Iterator<Item = &'a (CompactIndexAtom, B)>>(
+        origin: u64, atom_count: usize, first: &'a [(CompactIndexAtom, B)], second: &'a [(CompactIndexAtom, B)], terminal: FeatureReferenceToken,
+        mut admit: impl FnMut(&'a [(CompactIndexAtom, B)]) -> Result<I, E>,
+    ) -> Result<Result<(u64, u64), &'static str>, E> where B: 'a {
+        let Some(start) = u64_from_index(atom_count).checked_mul(4).and_then(|width| width.checked_add(15)) else {
+            return Ok(Err("source_offset: extrusion branch end overflows"));
+        };
+        let Some(second_position) = admit(first)?.try_fold(start, |at, (token, _)| at.checked_add(u64_from_index(token.raw().len())))
+            .and_then(|at| at.checked_add(2)) else {
+            return Ok(Err("source_offset: extrusion branch end overflows"));
+        };
+        let Some(terminal_position) = admit(second)?.try_fold(second_position, |at, (token, _)| at.checked_add(u64_from_index(token.raw().len())))
+            .and_then(|at| at.checked_add(2)) else {
+            return Ok(Err("source_offset: extrusion branch end overflows"));
+        };
+        let valid = origin.checked_add(terminal_position)
+            .and_then(|at| at.checked_add(u64_from_index(terminal.raw().len())))
+            .and_then(|at| at.checked_add(2));
+        Ok(valid.map(|_| (second_position, terminal_position)).ok_or("source_offset: extrusion branch end overflows"))
     }
     pub(crate) fn origin(&self) -> u64 {
         self.origin
@@ -70,26 +90,8 @@ impl<B> Extrude32Frame<B> {
     fn first_position(&self) -> u64 {
         15 + 4 * cadmpeg_core::decode::u64_from_index(self.atoms.len())
     }
-    fn second_position(&self) -> u64 {
-        self.first_position()
-            + self
-                .first
-                .as_slice()
-                .iter()
-                .map(|(token, _)| cadmpeg_core::decode::u64_from_index(token.raw().len()))
-                .sum::<u64>()
-            + 2
-    }
-    fn terminal_position(&self) -> u64 {
-        self.second_position()
-            + self
-                .second
-                .as_slice()
-                .iter()
-                .map(|(token, _)| cadmpeg_core::decode::u64_from_index(token.raw().len()))
-                .sum::<u64>()
-            + 2
-    }
+    fn second_position(&self) -> u64 { self.second_position }
+    fn terminal_position(&self) -> u64 { self.terminal_position }
 
     pub(crate) fn atoms(&self) -> impl Iterator<Item = (WrappedCompactIndex, &B, u64)> + Clone {
         self.atoms
@@ -114,17 +116,14 @@ impl<B> Extrude32Frame<B> {
     ) -> impl Iterator<Item = (CompactIndexAtom, &B, u64)> + Clone {
         compact_positions(&self.second, self.origin + self.second_position())
     }
-    pub(crate) fn relocate(self, base: u64) -> Option<Self> {
-        Self::new(
-            base.checked_add(self.origin)?,
-            self.scalar,
-            self.atoms,
-            self.first,
-            self.second,
-            self.terminal,
-        )
-        .ok()
+    pub(crate) fn relocate(mut self, base: u64) -> Option<Self> {
+        let origin = base.checked_add(self.origin)?;
+        origin.checked_add(self.terminal_position)?
+            .checked_add(u64_from_index(self.terminal.raw().len()))?.checked_add(2)?;
+        self.origin = origin;
+        Some(self)
     }
+
     pub(crate) fn map_bindings<C>(
         self,
         ctx: &DecodeContext<'_>,
@@ -132,6 +131,8 @@ impl<B> Extrude32Frame<B> {
     ) -> Result<Extrude32Frame<C>, CodecError> {
         Ok(Extrude32Frame {
             origin: self.origin,
+            second_position: self.second_position,
+            terminal_position: self.terminal_position,
             scalar: self.scalar,
             atoms: self
                 .atoms
@@ -175,7 +176,7 @@ pub(crate) fn extrude_payload_32_branch(
     if record.name() != "EXTRUDE" {
         return Ok(None);
     }
-    let Some(reference) = super::operation_body_reference(record) else {
+    let Some(reference) = super::operation_body_reference(ctx, record)? else {
         return Ok(None);
     };
     let end = reference.offset - record.offset() + reference.object_index.raw().len();
@@ -222,15 +223,15 @@ pub(crate) fn extrude_payload_32_branch(
     {
         return Ok(None);
     }
-    Ok(Extrude32Frame::new(
+    Ok(Extrude32Frame::from_wire(
+        ctx,
         cadmpeg_core::decode::u64_from_index(record.offset() + end + 1),
         scalar,
         atoms,
         first,
         second,
         terminal,
-    )
-    .ok())
+    )?.ok())
 }
 
 fn counted_lane<T>(

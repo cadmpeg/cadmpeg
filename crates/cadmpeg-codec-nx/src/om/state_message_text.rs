@@ -15,6 +15,16 @@ impl<S: crate::immutable_text::ImmutableText> StateMessageText<S> {
     pub(super) fn new(text: S) -> Result<Self, &'static str> {
         let text =
             PrintableString::new(text).map_err(|_| "text: must be nonempty printable ASCII")?;
+        Self::from_printable(text)
+    }
+
+    pub(super) fn from_wire(ctx: &DecodeContext<'_>, text: S) -> Result<Result<Self, &'static str>, CodecError> {
+        Ok(PrintableString::from_wire(ctx, text)?
+            .map_err(|_| "text: must be nonempty printable ASCII")
+            .and_then(Self::from_printable))
+    }
+
+    fn from_printable(text: PrintableString<S>) -> Result<Self, &'static str> {
         if text.as_str().len() > usize::from(u8::MAX) - 2 {
             return Err("text: length plus two must fit declared_length");
         }
@@ -42,7 +52,7 @@ impl StateMessageText<&str> {
         let mut owned = String::new();
         ctx.append_retained(&mut owned, text, "NX state message text")?;
         Ok(StateMessageText(
-            PrintableString::new(owned).map_err(CodecError::malformed)?,
+            PrintableString::from_wire(ctx, owned)?.map_err(CodecError::malformed)?,
             self.1,
         ))
     }
@@ -78,6 +88,22 @@ impl<'de> Deserialize<'de> for StateMessageText<String> {
 #[cfg(test)]
 mod tests {
     use super::StateMessageText;
+
+    #[test]
+    fn retained_state_message_text_iteration_refusal_propagates() {
+        let text = StateMessageText::new("NX").unwrap();
+        crate::test_support::with_decode_context_over(
+            &[],
+            // The append reads two bytes before the constructor validates them.
+            |policy| policy.limits.max_work_units = 2,
+            |ctx| {
+                let error = text.into_owned(ctx).unwrap_err();
+                let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("text validation must refuse"); };
+                assert_eq!(limit.operation, "NX printable string syntax");
+                assert_eq!(ctx.resource_refusal(), Some(limit));
+            },
+        );
+    }
 
     #[test]
     fn message_text_copy_preserves_resource_refusals() {

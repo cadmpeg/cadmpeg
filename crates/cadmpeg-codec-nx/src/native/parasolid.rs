@@ -548,7 +548,7 @@ pub(super) fn parasolid_group_members(
             continue;
         };
         let graph = parsed.stream(partition).view_for_geometry().graph.as_ref();
-        member.target = member.target.resolve(graph, member.member_xmt);
+        member.target = member.target.resolve(ctx, graph, member.member_xmt)?;
     }
     Ok(members)
 }
@@ -3349,7 +3349,7 @@ pub(super) fn parasolid_attribute_definitions(
             let name_len = definition.name.as_str().len();
             let mut name = ctx.retained_string(name_len, "retain NX attribute definition name")?;
             name.push_str(definition.name.as_str());
-            let name = crate::printable_string::PrintableString::new(name)
+            let name = crate::printable_string::PrintableString::from_wire(ctx, name)?
                 .map_err(|message| CodecError::Malformed(message.into()))?;
             let id = parasolid_record_id(
                 ctx,
@@ -3593,7 +3593,7 @@ pub(super) fn parasolid_topology_attribute_list_references(
     for (stream_ordinal, stream) in parsed.iter() {
         let graph = &stream.view_for_records().graph;
         for topology_type in TopologyAttributeKind::ALL {
-            for node in graph.of_kind(topology_type.node_kind()) {
+            for node in graph.of_kind(ctx, topology_type.node_kind())? {
                 ctx.charge_work(1, "scan NX topology attribute list references")?;
                 let attribute_list_xmt = match topology_type {
                     TopologyAttributeKind::Shell => node
@@ -3842,7 +3842,7 @@ pub(super) fn parasolid_entity_value_records(
             let value_len = record.value.as_str().len();
             let mut text = ctx.retained_string(value_len, "retain NX Parasolid string value")?;
             text.push_str(record.value.as_str());
-            let value = crate::printable_string::PrintableString::new(text)
+            let value = crate::printable_string::PrintableString::from_wire(ctx, text)?
                 .map_err(|message| CodecError::Malformed(message.into()))?;
             records.strings.push(ParasolidEntity54StringRecord {
                 id,

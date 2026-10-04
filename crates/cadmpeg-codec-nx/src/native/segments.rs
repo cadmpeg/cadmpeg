@@ -81,7 +81,7 @@ pub(super) fn segment_index_rows(
     ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<SegmentIndexRow>, CodecError> {
-    let Some((entry, index)) = container.segment_index() else {
+    let Some((entry, index)) = container.segment_index(ctx)? else {
         return Ok(Vec::new());
     };
     let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
@@ -174,8 +174,8 @@ fn segment_stream_candidates<'a>(
     ctx: &'a DecodeContext<'_>,
     container: &'a Container<'_>,
     streams: &'a [Stream],
-) -> impl Iterator<Item = Result<Option<SegmentStreamCandidate>, CodecError>> + 'a {
-    container.segment_stream_wrappers().map(move |wrapper| {
+) -> Result<impl Iterator<Item = Result<Option<SegmentStreamCandidate>, CodecError>> + 'a, CodecError> {
+    Ok(container.segment_stream_wrappers(ctx)?.map(move |wrapper| {
         let slot = match wrapper.word_ordinal {
             0 => SegmentIndexSlot::TypeCode,
             1 => SegmentIndexSlot::SubtypeCode,
@@ -196,7 +196,7 @@ fn segment_stream_candidates<'a>(
                 stream_ordinal,
                 stream_kind: stream.kind(),
             }))
-    })
+    }))
 }
 
 #[cfg(test)]
@@ -823,7 +823,7 @@ pub(super) fn segment_om_links(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<SegmentOmLink>, cadmpeg_core::CodecError> {
-    let Some((entry, index)) = container.segment_index() else {
+    let Some((entry, index)) = container.segment_index(ctx)? else {
         return Ok(Vec::new());
     };
     let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
@@ -932,7 +932,7 @@ pub(super) fn segment_stream_links(
     streams: &[Stream],
 ) -> Result<Vec<SegmentStreamLink>, CodecError> {
     let mut links = Vec::new();
-    for candidate in segment_stream_candidates(ctx, container, streams) {
+    for candidate in segment_stream_candidates(ctx, container, streams)? {
         let Some(candidate) = candidate? else {
             continue;
         };
@@ -978,7 +978,7 @@ pub(super) fn segment_body_bindings(
     container: &Container,
     streams: &[Stream],
 ) -> Result<Vec<SegmentBodyBinding>, CodecError> {
-    let Some((entry, index)) = container.segment_index() else {
+    let Some((entry, index)) = container.segment_index(ctx)? else {
         return Ok(Vec::new());
     };
     let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
@@ -992,7 +992,7 @@ pub(super) fn segment_body_bindings(
     };
     let mut bindings = Vec::new();
     let mut link_ordinal = 0usize;
-    for candidate in segment_stream_candidates(ctx, container, streams) {
+    for candidate in segment_stream_candidates(ctx, container, streams)? {
         let Some(candidate) = candidate? else {
             continue;
         };

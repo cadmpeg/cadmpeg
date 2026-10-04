@@ -811,3 +811,20 @@ fn structural_entity_references_do_not_own_value_records() {
         assert!(owned.contains(&value_offset));
     });
 }
+
+#[test]
+fn attribute_owner_flag_iteration_refusal_propagates() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+    for flags in [&[0; 14][..], &[2; 16][..]] {
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            "NX attribute owner flag validation",
+            |ctx| super::LegalOwnerFlags::from_wire(ctx, flags).map(|result| result.is_ok()),
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "NX attribute owner flag validation"));
+    }
+}

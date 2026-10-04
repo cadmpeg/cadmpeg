@@ -6,15 +6,31 @@ pub(crate) struct PrintableString<S>(S);
 
 impl<S: crate::immutable_text::ImmutableText> PrintableString<S> {
     pub(crate) fn new(value: S) -> Result<Self, &'static str> {
-        let text = value.as_ref();
-        if text.is_empty()
-            || !text
-                .bytes()
-                .all(|byte| byte.is_ascii_graphic() || byte == b' ')
-        {
-            return Err("value: must be nonempty printable ASCII");
+        match Self::validate(value.as_ref(), |text| {
+            Ok::<_, std::convert::Infallible>(text.chars())
+        }) {
+            Ok(valid) => valid?,
+            Err(error) => match error {},
         }
         Ok(Self(value))
+    }
+
+    pub(crate) fn from_wire(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: S,
+    ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
+        Ok(Self::validate(value.as_ref(), |text| {
+            ctx.admit_iter(text, "NX printable string syntax")
+        })?.map(|()| Self(value)))
+    }
+
+    fn validate<'a, E, I: Iterator<Item = char>>(
+        text: &'a str,
+        admit: impl FnOnce(&'a str) -> Result<I, E>,
+    ) -> Result<Result<(), &'static str>, E> {
+        if text.is_empty() || !admit(text)?.all(|ch| ch.is_ascii_graphic() || ch == ' ') {
+            return Ok(Err("value: must be nonempty printable ASCII"));
+        }
+        Ok(Ok(()))
     }
 
     pub(crate) fn as_str(&self) -> &str {
@@ -88,6 +104,20 @@ mod tests {
                 serde_json::to_string(&owned).unwrap(),
                 serde_json::to_string(text).unwrap()
             );
+        }
+    }
+
+    #[test]
+    fn printable_string_iteration_refusal_propagates() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_core::CodecError;
+        for text in ["Name", "Nameμ"] {
+            let error = crate::test_support::resource_refusal_at(
+                &[], ResourceDimension::WorkUnits, "NX printable string syntax",
+                |ctx| PrintableString::from_wire(ctx, text).map(|value| value.is_ok()),
+            );
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "NX printable string syntax"));
         }
     }
 }

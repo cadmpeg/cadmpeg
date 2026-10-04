@@ -1243,7 +1243,7 @@ pub(in crate::native) fn feature_pattern_construction_strings(
             let id = format_feature_child_id(ctx, &payload.id, "-string-", ordinal)?;
             let value = ctx
                 .copy_retained_text(value.value.as_str(), "NX pattern construction string value")?;
-            let value = PrintableString::new(value)
+            let value = PrintableString::from_wire(ctx, value)?
                 .map_err(|error| cadmpeg_core::CodecError::Malformed(error.to_owned()))?;
             let operation_label = ctx.copy_retained_text(
                 &payload.operation_label,

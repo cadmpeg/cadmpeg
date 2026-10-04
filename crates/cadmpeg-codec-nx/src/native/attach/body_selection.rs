@@ -119,7 +119,7 @@ pub(super) fn feature_body_selection_with_offset_blocks<'ctx>(
     let mut roots = Vec::new();
     let mut offset_blocks: Vec<&String> = Vec::new();
     let mut reservation = ctx.reserve_scoped(0, "NX feature body selection")?;
-    for index in object_indices {
+    for index in ctx.admit_iter(object_indices, "NX body selection object indices")? {
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(
                 roots
@@ -181,8 +181,7 @@ pub(super) fn feature_body_selection_with_offset_blocks<'ctx>(
         .and_then(|block| offset_store_identity(block));
     if !offset_blocks.is_empty()
         && (offset_store.is_none()
-            || offset_blocks
-                .iter()
+            || ctx.admit_iter(&offset_blocks, "NX body selection offset store consistency")?
                 .any(|block| offset_store_identity(block) != offset_store))
     {
         return Ok(FeatureBodySelection::Native(native));
@@ -190,7 +189,7 @@ pub(super) fn feature_body_selection_with_offset_blocks<'ctx>(
     if !offset_blocks.is_empty() {
         let mut bodies = Vec::new();
         let mut identity_keys = Vec::new();
-        for block in offset_blocks {
+        for block in ctx.admit_iter(&offset_blocks, "NX body selection offset blocks")?.copied() {
             ctx.charge_collection_items(2, "NX feature body offset selection")?;
             reservation.with_storage(|| {
                 ctx.reserve_capacity(&mut bodies, 1, "NX feature body offset selection")
@@ -210,7 +209,7 @@ pub(super) fn feature_body_selection_with_offset_blocks<'ctx>(
     }
     let mut resolved = Vec::new();
     let mut all_resolved = true;
-    for root in &roots {
+    for root in ctx.admit_iter(&roots, "NX body selection resolved roots")? {
         let Some([body]) = bodies_by_object_index.get(root).map(Vec::as_slice) else {
             all_resolved = false;
             break;
@@ -234,7 +233,7 @@ pub(super) fn feature_body_selection_with_offset_blocks<'ctx>(
     }
     if all_resolved {
         let mut identity_keys = Vec::new();
-        for root in roots {
+        for root in ctx.admit_iter(&roots, "NX body selection local roots")?.copied() {
             ctx.reserve_scoped_vec(
                 &mut reservation,
                 &mut identity_keys,
@@ -252,7 +251,7 @@ pub(super) fn feature_body_selection_with_offset_blocks<'ctx>(
     }
     let mut bodies = Vec::new();
     let mut identity_keys = Vec::new();
-    for root in roots {
+    for root in ctx.admit_iter(&roots, "NX body selection local roots")?.copied() {
         ctx.charge_collection_items(2, "NX feature body local selection")?;
         reservation.with_storage(|| {
             ctx.reserve_capacity(&mut bodies, 1, "NX feature body local selection")
@@ -287,7 +286,7 @@ pub(super) fn feature_body_set_selection(
 ) -> Result<BodySelection, CodecError> {
     let mut roots = Vec::new();
     let mut reservation = ctx.reserve_scoped(0, "NX feature body set")?;
-    for index in object_indices {
+    for index in ctx.admit_iter(object_indices, "NX body selection object indices")? {
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(roots.len()),
             "NX feature body set roots",
@@ -300,7 +299,7 @@ pub(super) fn feature_body_set_selection(
     }
     let mut resolved = Vec::new();
     let mut all_resolved = true;
-    for root in &roots {
+    for root in ctx.admit_iter(&roots, "NX body selection resolved roots")? {
         let Some([body]) = bodies_by_object_index.get(root).map(Vec::as_slice) else {
             all_resolved = false;
             break;
@@ -332,7 +331,7 @@ pub(super) fn feature_body_set_selection(
         .into_selection(ctx);
     }
     let mut bodies = Vec::new();
-    for root in roots {
+    for root in ctx.admit_iter(&roots, "NX body selection local roots")?.copied() {
         ctx.reserve_scoped_vec(
             &mut reservation,
             &mut bodies,
@@ -389,7 +388,7 @@ pub(super) fn atomic_disjoint_body_selections(
                         ) => offset_store_identity(left) == offset_store_identity(right),
                         _ => false,
                     });
-            same_namespace && !left.iter().any(|key| right.contains(key))
+            same_namespace && !ctx.admit_iter(left, "NX body selection disjointness")?.any(|key| right.contains(key))
         }
         _ => false,
     };
@@ -404,31 +403,31 @@ pub(super) fn atomic_disjoint_body_selections(
 /// complete Boolean definition. Native integer identity is used only when the
 /// definition did not establish one exact offset-store selection.
 pub(super) fn boolean_participant_writer<'a>(
+    ctx: &DecodeContext<'_>,
     selection: &BodySelection,
     object_index: u32,
     offset_store_body_blocks: Option<&BTreeMap<u32, String>>,
     body_alias_roots: &BTreeMap<u32, u32>,
     history: &'a BodyWriterHistory,
-) -> Option<&'a FeatureId> {
+) -> Result<Option<&'a FeatureId>, CodecError> {
     let offset_store_selection = matches!(
         selection,
         BodySelection::Local { bodies, .. }
             if !bodies.is_empty()
-                && bodies
-                    .iter()
+                && ctx.admit_iter(bodies.as_slice(), "NX Boolean participant local bodies")?
                     .all(|body| offset_store_identity(body).is_some())
     );
     if offset_store_selection {
-        return offset_store_body_blocks
+        return Ok(offset_store_body_blocks
             .and_then(|blocks| blocks.get(&object_index))
-            .and_then(|data_block| history.offset_store_writer(data_block));
+            .and_then(|data_block| history.offset_store_writer(data_block)));
     }
-    history.native_writer(
+    Ok(history.native_writer(
         body_alias_roots
             .get(&object_index)
             .copied()
             .unwrap_or(object_index),
-    )
+    ))
 }
 
 /// Register a Boolean's target in the namespace established by its complete

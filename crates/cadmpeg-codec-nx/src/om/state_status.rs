@@ -150,12 +150,14 @@ fn operation_state_link_payload(
 }
 
 pub(super) fn operation_state_status_row_at<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &'a [u8],
     at: usize,
     end: usize,
     base_offset: usize,
     opaque_lane_starts: Option<&[usize]>,
-) -> Option<OperationStateStatus<'a>> {
+) -> Result<Option<OperationStateStatus<'a>>, cadmpeg_core::CodecError> {
+    (|| {
     let status_code = OperationStateIndex::read_at(bytes, at, base_offset)?.token()?;
     let object_at = at.checked_add(status_code.raw().len())?;
     let object_index = OperationStateIndex::read_at(bytes, object_at, base_offset)?.token()?;
@@ -166,7 +168,7 @@ pub(super) fn operation_state_status_row_at<'a>(
     let (payload, payload_end) = match bytes[payload_at] {
         0x3f => (StateStatusPayload::Plain, payload_at + 1),
         0x03 => {
-            let message = OperationStateMessage::read(bytes, payload_at, base_offset)?;
+            let message = propagate_resource!(OperationStateMessage::read(ctx, bytes, payload_at, base_offset))?;
             let payload_end = message.end_offset() - base_offset;
             (StateStatusPayload::Diagnostic(message.body()), payload_end)
         }
@@ -185,19 +187,31 @@ pub(super) fn operation_state_status_row_at<'a>(
         _ => operation_state_link_payload(bytes, payload_at, end, base_offset)?,
     };
     base_offset.checked_add(payload_end)?;
-    (payload_end <= end).then_some(OperationStateStatus {
+    (payload_end <= end).then_some(Ok(OperationStateStatus {
         offset: base_offset.checked_add(at)?,
         body: StateStatus {
             status_code,
             object_index,
             payload,
         },
-    })
+    }))
+    })().transpose()
 }
 
 #[cfg(test)]
 mod tests {
     use super::operation_state_status_row_at;
+
+    #[test]
+    fn diagnostic_status_text_iteration_refusal_propagates() {
+        let bytes = [0x41, 1, 3, 3, b'A', 0, 0, 0, 0, 0, 0xa0, 0, 0, 0, 0];
+        let error = crate::test_support::resource_refusal_at(
+            &bytes, cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "NX printable string syntax", |ctx| operation_state_status_row_at(ctx, &bytes, 0, bytes.len(), 0, None),
+        );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "NX printable string syntax"));
+    }
 
     #[test]
     fn source_status_extent_follows_payload_and_bounds_absolute_end() {
@@ -209,24 +223,24 @@ mod tests {
         ] {
             let mut bytes = vec![0x41, 1];
             bytes.extend_from_slice(payload);
-            let row = operation_state_status_row_at(&bytes, 0, bytes.len(), 100, None).unwrap();
+            let row = crate::test_support::with_decode_context(|ctx| operation_state_status_row_at(ctx, &bytes, 0, bytes.len(), 100, None)).unwrap().unwrap();
             assert_eq!(row.offset(), 100);
             assert_eq!(row.end_offset(), 102 + payload.len());
-            assert!(operation_state_status_row_at(
+            assert!(crate::test_support::with_decode_context(|ctx| operation_state_status_row_at(ctx,
                 &bytes,
                 0,
                 bytes.len(),
                 usize::MAX - bytes.len(),
                 None
-            )
+            )).unwrap()
             .is_some());
-            assert!(operation_state_status_row_at(
+            assert!(crate::test_support::with_decode_context(|ctx| operation_state_status_row_at(ctx,
                 &bytes,
                 0,
                 bytes.len(),
                 usize::MAX - bytes.len() + 1,
                 None
-            )
+            )).unwrap()
             .is_none());
         }
     }
@@ -234,12 +248,12 @@ mod tests {
     #[test]
     fn source_span_retains_local_positions_and_bounds_absolute_projections() {
         let bytes = [0, 0, 0x41, 1, 2, 1, 0x11, 0x41, 1, 2, 1, 0x11];
-        let span = operation_state_status_row_at(&bytes, 2, 7, 100, None).unwrap();
+        let span = crate::test_support::with_decode_context(|ctx| operation_state_status_row_at(ctx, &bytes, 2, 7, 100, None)).unwrap().unwrap();
         assert_eq!((span.offset(), span.end_offset()), (102, 107));
         assert_eq!((span.offset() - 100, span.end_offset() - 100), (2, 7));
-        let boundary = operation_state_status_row_at(&bytes, 2, 7, usize::MAX - 7, None).unwrap();
+        let boundary = crate::test_support::with_decode_context(|ctx| operation_state_status_row_at(ctx, &bytes, 2, 7, usize::MAX - 7, None)).unwrap().unwrap();
         assert_eq!(boundary.end_offset(), usize::MAX);
-        assert!(operation_state_status_row_at(&bytes, 2, 7, usize::MAX - 6, None).is_none());
-        assert!(operation_state_status_row_at(&bytes, 7, 2, 0, None).is_none());
+        assert!(crate::test_support::with_decode_context(|ctx| operation_state_status_row_at(ctx, &bytes, 2, 7, usize::MAX - 6, None)).unwrap().is_none());
+        assert!(crate::test_support::with_decode_context(|ctx| operation_state_status_row_at(ctx, &bytes, 7, 2, 0, None)).unwrap().is_none());
     }
 }

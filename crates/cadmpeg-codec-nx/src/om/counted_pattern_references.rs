@@ -22,15 +22,36 @@ impl<B> CountedPatternReferences<B> {
         offset: u64,
         entries: BranchItems<(PayloadIndexToken, B)>,
     ) -> Result<Self, &'static str> {
-        let width = entries
-            .as_slice()
-            .iter()
-            .map(|(token, _)| cadmpeg_core::decode::u64_from_index(token.raw().len()))
-            .sum::<u64>();
-        offset
-            .checked_add(2 + width + cadmpeg_core::decode::u64_from_index(TRAILER.len()))
-            .ok_or("source_offset: counted reference frame overflows")?;
+        match Self::validate(offset, entries.as_slice(), |entries| {
+            Ok::<_, std::convert::Infallible>(entries.iter())
+        }) {
+            Ok(valid) => valid?,
+            Err(error) => match error {},
+        }
         Ok(Self { offset, entries })
+    }
+
+    fn validate<'a, E, I: Iterator<Item = &'a (PayloadIndexToken, B)>>(
+        offset: u64,
+        entries: &'a [(PayloadIndexToken, B)],
+        admit: impl FnOnce(&'a [(PayloadIndexToken, B)]) -> Result<I, E>,
+    ) -> Result<Result<(), &'static str>, E> where B: 'a {
+        let end = admit(entries)?.try_fold(offset, |end, (token, _)| {
+            end.checked_add(u64_from_index(token.raw().len()))
+        }).and_then(|end| end.checked_add(2))
+            .and_then(|end| end.checked_add(u64_from_index(TRAILER.len())));
+        Ok(end.map(|_| ()).ok_or("source_offset: counted reference frame overflows"))
+    }
+
+    fn from_wire(
+        ctx: &DecodeContext<'_>,
+        offset: u64,
+        entries: BranchItems<(PayloadIndexToken, B)>,
+    ) -> Result<Option<Self>, CodecError> {
+        if Self::validate(offset, entries.as_slice(), |entries| {
+            ctx.admit_iter(entries, "NX counted pattern token widths")
+        })?.is_err() { return Ok(None); }
+        Ok(Some(Self { offset, entries }))
     }
 
     pub(crate) fn offset(&self) -> u64 {
@@ -106,9 +127,8 @@ impl CountedPatternReferences<()> {
         let Some(offset) = record.payload_offset().checked_add(start) else {
             return Ok(None);
         };
-        Ok(BranchItems::new(entries)
-            .ok()
-            .and_then(|entries| Self::new(u64_from_index(offset), entries).ok()))
+        let Ok(entries) = BranchItems::new(entries) else { return Ok(None); };
+        Self::from_wire(ctx, u64_from_index(offset), entries)
     }
 
     pub(crate) fn resolve<B>(
@@ -123,6 +143,23 @@ impl CountedPatternReferences<()> {
         let entries = self
             .entries
             .try_map_indexed_charged(ctx, |_, (token, ())| Ok((token, target(token)?)))?;
-        Ok(CountedPatternReferences::new(offset, entries).ok())
+        CountedPatternReferences::from_wire(ctx, offset, entries)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    #[test]
+    fn pattern_reference_width_iteration_refusal_propagates() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_core::CodecError;
+        let error = crate::test_support::resource_refusal_at(
+            &[], ResourceDimension::WorkUnits, "NX counted pattern token widths",
+            |ctx| { let entries = super::BranchItems::new(vec![(super::PayloadIndexToken::read(&[0xf0, 1]).unwrap(), ())]).unwrap();
+        super::CountedPatternReferences::from_wire(ctx, 0, entries) },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "NX counted pattern token widths"));
     }
 }

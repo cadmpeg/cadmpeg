@@ -83,7 +83,7 @@ fn decode_surfaces(
     refusals: &mut Vec<CarrierRefusal>,
 ) -> Result<Vec<Surface>, CodecError> {
     let mut records = Vec::new();
-    for node in graph.of_kind_charged(ctx, NodeKind::BSurface)? {
+    for node in graph.of_kind(ctx, NodeKind::BSurface)? {
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(descriptors.len()),
             "resolve NX NURBS descriptor",
@@ -270,7 +270,7 @@ fn decode_pcurves(
     refusals: &mut Vec<CarrierRefusal>,
 ) -> Result<Vec<Pcurve>, CodecError> {
     let mut records = Vec::new();
-    for node in graph.of_kind_charged(ctx, NodeKind::BCurve)? {
+    for node in graph.of_kind(ctx, NodeKind::BCurve)? {
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(descriptors.len()),
             "resolve NX NURBS descriptor",
@@ -413,7 +413,7 @@ fn decode_curves(
     refusals: &mut Vec<CarrierRefusal>,
 ) -> Result<Vec<Curve>, CodecError> {
     let mut records = Vec::new();
-    for node in graph.of_kind_charged(ctx, NodeKind::BCurve)? {
+    for node in graph.of_kind(ctx, NodeKind::BCurve)? {
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(descriptors.len()),
             "resolve NX NURBS descriptor",
@@ -848,7 +848,8 @@ fn surface_payload_at<'bytes>(
     parsed.transpose()
 }
 
-fn surface_data_header_at(bytes: &[u8], pos: usize) -> Option<(u32, usize)> {
+fn surface_data_header_at(ctx: &DecodeContext<'_>, bytes: &[u8], pos: usize) -> Result<Option<(u32, usize)>, CodecError> {
+    let parsed: Option<Result<_, CodecError>> = (|| {
     (bytes.get(pos..pos + 2) == Some(&[0, 125])).then_some(())?;
     let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
     let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
@@ -863,15 +864,13 @@ fn surface_data_header_at(bytes: &[u8], pos: usize) -> Option<(u32, usize)> {
     at += 1;
     let marker_lane = bytes.get(at..at.checked_add(12)?)?;
     let canonical_b_count = marker * 4;
-    let canonical = marker_lane[..canonical_b_count]
-        .iter()
+    let canonical = propagate_resource!(ctx.admit_iter(&marker_lane[..canonical_b_count], "NX NURBS canonical marker prefix").map_err(CodecError::from))
         .all(|byte| *byte == b'B')
-        && marker_lane[canonical_b_count..]
-            .iter()
+        && propagate_resource!(ctx.admit_iter(&marker_lane[canonical_b_count..], "NX NURBS canonical marker suffix").map_err(CodecError::from))
             .all(|byte| *byte == b'?');
     let extended_marker_one = marker == 1
         && marker_lane[..8].iter().all(|byte| *byte == b'B')
-        && marker_lane[8..].iter().all(|byte| *byte == b'?');
+        && propagate_resource!(ctx.admit_iter(&marker_lane[8..], "NX NURBS extended marker suffix").map_err(CodecError::from)).all(|byte| *byte == b'?');
     (canonical || extended_marker_one).then_some(())?;
     at += marker_lane.len();
     for _ in 0..4 {
@@ -880,7 +879,9 @@ fn surface_data_header_at(bytes: &[u8], pos: usize) -> Option<(u32, usize)> {
         (bytes.get(at) == Some(&1)).then_some(())?;
         at += 1;
     }
-    Some((xmt, at))
+    Some(Ok((xmt, at)))
+    })();
+    parsed.transpose()
 }
 
 fn curve_payloads<'bytes, 'ctx>(
@@ -1320,10 +1321,14 @@ pub(crate) fn auxiliary_record_at(
     let parsed: Option<Result<_, CodecError>> = (|| {
         let kind = View::u16_be_at(bytes, pos)?;
         let (xmt, family, end) = match kind {
-            125 => propagate_resource!(surface_payload_at(ctx, bytes, pos))
-                .map(|(xmt, _, end)| (xmt, end))
-                .or_else(|| surface_data_header_at(bytes, pos))
-                .map(|(xmt, end)| (xmt, RecordFamily::BSurfaceData, end))?,
+            125 => {
+                let payload = propagate_resource!(surface_payload_at(ctx, bytes, pos)).map(|(xmt, _, end)| (xmt, end));
+                let header = match payload {
+                    Some(payload) => Some(payload),
+                    None => propagate_resource!(surface_data_header_at(ctx, bytes, pos)),
+                };
+                header.map(|(xmt, end)| (xmt, RecordFamily::BSurfaceData, end))?
+            },
             126 => {
                 let (xmt, _, end) = surface_descriptor_at(bytes, pos)?;
                 (xmt, RecordFamily::BSurfaceDescriptor, end)
@@ -1441,7 +1446,7 @@ fn expand_knots(
         "expand NX NURBS knots",
     )?;
     let mut out = ctx.collection_vec(count, "NX NURBS expanded knots")?;
-    for (&value, &count) in distinct.iter().zip(multiplicities) {
+    for (&value, &count) in ctx.admit_iter(distinct, "NX distinct knot traversal")?.zip(ctx.admit_iter(multiplicities, "NX knot multiplicity traversal")?) {
         for _ in 0..usize::from(count) {
             out.push(value);
         }

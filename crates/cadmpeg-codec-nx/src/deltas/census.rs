@@ -81,7 +81,7 @@ impl Census {
         ctx: &DecodeContext<'_>,
     ) -> Result<BTreeMap<&'static str, usize>, CodecError> {
         let mut counts = BTreeMap::new();
-        for record in &self.records {
+        for record in ctx.admit_iter(&self.records, "NX deltas full count traversal")? {
             let family = record.family_name();
             ctx.admit_btree_entry(&counts, &family, "NX deltas full count families")?;
             *counts.entry(family).or_default() += 1;
@@ -95,7 +95,7 @@ impl Census {
         ctx: &DecodeContext<'_>,
     ) -> Result<BTreeMap<&'static str, usize>, CodecError> {
         let mut counts = BTreeMap::new();
-        for tombstone in &self.tombstones {
+        for tombstone in ctx.admit_iter(&self.tombstones, "NX deltas tombstone count traversal")? {
             let family = tombstone.kind.name();
             ctx.admit_btree_entry(&counts, &family, "NX deltas tombstone count families")?;
             *counts.entry(family).or_default() += 1;
@@ -225,7 +225,7 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
             let mut offsets = BTreeSet::new();
             let (events, _event_guard) =
                 crate::parasolid::referenced_value_event_offsets(ctx, stream)?;
-            for event_offset in events {
+            for event_offset in ctx.admit_iter(&events, "NX deltas referenced event traversal")?.copied() {
                 ctx.insert_scoped_btree_set(
                     &mut referenced_offsets_guard,
                     &mut offsets,
@@ -300,11 +300,12 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
         value_boundary = false;
     }
     census.events.term_use_numeric_tails = term_use_numeric_tails(ctx, stream, &census)?;
-    census.bytes_decoded += census
-        .term_use_numeric_tails
-        .iter()
-        .map(|tail| tail.values().byte_len())
-        .sum::<usize>();
+    let tail_bytes = ctx.admit_iter(&census.term_use_numeric_tails, "NX deltas numeric tail byte traversal")?
+        .try_fold(0_u64, |total, tail| {
+            total.checked_add(cadmpeg_core::decode::u64_from_index(tail.values().byte_len())).ok_or_else(|| ctx.refuse_codec_limit("NX deltas numeric tail byte count", u64::MAX, u64::MAX))
+        })?;
+    let decoded_bytes = cadmpeg_core::decode::u64_from_index(census.bytes_decoded).checked_add(tail_bytes).ok_or_else(|| ctx.refuse_codec_limit("NX deltas decoded byte count", u64::MAX, u64::MAX))?;
+    census.bytes_decoded = usize::try_from(decoded_bytes).map_err(|_| ctx.refuse_codec_limit("NX deltas decoded byte count", cadmpeg_core::decode::u64_from_index(usize::MAX), decoded_bytes))?;
     census.bytes_decoded += populate_gap_events(ctx, stream, &mut census)?;
     let body_revision_state_bytes = populate_body_revision_state_tails(ctx, stream, &mut census)?;
     census.bytes_decoded += body_revision_state_bytes;
@@ -318,10 +319,11 @@ fn populate_gap_events(
 ) -> Result<usize, CodecError> {
     let mut admitted_bytes = 0;
     loop {
-        let covered_before = merged_event_spans(ctx, census, true)?
-            .into_iter()
-            .map(|(start, end)| end - start)
-            .sum::<usize>();
+        let covered_before = ctx.admit_iter(&merged_event_spans(ctx, census, true)?, "NX deltas covered span traversal")?
+            .try_fold(0_u64, |total, (start, end)| {
+                total.checked_add(cadmpeg_core::decode::u64_from_index(end - start)).ok_or_else(|| ctx.refuse_codec_limit("NX deltas covered byte count", u64::MAX, u64::MAX))
+            })?;
+        let covered_before = usize::try_from(covered_before).map_err(|_| ctx.refuse_codec_limit("NX deltas covered byte count", cadmpeg_core::decode::u64_from_index(usize::MAX), covered_before))?;
 
         let lanes = tagged_reference_lanes(ctx, stream, census)?;
         ctx.extend_vec(
@@ -379,10 +381,11 @@ fn populate_gap_events(
             "NX type 150 state packets",
         )?;
 
-        let covered_after = merged_event_spans(ctx, census, true)?
-            .into_iter()
-            .map(|(start, end)| end - start)
-            .sum::<usize>();
+        let covered_after = ctx.admit_iter(&merged_event_spans(ctx, census, true)?, "NX deltas covered span traversal")?
+            .try_fold(0_u64, |total, (start, end)| {
+                total.checked_add(cadmpeg_core::decode::u64_from_index(end - start)).ok_or_else(|| ctx.refuse_codec_limit("NX deltas covered byte count", u64::MAX, u64::MAX))
+            })?;
+        let covered_after = usize::try_from(covered_after).map_err(|_| ctx.refuse_codec_limit("NX deltas covered byte count", cadmpeg_core::decode::u64_from_index(usize::MAX), covered_after))?;
         let added_bytes = covered_after - covered_before;
         admitted_bytes += added_bytes;
         if added_bytes == 0 {
@@ -447,14 +450,11 @@ fn populate_body_revision_state_tails(
     census: &mut Census,
 ) -> Result<usize, CodecError> {
     let mut byte_len = 0;
-    for (start, end) in uncovered_spans(ctx, stream.len(), census, true)? {
-        if let Some(revision) = census
-            .events
-            .body_revisions
-            .iter_mut()
-            .find(|revision| revision.prefix_end == start)
+    for (start, end) in ctx.admit_iter(&uncovered_spans(ctx, stream.len(), census, true)?, "NX deltas body revision gap traversal")?.copied() {
+        if let Some(index) = ctx.admit_iter(&census.events.body_revisions, "NX deltas body revision prefix traversal")?
+            .position(|revision| revision.prefix_end == start)
         {
-            revision.end = end;
+            census.events.body_revisions[index].end = end;
             byte_len += end - start;
         }
     }

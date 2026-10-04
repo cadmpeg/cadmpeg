@@ -19,7 +19,7 @@ pub(crate) fn unit_for(
     ctx: &DecodeContext<'_>,
     token: &str,
 ) -> Result<Option<ExpressionUnit>, CodecError> {
-    if token.is_empty() || !token.bytes().all(|byte| byte.is_ascii_graphic()) {
+    if token.is_empty() || !ctx.admit_iter(token, "NX expression unit syntax")?.all(|ch| ch.is_ascii_graphic()) {
         return Ok(None);
     }
     Ok(Some(match token {
@@ -54,23 +54,15 @@ mod tests {
     }
 
     fn native_unit_format_refusal(dimension: cadmpeg_core::decode::ResourceDimension) {
-        use cadmpeg_core::decode::ResourceDimension;
-        crate::test_support::with_decode_context_over(
-            &[],
-            |policy| match dimension {
-                ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
-                _ => panic!("unit formatting uses work and retained bytes"),
-            },
-            |ctx| {
-                let cadmpeg_core::CodecError::ResourceLimit(limit) = unit_for(ctx, "custom/unit").unwrap_err() else {
-                    panic!("native unit formatting must propagate refusal");
-                };
-                assert_eq!(limit.operation, "NX native expression unit");
-                assert_eq!(limit.dimension, dimension);
-                assert_eq!(ctx.resource_refusal(), Some(limit));
-            },
+        let error = crate::test_support::resource_refusal_at(
+            &[], dimension, "NX native expression unit",
+            |ctx| unit_for(ctx, "custom/unit"),
         );
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("native unit formatting must propagate refusal");
+        };
+        assert_eq!(limit.operation, "NX native expression unit");
+        assert_eq!(limit.dimension, dimension);
     }
 
     #[test]

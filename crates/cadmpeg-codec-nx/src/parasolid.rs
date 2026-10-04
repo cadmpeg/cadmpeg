@@ -190,16 +190,35 @@ impl LegalOwnerFlags {
 impl TryFrom<&[u8]> for LegalOwnerFlags {
     type Error = &'static str;
     fn try_from(flags: &[u8]) -> Result<Self, Self::Error> {
-        if !flags.iter().all(|flag| matches!(flag, 0 | 1)) {
-            return Err("legal_owner_flags must be binary");
+        match Self::validate(flags, |flags| Ok::<_, std::convert::Infallible>(flags.iter())) {
+            Ok(result) => result,
+            Err(error) => match error {},
+        }
+    }
+}
+
+impl LegalOwnerFlags {
+    fn validate<'a, E, I: Iterator<Item = &'a u8>>(
+        flags: &'a [u8],
+        admit: impl FnOnce(&'a [u8]) -> Result<I, E>,
+    ) -> Result<Result<Self, &'static str>, E> {
+        if !admit(flags)?.all(|flag| matches!(flag, 0 | 1)) {
+            return Ok(Err("legal_owner_flags must be binary"));
         }
         if let Ok(flags) = <[u8; 16]>::try_from(flags) {
-            Ok(Self::Sixteen(flags.map(|flag| flag == 1)))
+            Ok(Ok(Self::Sixteen(flags.map(|flag| flag == 1))))
         } else if let Ok(flags) = <[u8; 14]>::try_from(flags) {
-            Ok(Self::Fourteen(flags.map(|flag| flag == 1)))
+            Ok(Ok(Self::Fourteen(flags.map(|flag| flag == 1))))
         } else {
-            Err("attribute owner flags require fourteen or sixteen bytes")
+            Ok(Err("attribute owner flags require fourteen or sixteen bytes"))
         }
+    }
+
+    pub(crate) fn from_wire(
+        ctx: &DecodeContext<'_>,
+        flags: &[u8],
+    ) -> Result<Result<Self, &'static str>, CodecError> {
+        Ok(Self::validate(flags, |flags| ctx.admit_iter(flags, "NX attribute owner flag validation"))?)
     }
 }
 
@@ -293,7 +312,7 @@ fn referenced_value_offsets<'ctx>(
     let (candidates, _candidate_guard) = value_records::value_record_candidates(ctx, bytes)?;
     let mut offsets = Vec::new();
     let mut reservation = ctx.reserve_scoped(0, "NX value owner offsets")?;
-    for (xmt, positions) in candidates {
+    for (&xmt, positions) in ctx.admit_iter(&candidates, "NX owned value candidates")? {
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(references.len()),
             "resolve NX value ownership",
@@ -303,7 +322,7 @@ fn referenced_value_offsets<'ctx>(
         {
             continue;
         }
-        for offset in positions {
+        for &offset in ctx.admit_iter(positions, "NX owned value offsets")? {
             ctx.push_scoped_vec(
                 &mut reservation,
                 &mut offsets,
@@ -343,12 +362,12 @@ fn referenced_value_xmts<'ctx>(
             "NX attribute ownership groups",
         )?;
     }
-    for records in entities.into_values() {
+    for (_, records) in ctx.admit_iter(&entities, "NX grouped attribute entities")? {
         if multiplicity == ValueMultiplicity::UniqueSnapshot && records.len() != 1 {
             continue;
         }
-        for record in records {
-            for xmt in record.trailing_references.into_values() {
+        for record in ctx.admit_iter(records, "NX grouped attribute records")? {
+            for &xmt in ctx.admit_iter(record.trailing_references.values(), "NX attribute trailing references")? {
                 ctx.insert_scoped_btree_set(
                     &mut reference_guard,
                     &mut referenced,
@@ -401,11 +420,11 @@ fn referenced_value_xmts<'ctx>(
     }
     let mut referenced_lists = BTreeSet::new();
     let mut list_guard = ctx.reserve_scoped(0, "NX referenced field-name lists")?;
-    for records in definitions.into_values() {
+    for (_, records) in ctx.admit_iter(&definitions, "NX grouped attribute definitions")? {
         if multiplicity == ValueMultiplicity::UniqueSnapshot && records.len() != 1 {
             continue;
         }
-        for record in records {
+        for record in ctx.admit_iter(records, "NX grouped attribute records")? {
             if let Some(xmt) = record.field_names_xmt {
                 ctx.insert_scoped_btree_set(
                     &mut list_guard,
@@ -417,7 +436,7 @@ fn referenced_value_xmts<'ctx>(
             }
         }
     }
-    for (xmt, records) in field_names {
+    for (&xmt, records) in ctx.admit_iter(&field_names, "NX grouped attribute field names")? {
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(referenced_lists.len()),
             "resolve NX field-name ownership",
@@ -427,8 +446,8 @@ fn referenced_value_xmts<'ctx>(
         {
             continue;
         }
-        for record in records {
-            for xmt in record.name_xmts.as_slice() {
+        for record in ctx.admit_iter(records, "NX grouped attribute records")? {
+            for xmt in ctx.admit_iter(record.name_xmts.as_slice(), "NX attribute field-name references")? {
                 ctx.insert_scoped_btree_set(
                     &mut reference_guard,
                     &mut referenced,
@@ -738,14 +757,10 @@ fn attribute_identifiers<'bytes, 'ctx>(
             let xmt = NonNullXmt::try_from(read_xmt(bytes, &mut at)?).ok()?;
             let name_end = at.checked_add(name_len)?;
             let name_bytes = bytes.get(at..name_end)?;
-            propagate_resource!(ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(name_len),
-                "validate NX attribute name"
-            ));
             Some(Ok(AttributeIdentifier {
                 offset,
                 xmt,
-                name: PrintableString::new(std::str::from_utf8(name_bytes).ok()?).ok()?,
+                name: propagate_resource!(PrintableString::from_wire(ctx, std::str::from_utf8(name_bytes).ok()?)).ok()?,
             }))
         })();
         if let Some(identifier) = candidate.transpose()? {
@@ -814,35 +829,26 @@ pub(crate) fn attribute_definitions<'bytes, 'ctx>(
                 .into_iter()
                 .find_map(|flag_count| {
                     let flags = bytes.get(at..at.checked_add(flag_count)?)?;
-                    let legal_owner_flags = LegalOwnerFlags::try_from(flags).ok()?;
+                    let legal_owner_flags = propagate_resource!(LegalOwnerFlags::from_wire(ctx, flags)).ok()?;
                     let field_codes_start = at.checked_add(flag_count)?;
                     let field_codes_end = field_codes_start.checked_add(field_count_usize)?;
                     let field_codes = bytes.get(field_codes_start..field_codes_end)?;
                     if flag_count == 14 && !attribute_definition_boundary(bytes, field_codes_end) {
                         return None;
                     }
-                    propagate_resource!(ctx.charge_work(
-                        cadmpeg_core::decode::u64_from_index(field_codes.len()),
-                        "validate NX attribute fields"
-                    ));
-                    field_codes
-                        .iter()
+                    propagate_resource!(ctx.admit_iter(field_codes, "validate NX attribute fields").map_err(CodecError::from))
                         .try_for_each(|code| AttributeField::try_from(*code).map(|_| ()).ok())?;
                     Some(Ok((legal_owner_flags, field_codes)))
                 })
                 .transpose())?;
             let mut fields = Vec::new();
-            propagate_resource!(ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(field_codes.len()),
-                "materialize NX attribute fields"
-            ));
             propagate_resource!(ctx.reserve_scoped_vec(
                 &mut payloads,
                 &mut fields,
                 field_codes.len(),
                 "NX attribute field lanes"
             ));
-            for code in field_codes {
+            for code in propagate_resource!(ctx.admit_iter(field_codes, "materialize NX attribute fields").map_err(CodecError::from)) {
                 fields.push(AttributeField::try_from(*code).ok()?);
             }
             Some(Ok(AttributeDefinition {
@@ -888,13 +894,7 @@ pub(crate) fn extract_streams<'a>(
     root: View<'a>,
     container: &Container,
 ) -> Result<Vec<Stream>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(container.entries.len()),
-        "find NX part stream",
-    )?;
-    let Some((part_offset, part_size)) = container
-        .entries
-        .iter()
+    let Some((part_offset, part_size)) = ctx.admit_iter(&container.entries, "find NX part stream")?
         .find(|entry| entry.name == "/Root/UG_PART/UG_PART")
         .and_then(crate::container::DirEntry::file_span)
     else {
@@ -916,10 +916,10 @@ pub(crate) fn extract_streams<'a>(
     let part = part_view.window();
 
     let mut streams = Vec::new();
-    if container.segment_index().is_some() {
+    if container.segment_index(ctx)?.is_some() {
         let mut seen = BTreeSet::new();
         let mut seen_guard = ctx.reserve_scoped(0, "NX indexed stream offsets")?;
-        for wrapper in container.segment_stream_wrappers() {
+        for wrapper in container.segment_stream_wrappers(ctx)? {
             ctx.charge_work(1, "scan NX indexed stream wrappers")?;
             let Some(offset) = wrapper.zlib_offset.checked_sub(start) else {
                 continue;
@@ -956,11 +956,7 @@ pub(crate) fn extract_streams<'a>(
                 "NX embedded stream slots",
             )?;
         }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(streams.len()),
-            "classify NX stream roster",
-        )?;
-        if streams.iter().any(|stream| stream.kind().is_parasolid()) {
+        if ctx.admit_iter(&streams, "classify NX stream roster")?.any(|stream| stream.kind().is_parasolid()) {
             return Ok(streams);
         }
         append_unindexed_structural_streams(ctx, part_view, start, &mut streams)?;
@@ -985,7 +981,7 @@ fn append_all_zlib_streams<'a>(
     )?;
     let mut seen = BTreeSet::new();
     let mut seen_guard = ctx.reserve_scoped(0, "NX embedded stream offset index")?;
-    for stream in streams.iter() {
+    for stream in ctx.admit_iter(streams.as_slice(), "NX existing embedded stream offsets")? {
         ctx.insert_scoped_btree_set(
             &mut seen_guard,
             &mut seen,
@@ -1066,7 +1062,7 @@ fn structural_stream_candidate(
         return Ok(false);
     }
     let graph = crate::topology::Graph::parse(ctx, inflated)?;
-    Ok([
+    for kind in [
         NodeKind::Body,
         NodeKind::Shell,
         NodeKind::Face,
@@ -1075,9 +1071,10 @@ fn structural_stream_candidate(
         NodeKind::Fin,
         NodeKind::Vertex,
         NodeKind::Region,
-    ]
-    .into_iter()
-    .any(|kind| graph.of_kind(kind).next().is_some()))
+    ] {
+        if graph.of_kind(ctx, kind)?.next().is_some() { return Ok(true); }
+    }
+    Ok(false)
 }
 
 /// Locate clear Parasolid transmit sections in a legacy `UG_PART/UG_PART`

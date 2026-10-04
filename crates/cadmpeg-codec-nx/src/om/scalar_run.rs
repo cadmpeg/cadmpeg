@@ -37,6 +37,7 @@ pub(crate) struct FramedScalarRun<F: ScalarFrame, O> {
     form: F,
     offset: u64,
     values: NonEmpty<(F::Atom, O)>,
+    end: u64,
 }
 
 impl<F: ScalarFrame, O> FramedScalarRun<F, O> {
@@ -45,18 +46,35 @@ impl<F: ScalarFrame, O> FramedScalarRun<F, O> {
         offset: u64,
         values: NonEmpty<(F::Atom, O)>,
     ) -> Result<Self, &'static str> {
-        let start = offset
-            .checked_add(form.prefix_len())
-            .ok_or("value_payload_offsets overflow the discriminator")?;
-        values
-            .iter()
-            .try_fold(start, |at, (atom, _)| at.checked_add(atom.width()))
-            .ok_or("value_payload_offsets overflow the scalar run")?;
-        Ok(Self {
-            form,
-            offset,
-            values,
-        })
+        let end = match Self::validate(form, offset, &values, |values| {
+            Ok::<_, std::convert::Infallible>(values.iter())
+        }) {
+            Ok(end) => end?,
+            Err(error) => match error {},
+        };
+        Ok(Self { form, offset, values, end })
+    }
+
+    pub(crate) fn from_wire(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        form: F, offset: u64, values: NonEmpty<(F::Atom, O)>,
+    ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
+        Ok(Self::validate(form, offset, &values, |values| {
+            ctx.admit_iter(values, "NX scalar run token widths")
+        })?.map(|end| Self { form, offset, values, end }))
+    }
+
+    fn validate<'a, E, I: Iterator<Item = &'a (F::Atom, O)>>(
+        form: F, offset: u64, values: &'a NonEmpty<(F::Atom, O)>,
+        mut admit: impl FnMut(&'a [(F::Atom, O)]) -> Result<I, E>,
+    ) -> Result<Result<u64, &'static str>, E> where F::Atom: 'a, O: 'a {
+        let Some(start) = offset.checked_add(form.prefix_len()) else {
+            return Ok(Err("value_payload_offsets overflow the discriminator"));
+        };
+        let end = admit(values.initial())?
+            .chain(admit(std::slice::from_ref(values.last()))?)
+            .try_fold(start, |at, (atom, _)| at.checked_add(atom.width()));
+        Ok(end.ok_or("value_payload_offsets overflow the scalar run"))
     }
 
     pub(crate) fn offset(&self) -> u64 {
@@ -68,11 +86,7 @@ impl<F: ScalarFrame, O> FramedScalarRun<F, O> {
     }
 
     pub(crate) fn end(&self) -> u64 {
-        self.values
-            .iter()
-            .fold(self.offset + self.form.prefix_len(), |at, (atom, _)| {
-                at + atom.width()
-            })
+        self.end
     }
 
     pub(crate) fn iter(&self) -> impl Iterator<Item = (u64, &F::Atom, &O)> + Clone {
@@ -102,6 +116,29 @@ impl<F: ScalarFrame, O> FramedScalarRun<F, O> {
             form: self.form,
             offset: self.offset,
             values,
+            end: self.end,
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn scalar_run_width_iteration_refusal_propagates() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_core::CodecError;
+        let error = crate::test_support::resource_refusal_at(
+            &[], ResourceDimension::WorkUnits, "NX scalar run token widths",
+            |ctx| {
+                let atom = crate::om::fixed::Q155Atom {
+                    marker: crate::om::fixed::Q155Marker::M30,
+                    scalar: crate::om::fixed::Q155::from_raw([0; 7]).unwrap(),
+                };
+                let values = crate::om::nonempty::NonEmpty::from_admitted_vec(vec![(atom, ())]).unwrap();
+                super::FramedScalarRun::from_wire(ctx, crate::om::fixed::Q155LaneFrame, 0, values)
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "NX scalar run token widths"));
     }
 }

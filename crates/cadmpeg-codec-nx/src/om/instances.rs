@@ -18,59 +18,54 @@ impl<O> MultiInstanceOutputs<O> {
         rows: Vec<(LocatedCompactIndex<O>, u8)>,
         references: Vec<PayloadObjectReference<FeatureReferenceToken, O>>,
     ) -> Result<Self, &'static str> {
-        Self::validate(&rows, &references)?;
+        match Self::validate(&rows, &references, |rows| Ok::<_, std::convert::Infallible>(rows.iter())) {
+            Ok(validation) => validation?,
+            Err(error) => match error {},
+        };
         Ok(Self {
             selectors: rows.into_iter().map(|(selector, _)| selector).collect(),
             references,
         })
     }
 
-    fn validate(
-        rows: &[(LocatedCompactIndex<O>, u8)],
+    fn validate<'a, E, I: Iterator<Item = &'a (LocatedCompactIndex<O>, u8)>>(
+        rows: &'a [(LocatedCompactIndex<O>, u8)],
         references: &[PayloadObjectReference<FeatureReferenceToken, O>],
-    ) -> Result<(), &'static str> {
+        mut admit: impl FnMut(&'a [(LocatedCompactIndex<O>, u8)]) -> Result<I, E>,
+    ) -> Result<Result<(), &'static str>, E>
+    where O: 'a {
         if !(1..=254).contains(&rows.len()) {
-            return Err("selectors: must contain 1 through 254 rows");
+            return Ok(Err("selectors: must contain 1 through 254 rows"));
         }
         if !(1..=254).contains(&references.len()) {
-            return Err("trailing_object_indices: must contain 1 through 254 references");
+            return Ok(Err("trailing_object_indices: must contain 1 through 254 references"));
         }
-        for (position, (selector, ordinal)) in rows.iter().enumerate() {
-            let preceding = rows[..position]
-                .iter()
-                .filter(|(prior, _)| prior.atom.value() == selector.atom.value())
-                .count();
+        for (position, (selector, ordinal)) in admit(rows)?.enumerate() {
+            let preceding = admit(&rows[..position])?
+                .filter(|(prior, _)| prior.atom.value() == selector.atom.value()).count();
             if usize::from(*ordinal) != preceding + 2 {
-                return Err("ordinals: each selector must enumerate instances from two");
+                return Ok(Err("ordinals: each selector must enumerate instances from two"));
             }
         }
-        if rows.iter().any(|(selector, _)| {
-            rows.iter()
-                .filter(|(other, _)| other.atom.value() == selector.atom.value())
-                .count()
-                != references.len()
-        }) {
-            return Err("trailing_object_indices: each selector must cover every instance");
+        for (selector, _) in admit(rows)? {
+            if admit(rows)?.filter(|(other, _)| other.atom.value() == selector.atom.value()).count() != references.len() {
+                return Ok(Err("trailing_object_indices: each selector must cover every instance"));
+            }
         }
-        Ok(())
+        Ok(Ok(()))
     }
 
     pub(crate) fn new_charged(
         ctx: &DecodeContext<'_>,
         rows: Vec<(LocatedCompactIndex<O>, u8)>,
         references: Vec<PayloadObjectReference<FeatureReferenceToken, O>>,
-    ) -> Result<Option<Self>, CodecError> {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(rows.len().checked_mul(rows.len()).ok_or_else(
-                || ctx.refuse_codec_limit("nx instance selector validation", u64::MAX, u64::MAX),
-            )?),
-            "nx instance selector validation",
-        )?;
-        if Self::validate(&rows, &references).is_err() {
+    ) -> Result<Option<Self>, CodecError>
+    where O: Copy {
+        if Self::validate(&rows, &references, |rows| ctx.admit_iter(rows, "nx instance selector validation"))?.is_err() {
             return Ok(None);
         }
         let mut selectors = Vec::new();
-        for (selector, _) in rows {
+        for (selector, _) in ctx.admit_iter(&rows, "nx instance selector projection")?.copied() {
             ctx.reserve_vec(&mut selectors, 1, "nx instance selectors")?;
             selectors.push(selector);
         }
@@ -106,9 +101,10 @@ impl<O> MultiInstanceOutputs<O> {
         self,
         ctx: &DecodeContext<'_>,
         mut map: impl FnMut(O) -> P,
-    ) -> Result<MultiInstanceOutputs<P>, CodecError> {
+    ) -> Result<MultiInstanceOutputs<P>, CodecError>
+    where O: Copy {
         let mut selectors = Vec::new();
-        for selector in self.selectors {
+        for selector in ctx.admit_iter(&self.selectors, "nx mapped instance selectors")? {
             ctx.reserve_vec(&mut selectors, 1, "nx mapped instance selectors")?;
             selectors.push(LocatedCompactIndex {
                 atom: selector.atom,
@@ -116,7 +112,7 @@ impl<O> MultiInstanceOutputs<O> {
             });
         }
         let mut references = Vec::new();
-        for reference in self.references {
+        for reference in ctx.admit_iter(&self.references, "nx mapped instance references")? {
             ctx.reserve_vec(&mut references, 1, "nx mapped instance references")?;
             references.push(PayloadObjectReference {
                 token: reference.token,
@@ -196,4 +192,24 @@ mod tests {
         );
         assert!(MultiInstanceOutputs::new(vec![(selector, 2)], vec![reference; 255]).is_err());
     }
+    #[test]
+    fn instance_selector_iteration_refusal_propagates() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_core::CodecError;
+        let selector = LocatedCompactIndex {
+            atom: CompactIndexAtom::from_wire(7, &[7]).unwrap(), offset: 0_usize,
+        };
+        let reference = PayloadObjectReference {
+            token: FeatureReferenceToken::from_wire(9, &[9]).unwrap(), offset: 0_usize,
+        };
+        for ordinal in [2, 3] {
+            let error = crate::test_support::resource_refusal_at(
+                &[], ResourceDimension::WorkUnits, "nx instance selector validation",
+                |ctx| MultiInstanceOutputs::new_charged(ctx, vec![(selector, ordinal)], vec![reference.clone()]),
+            );
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "nx instance selector validation"));
+        }
+    }
+
 }

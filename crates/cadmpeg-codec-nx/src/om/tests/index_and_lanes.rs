@@ -222,7 +222,9 @@ fn offset_store_named_point_test<'a>(
 ) -> Option<crate::om::OffsetStoreNamedPoint> {
     crate::test_support::with_decode_context(|ctx| offset_store_named_point(ctx, blocks)).unwrap()
 }
-use crate::om::operation_body_reference;
+fn operation_body_reference(record: crate::om::operation_record::OperationBodyInput<'_>) -> Option<crate::om::OperationBodyReference> {
+    crate::test_support::with_decode_context(|ctx| crate::om::operation_body_reference(ctx, record)).unwrap()
+}
 fn operation_body_references(
     record: crate::om::operation_record::OperationBodyInput<'_>,
 ) -> Vec<crate::om::OperationBodyReference> {

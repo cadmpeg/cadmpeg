@@ -446,6 +446,22 @@ fn printable_string_refusal(
 }
 
 #[test]
+fn printable_string_value_iteration_refusal_propagates() {
+    let bytes = b"\x66\x32\x03\x03A\0";
+    crate::test_support::with_decode_context_over(
+        bytes,
+        // The marker scan reads the input before the value validator runs.
+        |policy| policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(bytes.len()),
+        |ctx| {
+            let error = crate::om::string_values(ctx, bytes, 0).unwrap_err();
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("value validation must refuse"); };
+            assert_eq!(limit.operation, "NX printable string syntax");
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        },
+    );
+}
+
+#[test]
 fn printable_strings_refuse_collection_limit() {
     let error = printable_string_refusal(|policy| policy.limits.max_collection_items = 0);
     assert!(
@@ -526,4 +542,15 @@ fn expression_declaration_propagates_expression_limit() {
             );
         },
     );
+}
+
+#[test]
+fn store_version_text_iteration_refusal_propagates() {
+    let bytes = b"\xff\x04\x01\x05NX \0";
+    let error = crate::test_support::resource_refusal_at(
+        bytes, cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX printable string syntax", |ctx| crate::om::store_version(ctx, bytes, 0),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "NX printable string syntax"));
 }

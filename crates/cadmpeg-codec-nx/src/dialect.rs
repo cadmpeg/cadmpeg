@@ -100,25 +100,19 @@ pub(crate) fn classify_layers(
     ctx: &DecodeContext<'_>,
     scan: &crate::decode::Scan<'_>,
 ) -> Result<LayerClassification, CodecError> {
-    ctx.charge_work(
-        u64_from_index(scan.streams.len()),
-        "classify NX dialect layers",
-    )?;
-    let schema_count = scan
-        .streams
-        .iter()
+    let schema_count = ctx.admit_iter(&scan.streams, "count NX schema streams")?
         .filter(|stream| stream.schema_token().is_some())
         .count();
     let (mut streams, _streams_storage) = ctx.with_scoped_storage("nx schema streams", || {
         ctx.collection_vec(schema_count, "nx schema streams")
     })?;
-    for stream in &scan.streams {
+    for stream in ctx.admit_iter(&scan.streams, "scan NX schema streams")? {
         if let Some(schema) = stream.schema_token() {
             streams.push((stream, schema));
         }
     }
     let mut carriers = ctx.collection_vec(schema_count, "nx schema carriers")?;
-    for (stream, schema) in streams {
+    for (stream, schema) in ctx.admit_iter(&streams, "scan NX schema carriers")?.copied() {
         let mut digits = 1usize;
         let mut value = stream.file_offset;
         while value >= 10 {

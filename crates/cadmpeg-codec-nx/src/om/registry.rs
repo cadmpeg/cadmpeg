@@ -134,11 +134,13 @@ pub(crate) fn field_registry_layout(tail: &[u8]) -> Option<FieldRegistryLayout> 
 }
 
 fn registry_declaration_at<'a>(
+    ctx: &DecodeContext<'_>,
     bytes: &'a [u8],
     at: usize,
     end: usize,
     prefix: &[u8],
-) -> Option<RegistryDeclaration<'a>> {
+) -> Result<Option<RegistryDeclaration<'a>>, CodecError> {
+    (|| {
     let declared = usize::from(*bytes.get(at)?);
     let name_len = declared.checked_sub(1)?;
     let name_start = at.checked_add(1)?;
@@ -146,14 +148,15 @@ fn registry_declaration_at<'a>(
     let raw = bytes.get(name_start..name_end)?;
     if name_end >= end
         || !raw.starts_with(prefix)
-        || !raw.iter().all(|byte| (0x20..0x7f).contains(byte))
+        || !propagate_resource!(ctx.admit_iter(raw, "NX registry declaration syntax").map_err(CodecError::from)).all(|byte| (0x20..0x7f).contains(byte))
     {
         return None;
     }
-    Some(RegistryDeclaration {
+    Some(Ok(RegistryDeclaration {
         offset: at,
         name: std::str::from_utf8(raw).ok()?,
-    })
+    }))
+    })().transpose()
 }
 
 fn class_registry_layout_at(
@@ -193,7 +196,7 @@ fn complete_type_registry_at<'a>(
     let mut reservation = ctx.reserve_scoped(0, "nx complete type registry")?;
     let mut at = first;
     loop {
-        let Some(declaration) = registry_declaration_at(bytes, at, end, b"UGS::") else {
+        let Some(declaration) = registry_declaration_at(ctx, bytes, at, end, b"UGS::")? else {
             return Ok(None);
         };
         at = declaration.name_end() + 1;
@@ -202,21 +205,21 @@ fn complete_type_registry_at<'a>(
                 at += 1;
                 break;
             }
-            Some(_) if registry_declaration_at(bytes, at, end, b"UGS::").is_some() => {}
+            Some(_) if registry_declaration_at(ctx, bytes, at, end, b"UGS::")?.is_some() => {}
             _ => return Ok(None),
         }
     }
 
     let mut definitions = Vec::new();
     loop {
-        if let Some(field_start) = field_registry_start(bytes, at, end) {
+        if let Some(field_start) = field_registry_start(ctx, bytes, at, end)? {
             reservation.commit()?;
             return Ok(Some(TypeRegistry {
                 definitions,
                 field_start,
             }));
         }
-        let Some(declaration) = registry_declaration_at(bytes, at, end, b"UGS::") else {
+        let Some(declaration) = registry_declaration_at(ctx, bytes, at, end, b"UGS::")? else {
             return Ok(None);
         };
         let Some((_, tail_end)) = class_registry_layout_at(bytes, declaration.name_end(), end)
@@ -238,37 +241,37 @@ fn complete_type_registry_at<'a>(
             registry_tail,
         });
         at = tail_end;
-        if field_registry_start(bytes, at, end).is_none()
-            && registry_declaration_at(bytes, at, end, b"UGS::").is_none()
+        if field_registry_start(ctx, bytes, at, end)?.is_none()
+            && registry_declaration_at(ctx, bytes, at, end, b"UGS::")?.is_none()
         {
             return Ok(None);
         }
     }
 }
 
-fn field_registry_start(bytes: &[u8], at: usize, end: usize) -> Option<usize> {
+fn field_registry_start(ctx: &DecodeContext<'_>, bytes: &[u8], at: usize, end: usize) -> Result<Option<usize>, CodecError> {
     if bytes.get(at) == Some(&0x02) {
-        return at.checked_add(1);
+        return Ok(at.checked_add(1));
     }
-    if registry_declaration_at(bytes, at, end, b"UGS::").is_some() {
-        return None;
+    if registry_declaration_at(ctx, bytes, at, end, b"UGS::")?.is_some() {
+        return Ok(None);
     }
     (0..=1).find_map(|gap| {
         let candidate = at.checked_add(gap)?;
-        if registry_declaration_at(bytes, candidate, end, b"UGS::").is_some() {
+        if propagate_resource!(registry_declaration_at(ctx, bytes, candidate, end, b"UGS::")).is_some() {
             return None;
         }
         let probe_end = candidate.checked_add(FIELD_START_PROBE_LIMIT)?.min(end);
         for probe in candidate..probe_end {
-            if registry_declaration_at(bytes, probe, end, b"UGS::").is_some() {
+            if propagate_resource!(registry_declaration_at(ctx, bytes, probe, end, b"UGS::")).is_some() {
                 return None;
             }
-            if field_definition_at(bytes, probe, end).is_some() {
-                return Some(probe);
+            if propagate_resource!(field_definition_at(ctx, bytes, probe, end)).is_some() {
+                return Some(Ok(probe));
             }
         }
         None
-    })
+    }).transpose()
 }
 
 /// Parse the complete reference/class registry when its explicit terminators
@@ -288,7 +291,7 @@ pub(super) fn type_registry<'a>(
         "nx type registry scan",
     )?;
     for at in start..end {
-        if registry_declaration_at(bytes, at, end, b"UGS::").is_some() {
+        if registry_declaration_at(ctx, bytes, at, end, b"UGS::")?.is_some() {
             if let Some(registry) = complete_type_registry_at(ctx, bytes, at, end)? {
                 return Ok(registry);
             }
@@ -314,7 +317,7 @@ fn legacy_type_definitions<'a>(
     let mut out = Vec::new();
     let mut at = start;
     while at < end {
-        if let Some(declaration) = registry_declaration_at(bytes, at, end, b"UGS::") {
+        if let Some(declaration) = registry_declaration_at(ctx, bytes, at, end, b"UGS::")? {
             let name_end = declaration.name_end();
             ctx.reserve_vec(&mut out, 1, "nx legacy type definitions")?;
             out.push(TypeDefinition {
@@ -353,7 +356,11 @@ pub(super) fn field_definitions<'a>(
         .ok_or_else(|| CodecError::Malformed("NX field search offset overflow".into()))?
         .min(end);
     while let Some((definition, at)) = (search..limit)
-        .find_map(|at| field_definition_at(bytes, at, end).map(|definition| (definition, at)))
+        .find_map(|at| match field_definition_at(ctx, bytes, at, end) {
+            Ok(Some(definition)) => Some(Ok((definition, at))),
+            Ok(None) => None,
+            Err(error) => Some(Err(error)),
+        }).transpose()?
     {
         let next = at + definition.name.len() + 2;
         search = next;
@@ -377,7 +384,7 @@ pub(super) fn all_field_definitions<'a>(
     let mut out = Vec::new();
     let mut at = start;
     while at < end {
-        if let Some(definition) = field_definition_at(bytes, at, end) {
+        if let Some(definition) = field_definition_at(ctx, bytes, at, end)? {
             at += definition.name.len() + 2;
             ctx.reserve_vec(&mut out, 1, "nx all field definitions")?;
             out.push(definition);
@@ -402,14 +409,16 @@ fn bound_field_registry_tails<'a>(bytes: &'a [u8], definitions: &mut [FieldDefin
     }
 }
 
-fn field_definition_at(bytes: &[u8], at: usize, end: usize) -> Option<FieldDefinition<'_>> {
-    let declaration = registry_declaration_at(bytes, at, end, b"m_")?;
+fn field_definition_at<'a>(ctx: &DecodeContext<'_>, bytes: &'a [u8], at: usize, end: usize) -> Result<Option<FieldDefinition<'a>>, CodecError> {
+    (|| {
+    let declaration = propagate_resource!(registry_declaration_at(ctx, bytes, at, end, b"m_"))?;
     let name_end = declaration.name_end();
-    Some(FieldDefinition {
+    Some(Ok(FieldDefinition {
         offset: declaration.offset,
         name: declaration.name,
         registry_tail: &bytes[name_end..=name_end],
-    })
+    }))
+    })().transpose()
 }
 
 #[cfg(test)]

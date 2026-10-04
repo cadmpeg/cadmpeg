@@ -16,19 +16,39 @@ pub(crate) enum ThruCurveBranchItems<T> {
 
 impl<T> ThruCurveBranchItems<T> {
     pub(crate) fn from_parts(members: Vec<T>, lane: &[u8]) -> Result<Self, &'static str> {
-        if lane.len() == members.len() + 4 && lane.iter().all(|&byte| byte == 0) {
-            return BranchItems::new(members).map(Self::Standard);
+        match Self::validate(members, lane, |lane| {
+            Ok::<_, std::convert::Infallible>(lane.iter())
+        }) {
+            Ok(value) => value,
+            Err(error) => match error {},
+        }
+    }
+
+    pub(super) fn from_wire(
+        ctx: &DecodeContext<'_>, members: Vec<T>, lane: &[u8],
+    ) -> Result<Result<Self, &'static str>, CodecError> {
+        Ok(Self::validate(members, lane, |lane| {
+            ctx.admit_iter(lane, "NX thru-curve state lane validation")
+        })?)
+    }
+
+    fn validate<'a, E, I: Iterator<Item = &'a u8>>(
+        members: Vec<T>, lane: &'a [u8],
+        admit: impl FnOnce(&'a [u8]) -> Result<I, E>,
+    ) -> Result<Result<Self, &'static str>, E> {
+        if members.len().checked_add(4) == Some(lane.len()) && admit(lane)?.all(|&byte| byte == 0) {
+            return Ok(BranchItems::new(members).map(Self::Standard));
         }
         if let [0, 0, 0, 0, 1, 5, a, b, c, d, 1, 5, e, f, g, h, 0, 0] = lane {
-            let members = members
-                .try_into()
-                .map_err(|_| "state_lane extended form requires four members")?;
-            return Ok(Self::Extended {
+            let Ok(members) = members.try_into() else {
+                return Ok(Err("state_lane extended form requires four members"));
+            };
+            return Ok(Ok(Self::Extended {
                 members,
                 values: [[*a, *b, *c, *d], [*e, *f, *g, *h]],
-            });
+            }));
         }
-        Err("state_lane must be the member-count-sized zero lane or the four-member extended lane")
+        Ok(Err("state_lane must be the member-count-sized zero lane or the four-member extended lane"))
     }
 
     pub(crate) fn as_slice(&self) -> &[T] {
@@ -138,5 +158,17 @@ mod tests {
         assert_eq!(standard.declared_count(), 3);
         assert!(ThruCurveBranchItems::from_parts(vec![1, 2], &[0; 5]).is_err());
         assert!(ThruCurveBranchItems::from_parts(Vec::<u8>::new(), &[0; 4]).is_err());
+    }
+
+    #[test]
+    fn thru_curve_state_iteration_refusal_propagates() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_core::CodecError;
+        let error = crate::test_support::resource_refusal_at(
+            &[], ResourceDimension::WorkUnits, "NX thru-curve state lane validation",
+            |ctx| { ThruCurveBranchItems::from_wire(ctx, vec![1, 2], &[0; 6]) },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "NX thru-curve state lane validation"));
     }
 }

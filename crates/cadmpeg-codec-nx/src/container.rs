@@ -252,13 +252,8 @@ impl<'a> Container<'a> {
         ctx: &DecodeContext<'_>,
         region: Region,
     ) -> Result<usize, CodecError> {
-        ctx.charge_work(
-            u64_from_index(self.entries.len()),
-            "count NX directory entries",
-        )?;
-        Ok(self
-            .entries
-            .iter()
+        Ok(ctx
+            .admit_iter(&self.entries, "count NX directory entries")?
             .filter(|entry| entry.region == region)
             .count())
     }
@@ -344,10 +339,13 @@ impl<'a> Container<'a> {
     }
 
     /// Decode the self-bounded segment index in `/Root/UG_PART/UG_PART`.
-    pub(crate) fn segment_index(&self) -> Option<(&DirEntry, SegmentIndex<'_>)> {
-        let entry = self
-            .entries
-            .iter()
+    pub(crate) fn segment_index(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<(&DirEntry, SegmentIndex<'_>)>, CodecError> {
+        let mut entries = ctx.admit_iter(&self.entries, "NX segment index directory traversal")?;
+        (|| {
+        let entry = entries
             .find(|entry| entry.name == "/Root/UG_PART/UG_PART" && entry.file_span().is_some())?;
         let (offset, size) = entry.file_span()?;
         let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
@@ -364,24 +362,29 @@ impl<'a> Container<'a> {
         }
         let complete_len = byte_len / index_row::LEN * index_row::LEN;
         let rows = &payload[..complete_len];
-        rows.chunks_exact(index_row::LEN)
+        let width = std::num::NonZeroUsize::new(index_row::LEN)?;
+        propagate_resource!(ctx.admit_iter(rows, "NX segment index row validation").map_err(CodecError::from))
+            .chunks(width)
             .try_for_each(|row| SegmentIndex::parse_row(row).map(|_| ()))?;
-        Some((
+        Some(Ok((
             entry,
             SegmentIndex {
                 rows,
                 padding: &payload[complete_len..byte_len],
             },
-        ))
+        )))
+        })().transpose()
     }
 
     /// Resolve every in-bounds compressed-stream wrapper addressed by the
     /// canonical segment index, preserving row and word order.
     pub(crate) fn segment_stream_wrappers(
         &self,
-    ) -> impl Iterator<Item = SegmentStreamWrapper> + '_ {
+        ctx: &DecodeContext<'_>,
+    ) -> Result<impl Iterator<Item = SegmentStreamWrapper> + '_, CodecError> {
+        let index = self.segment_index(ctx)?;
         let source = (|| {
-            let (entry, index) = self.segment_index()?;
+            let (entry, index) = index?;
             let (entry_offset, entry_size) = entry.file_span()?;
             let entry_start = usize::try_from(entry_offset).ok()?;
             let entry_size = usize::try_from(entry_size).ok()?;
@@ -389,7 +392,7 @@ impl<'a> Container<'a> {
             let payload = self.data.get(entry_start..entry_end)?;
             Some((index, payload, entry_start))
         })();
-        source
+        Ok(source
             .into_iter()
             .flat_map(|(index, payload, entry_start)| {
                 index
@@ -419,7 +422,7 @@ impl<'a> Container<'a> {
                                 })
                             })
                     })
-            })
+            }))
     }
 
     /// Locate independently size-framed NX object-model sections.
@@ -458,14 +461,14 @@ impl<'a> Container<'a> {
         )?;
         match framed_cache {
             FramedSectionCache::Borrowed { sections } => {
-                for (entry_index, section) in sections {
+                for (entry_index, section) in ctx.admit_iter(sections, "NX cached section traversal")? {
                     if let Some(entry) = EntryRef::new(&self.entries, *entry_index) {
                         result.push((entry, section.clone()));
                     }
                 }
             }
             FramedSectionCache::Owned { layouts } => {
-                for (entry_index, layout) in layouts {
+                for (entry_index, layout) in ctx.admit_iter(layouts, "NX cached layout traversal")? {
                     if let Some(entry) = EntryRef::new(&self.entries, *entry_index) {
                         result.push((entry, layout.materialize(ctx)?));
                     }
@@ -488,7 +491,7 @@ impl<'a> Container<'a> {
                     let (sections, _) =
                         parse_indexed_section_cache(ctx, bytes, &self.entries, false)?;
                     let mut blocks = BTreeMap::new();
-                    for (section_ordinal, (entry_index, section)) in sections.iter().enumerate() {
+                    for (section_ordinal, (entry_index, section)) in ctx.admit_iter(&sections, "NX indexed section traversal")?.enumerate() {
                         let Some((control, _, records)) = section.as_offset_only() else {
                             continue;
                         };
@@ -557,14 +560,14 @@ impl<'a> Container<'a> {
         )?;
         match cache {
             IndexedSectionCache::Borrowed { sections, .. } => {
-                for (entry_index, section) in sections {
+                for (entry_index, section) in ctx.admit_iter(sections, "NX cached section traversal")? {
                     if let Some(entry) = EntryRef::new(&self.entries, *entry_index) {
                         result.push((entry, section.clone()));
                     }
                 }
             }
             IndexedSectionCache::Owned { layouts } => {
-                for (entry_index, layout) in layouts {
+                for (entry_index, layout) in ctx.admit_iter(layouts, "NX cached layout traversal")? {
                     if let Some(entry) = EntryRef::new(&self.entries, *entry_index) {
                         result.push((entry, layout.materialize(ctx)?));
                     }
@@ -597,7 +600,7 @@ impl<'a> Container<'a> {
         let strings = self.external_reference_strings(ctx)?;
         let count = strings.len();
         let mut paths = ctx.collection_vec(count, "nx external reference paths")?;
-        for (_, _, path) in strings {
+        for (_, _, path) in ctx.admit_iter(&strings, "NX external reference path traversal")? {
             let mut copy = ctx.retained_string(path.len(), "nx external reference path")?;
             ctx.append_retained(&mut copy, &path, "NX admitted text append")?;
             paths.push(copy);
@@ -731,8 +734,9 @@ impl<'a> Container<'a> {
         ctx: &DecodeContext<'_>,
     ) -> Result<Option<(usize, RmFastLoadObjectIdTable)>, CodecError> {
         const REGISTRY_MARKER: &[u8] = b"UGS::Solid::Topol";
+        let mut entries = ctx.admit_iter(&self.entries, "NX FastLoad directory traversal")?;
         let Some((entry_index, bytes)) = (|| {
-            let entry_index = self.entries.iter().position(|entry| {
+            let entry_index = entries.position(|entry| {
                 entry.name == "/Root/FastLoad/RMFastLoad" && entry.file_span().is_some()
             })?;
             let (offset, size) = self.entries[entry_index].file_span()?;
@@ -761,13 +765,14 @@ impl<'a> Container<'a> {
                 let id_bytes = count.checked_mul(4)?;
                 let ids_start = count_offset.checked_add(4)?;
                 let ids_end = ids_start.checked_add(id_bytes)?;
-                crate::om::product::ProductRecord::read(
+                propagate_resource!(crate::om::product::ProductRecord::read(
+                    ctx,
                     bytes.get(ids_end..)?,
                     crate::om::product::ProductRecordForm::Modern,
-                )
+                ))
                 .is_some()
-                .then_some((count, ids_start, id_bytes))
-            })() else {
+                .then_some(Ok((count, ids_start, id_bytes)))
+            })().transpose()? else {
                 continue;
             };
             candidate = Some((count_offset, count, ids_start, id_bytes));
@@ -875,11 +880,8 @@ fn locate_extref_string_table(
                 let Ok(value) = std::str::from_utf8(raw) else {
                     return Ok(None);
                 };
-                ctx.charge_work(
-                    u64_from_index(raw.len()),
-                    "validate NX external reference controls",
-                )?;
-                if value.is_empty() || value.chars().any(char::is_control) {
+                let mut characters = ctx.admit_iter(value, "validate NX external reference controls")?;
+                if value.is_empty() || characters.any(char::is_control) {
                     return Ok(None);
                 }
                 pos = end;
@@ -1065,15 +1067,23 @@ fn parse_extref_record_index(
         ctx.reserve_vec(&mut directory, 1, "nx external reference directory")?;
         directory.push((record_id, offset));
     }
+    let mut previous_offset = None;
     if directory.is_empty()
-        || !directory.windows(2).all(|pair| pair[0].1 < pair[1].1)
+        || !ctx.admit_iter(&directory, "NX external reference offset ordering")?.all(|(_, offset)| {
+            let ascending = match previous_offset {
+                Some(previous) => previous < *offset,
+                None => true,
+            };
+            previous_offset = Some(*offset);
+            ascending
+        })
         || at > directory[0].1
     {
         return Ok(None);
     }
     let count = directory.len();
     let mut records = ctx.collection_vec(count, "nx external reference index")?;
-    for (index, (record_id, offset)) in directory.iter().copied().enumerate() {
+    for (index, (record_id, offset)) in ctx.admit_iter(&directory, "NX external reference directory traversal")?.copied().enumerate() {
         let end = directory
             .get(index + 1)
             .map_or(string_table, |(_, offset)| *offset);
@@ -1257,7 +1267,7 @@ fn parse_framed_section_cache<'bytes>(
 ) -> Result<(FramedSections<'bytes>, FramedSectionLayouts), CodecError> {
     let mut sections = Vec::new();
     let mut layouts = Vec::new();
-    for (entry_index, entry) in entries.iter().enumerate() {
+    for (entry_index, entry) in ctx.admit_iter(entries, "NX section directory traversal")?.enumerate() {
         let Some((offset, size)) = entry.file_span() else {
             continue;
         };
@@ -1309,7 +1319,7 @@ fn parse_indexed_section_cache<'bytes>(
     let mut sections = Vec::new();
     let mut layouts = Vec::new();
     let mut seen = std::collections::BTreeSet::new();
-    for (entry_index, entry) in entries.iter().enumerate() {
+    for (entry_index, entry) in ctx.admit_iter(entries, "NX section directory traversal")?.enumerate() {
         let Some((offset, size)) = entry.file_span() else {
             continue;
         };
@@ -1380,7 +1390,7 @@ pub(crate) fn looks_like_legacy_nx(
     let CompoundPrefixProbe::DirectoryEvidence(paths) = probe else {
         return Ok(false);
     };
-    for path in &paths {
+    for path in ctx.admit_iter(&paths, "NX legacy directory path traversal")? {
         ctx.charge_work(u64_from_index(path.len()), "compare NX directory evidence")?;
         if path.eq_ignore_ascii_case("UG_PART/UG_PART") {
             return Ok(true);
@@ -1467,8 +1477,7 @@ pub(crate) fn scan_bytes<'a>(
             "HEADER directory overlaps the FOOTER region".to_string(),
         ));
     }
-    if entries
-        .iter()
+    if ctx.admit_iter(&entries, "NX directory file span traversal")?
         .filter_map(crate::container::DirEntry::file_span)
         .any(|(offset, size)| {
             offset
@@ -1571,7 +1580,7 @@ pub(crate) fn scan_legacy<'a>(
     }
     let logical_data = ctx.concat_views(&stream_views)?;
     let mut entries = Vec::new();
-    for entry in snapshot.entries() {
+    for entry in ctx.admit_iter(snapshot.entries(), "NX legacy directory traversal")? {
         ctx.charge_collection_items(1, "retain legacy NX directory entry")?;
 
         let body = match entry {
@@ -1686,7 +1695,7 @@ fn try_entry(
     let Some(raw) = data.get(name_start..name_end) else {
         return Ok(None);
     };
-    if !raw.starts_with(b"/Root") || !raw.iter().all(|&b| (0x20..0x7f).contains(&b)) {
+    if !raw.starts_with(b"/Root") || !ctx.admit_iter(raw, "NX directory name ASCII validation")?.all(|&b| (0x20..0x7f).contains(&b)) {
         return Ok(None);
     }
     let payload = name_end;

@@ -122,7 +122,7 @@ pub(super) fn paired_delta_streams(
     scan: &Scan,
 ) -> Result<BTreeMap<usize, Vec<usize>>, CodecError> {
     let mut has_links = false;
-    let wrapper_count = scan.container.segment_stream_wrappers().count();
+    let wrapper_count = scan.container.segment_stream_wrappers(ctx)?.count();
     let linked_bytes = wrapper_count
         .checked_mul(std::mem::size_of::<usize>())
         .ok_or_else(|| ctx.refuse_codec_limit("nx linked delta candidates", 0, 1))?;
@@ -131,7 +131,7 @@ pub(super) fn paired_delta_streams(
         "nx linked delta candidates",
     )?;
     let mut linked_deltas = BTreeSet::new();
-    for wrapper in scan.container.segment_stream_wrappers() {
+    for wrapper in scan.container.segment_stream_wrappers(ctx)? {
         let mut matched = None;
         for (ordinal, stream) in scan.streams.iter().enumerate() {
             ctx.charge_work(1, "nx linked delta stream matching")?;

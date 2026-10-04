@@ -889,6 +889,7 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
 
 #[test]
 fn nx_extract_string_projects_as_history_only_without_semantic_lanes() {
+    crate::test_support::with_decode_context(|ctx| {
     let object_indices = [None; 4];
     let source_properties = BTreeMap::from([
         ("object_index.0".to_string(), "null".to_string()),
@@ -903,6 +904,7 @@ fn nx_extract_string_projects_as_history_only_without_semantic_lanes() {
     ]);
     assert!(matches!(
         non_modeling_history_definition(
+            ctx,
             "EXTRACT_STRING",
             &object_indices,
             &[],
@@ -910,7 +912,7 @@ fn nx_extract_string_projects_as_history_only_without_semantic_lanes() {
             0,
             0,
             &source_properties,
-        ),
+        ).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::TreeNode {
             role: FeatureTreeNodeRole::History,
             children,
@@ -961,6 +963,7 @@ fn nx_extract_string_projects_as_history_only_without_semantic_lanes() {
     ];
     for (object_indices, outputs, body_references, body_operands, strings, properties) in rejected {
         assert!(non_modeling_history_definition(
+            ctx,
             "EXTRACT_STRING",
             &object_indices,
             &outputs,
@@ -969,12 +972,13 @@ fn nx_extract_string_projects_as_history_only_without_semantic_lanes() {
             strings,
             &properties,
         )
-        .is_none());
+        .unwrap().is_none());
     }
 
     let mut extra_property = source_properties.clone();
     extra_property.insert("input_block.0".into(), "block".into());
     assert!(non_modeling_history_definition(
+            ctx,
         "EXTRACT_STRING",
         &object_indices,
         &[],
@@ -983,7 +987,8 @@ fn nx_extract_string_projects_as_history_only_without_semantic_lanes() {
         0,
         &extra_property,
     )
-    .is_none());
+    .unwrap().is_none());
+    });
 }
 
 #[test]

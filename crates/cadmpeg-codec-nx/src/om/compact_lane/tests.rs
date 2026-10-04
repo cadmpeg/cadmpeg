@@ -96,3 +96,17 @@ fn abr_lane_positions_include_null_and_extended_widths() {
         );
     }
 }
+
+    #[test]
+    fn counted_lane_width_iteration_refusal_propagates() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_core::CodecError;
+        let error = crate::test_support::resource_refusal_at(
+            &[], ResourceDimension::WorkUnits, "NX counted lane token widths",
+            |ctx| { let anchor = crate::om::compact::CompactIndexAtom::from_wire(1, &[1]).unwrap().into();
+        let members = crate::om::compact::CountedIndexMembers::new(vec![crate::om::compact::CompactIndexAtom::from_wire(2, &[2]).unwrap().into()]).unwrap();
+        CountedLane::<()>::from_wire(ctx, anchor, members, 0) },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "NX counted lane token widths"));
+    }

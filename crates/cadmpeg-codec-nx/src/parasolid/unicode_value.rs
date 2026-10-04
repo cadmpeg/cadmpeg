@@ -36,16 +36,14 @@ impl<'a> UnicodeLane<'a> {
         ctx: &DecodeContext<'_>,
         bytes: &'a [u8],
     ) -> Result<Option<Self>, CodecError> {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(bytes.len() / 2),
-            "validate NX Unicode value lane",
-        )?;
+        let width = std::num::NonZeroUsize::new(2)
+            .ok_or_else(|| CodecError::malformed("Unicode code-unit width must be nonzero"))?;
         let value = (|| {
             if bytes.is_empty() || !bytes.len().is_multiple_of(2) {
                 return None;
             }
             let mut high_surrogate = false;
-            for bytes in bytes.chunks_exact(2) {
+            for bytes in propagate_resource!(ctx.admit_iter(bytes, "validate NX Unicode value lane").map_err(CodecError::from)).chunks(width) {
                 let unit = View::u16_be_at(bytes, 0)?;
                 if high_surrogate {
                     (0xdc00..=0xdfff).contains(&unit).then_some(())?;
@@ -56,40 +54,34 @@ impl<'a> UnicodeLane<'a> {
                     (!(0xdc00..=0xdfff).contains(&unit)).then_some(())?;
                 }
             }
-            (!high_surrogate).then_some(Self(bytes))
-        })();
+            (!high_surrogate).then_some(Ok(Self(bytes)))
+        })().transpose()?;
         Ok(value)
     }
 
     pub(super) fn materialize(self, ctx: &DecodeContext<'_>) -> Result<UnicodeValue, CodecError> {
         let count = self.0.len() / 2;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(self.0.len()),
-            "decode NX Unicode scalars",
-        )?;
+        let width = std::num::NonZeroUsize::new(2)
+            .ok_or_else(|| CodecError::malformed("Unicode code-unit width must be nonzero"))?;
         // Conversion scratch stays live through UTF-8 construction.
         let (mut code_units, _reservation) =
             ctx.temporary_vec(count, "NX Unicode conversion scratch")?;
-        for bytes in self.0.chunks_exact(2) {
+        for bytes in ctx.admit_iter(self.0, "decode NX Unicode code units")?.chunks(width) {
             code_units.push(
                 View::u16_be_at(bytes, 0)
                     .ok_or_else(|| CodecError::malformed("invalid admitted NX Unicode lane"))?,
             );
         }
         let mut length = 0usize;
-        for scalar in char::decode_utf16(code_units.iter().copied()) {
+        for scalar in char::decode_utf16(ctx.admit_iter(&code_units, "decode NX Unicode scalars")?.copied()) {
             let scalar =
                 scalar.map_err(|_| CodecError::malformed("invalid admitted NX Unicode scalar"))?;
             length = length.checked_add(scalar.len_utf8()).ok_or_else(|| {
                 ctx.refuse_codec_limit("NX Unicode UTF-8 payload", u64::MAX, u64::MAX)
             })?;
         }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(count),
-            "copy NX Unicode scalars",
-        )?;
         let mut value = ctx.retained_string(length, "NX Unicode UTF-8 payload")?;
-        for scalar in char::decode_utf16(code_units) {
+        for scalar in char::decode_utf16(ctx.admit_iter(&code_units, "copy NX Unicode scalars")?.copied()) {
             value.push(
                 scalar.map_err(|_| CodecError::malformed("invalid admitted NX Unicode scalar"))?,
             );

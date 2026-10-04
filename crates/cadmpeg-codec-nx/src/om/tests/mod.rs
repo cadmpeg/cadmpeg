@@ -31,3 +31,7 @@ mod operation_records;
 mod operation_state;
 mod pattern_lanes;
 mod sketch_payload;
+
+fn surface_feature_payload_references_test(record: crate::om::operation_record::OperationPayload<'_>) -> Option<crate::om::surface_envelope::SurfaceFeaturePayloadReferenceField> {
+    crate::test_support::with_decode_context(|ctx| crate::om::surface_envelope::surface_feature_payload_references(ctx, record)).unwrap()
+}
