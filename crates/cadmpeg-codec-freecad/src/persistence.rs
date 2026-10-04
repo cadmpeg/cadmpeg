@@ -1390,7 +1390,7 @@ fn extension_id(
 ) -> Result<String, CodecError> {
     let (order, _order_storage) = ctx.format_scoped(format_args!("{order}"), "FCStd extension order text")?;
     let (child, _child_storage) = ctx.with_scoped_storage("FCStd extension identity key", ||
-        ctx.join_retained(&[&order, name], ":", "FCStd extension identity key"))?;
+        ctx.join_retained(&[order.as_str(), name], ":", "FCStd extension identity key"))?;
     crate::native::native_child_id_charged(ctx, "extension", owner, &child)
 }
 

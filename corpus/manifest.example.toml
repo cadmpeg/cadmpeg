@@ -19,7 +19,7 @@ format = "f3d"
 
 # Derived, not donor-supplied. Leave it out of a donation: the maintainer runs
 #   UPDATE_CORPUS_DIALECTS=1 cargo test -p cadmpeg --test corpus_manifest
-# which classifies the bytes and writes the docs/dialects.toml id here. It is
+# which classifies the bytes and writes the crates/cadmpeg-registry/docs/dialects.toml id here. It is
 # pinned like a golden, so a codec change that reclassifies the file fails a
 # test. `authoring_app_version` below is the producer axis and is unrelated.
 dialect = "f3d:manifest-3-2-0-0"
