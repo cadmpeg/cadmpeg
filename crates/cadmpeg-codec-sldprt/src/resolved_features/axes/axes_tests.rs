@@ -1574,3 +1574,56 @@ fn revolution_identity_lookups_propagate_work_refusal() {
     assert_eq!(candidates[0].features[0].id, "revolution");
     assert_eq!(candidates[0].features[0].name, "Revolution");
 }
+
+#[test]
+fn linear_pattern_count_processing_propagates_work_refusal() {
+    let mut histories = single_revolution_history();
+    let feature = &mut histories[0].features[0];
+    feature.parameters = BTreeMap::from([
+        (cadmpeg_core::nonblank_const!("D1"), "3".into()),
+        (cadmpeg_core::nonblank_const!("D2"), "25".into()),
+    ]);
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: [(0, "moNumberDim_c"), (200, "ParallelPlaneDistanceDim_c")]
+            .into_iter()
+            .enumerate()
+            .map(|(ordinal, (offset, name))| crate::records::FeatureInputClass {
+                id: format!("class#{ordinal}"),
+                parent: "lane".into(),
+                ordinal: u32::try_from(ordinal).unwrap(),
+                offset,
+                name: name.into(),
+            }).collect(),
+        names: [(50, "D1"), (250, "D2")]
+            .into_iter()
+            .enumerate()
+            .map(|(ordinal, (offset, value))| FeatureInputName {
+                id: format!("name#{ordinal}"),
+                parent: "lane".into(),
+                ordinal: u32::try_from(ordinal).unwrap(),
+                offset,
+                object_id: Some(ObjectId::Absent),
+                value: value.into(),
+            }).collect(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    crate::test_support::work_refusal_at("parse SLDPRT linear pattern count", |ctx| {
+        super::typed_linear_pattern_dimensions(ctx, feature, &lane, 0, 400)
+    });
+    let (spacing, count) = super::typed_linear_pattern_dimensions(
+        &cadmpeg_test_support::service_decode_context(), feature, &lane, 0, 400,
+    ).unwrap().expect("two typed dimensions");
+    assert_eq!(count, 3);
+    assert_eq!(spacing.get(), 25.0);
+}
