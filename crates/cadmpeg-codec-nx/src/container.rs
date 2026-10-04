@@ -788,8 +788,12 @@ impl<'a> Container<'a> {
             })?;
             object_ids.push(object_id);
         }
-        let object_ids = ObjectIdMembers::new(object_ids)
-            .map_err(|message| CodecError::Malformed(message.into()))?;
+        let object_ids = match ObjectIdMembers::new(object_ids) {
+            Ok(members) => members,
+            Err(message) => return Err(CodecError::Malformed(
+                ctx.copy_retained_text(message, "NX object ID member error")?,
+            )),
+        };
         Ok(Some((
             entry_index,
             RmFastLoadObjectIdTable {

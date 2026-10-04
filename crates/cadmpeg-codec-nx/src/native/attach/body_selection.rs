@@ -192,22 +192,14 @@ pub(super) fn feature_body_selection_with_offset_blocks<'ctx>(
         let mut identity_keys = Vec::new();
         for block in offset_blocks {
             ctx.charge_collection_items(2, "NX feature body offset selection")?;
-            let bytes = block.len().checked_mul(2).ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "NX feature body offset selection",
-                    0,
-                    cadmpeg_core::decode::u64_from_index(block.len()),
-                )
-            })?;
-            reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
             reservation.with_storage(|| {
                 ctx.reserve_capacity(&mut bodies, 1, "NX feature body offset selection")
             })?;
             reservation.with_storage(|| {
                 ctx.reserve_capacity(&mut identity_keys, 1, "NX feature body offset identities")
             })?;
-            bodies.push(block.clone());
-            identity_keys.push(FeatureBodyIdentity::OffsetStore(block.clone()));
+            bodies.push(reservation.with_storage(|| ctx.copy_retained_text(block, "NX feature body offset selection"))?);
+            identity_keys.push(FeatureBodyIdentity::OffsetStore(reservation.with_storage(|| ctx.copy_retained_text(block, "NX feature body offset identities"))?));
         }
         return Ok(FeatureBodySelection::Local {
             bodies,
