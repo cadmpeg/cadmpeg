@@ -195,3 +195,22 @@ fn live_annotations_refuse_first_identity_at_collection_limit() {
         },
     );
 }
+
+#[test]
+fn rmfastload_stream_index_parse_propagates_work_refusal() {
+    let body = cadmpeg_ir::ids::BodyId::mint("nx:s3:body#selected").unwrap();
+    let selected = std::collections::BTreeSet::from([body]);
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_work_units = 0,
+        |ctx| {
+            let error = super::rmfastload_stream_indices(ctx, &selected).unwrap_err();
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                panic!("stream parsing must propagate the work refusal");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.operation, "nx rmfastload stream index");
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        },
+    );
+}

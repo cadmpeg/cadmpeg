@@ -2101,12 +2101,14 @@ pub(super) fn rmfastload_stream_indices(
 ) -> Result<Option<BTreeSet<usize>>, CodecError> {
     let mut streams = BTreeSet::new();
     for body in selected {
-        let Some(index) = body
+        let Some((text, _)) = body
             .as_str()
             .strip_prefix("nx:s")
             .and_then(|text| text.split_once(':'))
-            .and_then(|(text, _)| text.parse().ok())
         else {
+            return Ok(None);
+        };
+        let Ok(index) = ctx.parse_text::<usize>(text, "nx rmfastload stream index")? else {
             return Ok(None);
         };
         ctx.insert_btree_set(&mut streams, index, "nx rmfastload stream indices")?;
