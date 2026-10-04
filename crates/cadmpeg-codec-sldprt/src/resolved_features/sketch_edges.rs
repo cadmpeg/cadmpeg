@@ -115,19 +115,14 @@ pub(super) fn project_endpoint_constraints(
             )?
             .enumerate()
         {
-            let loci = endpoint_storage
-                .with_storage(|| {
-                    ctx.entry_btree_map(
-                        &mut loci_by_endpoint,
-                        endpoint.as_str(),
-                        "index SLDPRT shared sketch endpoints",
-                    )
-                })?
-                .or_default();
             endpoint_storage.with_storage(|| {
-                ctx.reserve_vec(loci, 1, "collect SLDPRT shared sketch endpoint loci")?;
-                loci.push((index == 0, entity.id()));
-                Ok::<_, cadmpeg_core::CodecError>(())
+                ctx.push_btree_group(
+                    &mut loci_by_endpoint,
+                    endpoint.as_str(),
+                    (index == 0, entity.id()),
+                    "index SLDPRT shared sketch endpoints",
+                    "collect SLDPRT shared sketch endpoint loci",
+                )
             })?;
         }
     }
