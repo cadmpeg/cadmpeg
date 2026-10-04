@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: Apache-2.0
+name: Install repository Rust toolchain
+description: Install the compiler declared in rust-toolchain.toml.
+inputs:
+  components:
+    description: Additional rustup components
+    default: ''
+runs:
+  using: composite
+  steps:
+    - name: Read pinned toolchain
+      id: toolchain
+      shell: bash
+      run: |
+        channel="$(python3 -c 'import tomllib; print(tomllib.load(open("rust-toolchain.toml", "rb"))["toolchain"]["channel"])')"
+        echo "channel=$channel" >> "$GITHUB_OUTPUT"
+    - name: Install pinned toolchain
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ steps.toolchain.outputs.channel }}
+        components: ${{ inputs.components }}
