@@ -1137,7 +1137,11 @@ pub(in super::super) fn transfer_sketches(
         )?;
         let equation_offsets = collect_numeric_set(
             ctx,
-            equation_constraints.iter().map(|(_, offset)| *offset),
+            ctx.admit_iter(
+                &equation_constraints,
+                "creo equation offset source",
+            )?
+            .map(|(_, offset)| *offset),
             "creo equation offset nodes",
         )?;
         let mut rejected_equation_offsets = BTreeSet::new();
@@ -1192,11 +1196,15 @@ pub(in super::super) fn transfer_sketches(
         }
         let typed_equation_offsets = collect_numeric_set(
             ctx,
-            equation_offsets
-                .into_iter()
+            ctx.admit_iter(
+                &equation_offsets,
+                "creo typed equation offset source",
+            )?
+                .copied()
                 .filter(|offset| !rejected_equation_offsets.contains(offset)),
             "creo typed equation offset nodes",
         )?;
+        drop(equation_offsets);
         for (constraint, offset) in section_equation_native_constraints(
             ctx,
             definition,

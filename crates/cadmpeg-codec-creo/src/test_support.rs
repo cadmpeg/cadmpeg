@@ -385,8 +385,13 @@ pub(crate) fn assert_work_boundaries<T>(
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let mut seen = std::collections::BTreeSet::new();
+    let service_work_limit = DecodePolicy::service().limits.max_work_units;
     let mut cap = 0;
-    for _ in 0..4096 {
+    if operations.is_empty() {
+        return crate::decode::with_test_decode_ctx(|ctx| run(ctx)).expect("service route");
+    }
+    loop {
+        assert!(cap <= service_work_limit, "work route exceeds service work limit");
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = cap;
@@ -395,21 +400,66 @@ pub(crate) fn assert_work_boundaries<T>(
             Err(CodecError::ResourceLimit(resource)) => {
                 assert_eq!(resource.dimension, ResourceDimension::WorkUnits);
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(&resource));
+                assert_eq!(resource.limit, cap);
                 let need = resource
                     .used
                     .checked_add(resource.additional)
                     .expect("work need fits");
                 assert!(need > cap);
+                assert!(need <= service_work_limit, "work route exceeds service work limit");
                 if operations.contains(&resource.operation) {
-                    policy.limits.max_work_units = need - 1;
-                    let (ctx, _) =
-                        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-                    assert!(
-                        matches!(run(&ctx), Err(CodecError::ResourceLimit(ref below))
-                        if below.dimension == ResourceDimension::WorkUnits
-                            && below.operation == resource.operation)
+                    assert!(resource.additional > 0, "named work boundary is positive");
+                    let below = need.checked_sub(1).expect("positive work need");
+                    let below_arena = DecodeArena::new();
+                    let mut below_policy = DecodePolicy::service();
+                    below_policy.limits.max_work_units = below;
+                    let (below_ctx, _) =
+                        DecodeContext::from_root_bytes(&[], &below_arena, &below_policy)
+                            .expect("root");
+                    let below_resource = match run(&below_ctx) {
+                        Err(CodecError::ResourceLimit(resource)) => resource,
+                        Err(error) => panic!("unexpected route refusal below boundary: {error:?}"),
+                        Ok(_) => panic!("named boundary must refuse one unit below its need"),
+                    };
+                    assert_eq!(below_resource.dimension, ResourceDimension::WorkUnits);
+                    assert_eq!(below_resource.operation, resource.operation);
+                    assert_eq!(below_resource.reason, resource.reason);
+                    assert_eq!(below_resource.limit, below);
+                    assert_eq!(below_resource.used, resource.used);
+                    assert_eq!(below_resource.additional, resource.additional);
+                    assert_eq!(below_ctx.resource_refusal().as_ref(), Some(&below_resource));
+                    assert_eq!(
+                        below_resource
+                            .used
+                            .checked_add(below_resource.additional),
+                        Some(need)
                     );
+
+                    let at_arena = DecodeArena::new();
+                    let mut at_policy = DecodePolicy::service();
+                    at_policy.limits.max_work_units = need;
+                    let (at_ctx, _) =
+                        DecodeContext::from_root_bytes(&[], &at_arena, &at_policy).expect("root");
+                    match run(&at_ctx) {
+                        Err(CodecError::ResourceLimit(resource)) => {
+                            assert_eq!(at_ctx.resource_refusal().as_ref(), Some(&resource));
+                            if resource.dimension == ResourceDimension::WorkUnits {
+                                assert_eq!(resource.limit, need);
+                                assert_eq!(
+                                    resource.used, need,
+                                    "the named work charge must pass at its exact limit"
+                                );
+                            }
+                        }
+                        Err(error) => panic!("unexpected route error at exact need: {error:?}"),
+                        Ok(_) => {}
+                    }
+
                     seen.insert(resource.operation);
+                    if operations.iter().all(|operation| seen.contains(operation)) {
+                        return crate::decode::with_test_decode_ctx(|ctx| run(ctx))
+                            .expect("service route");
+                    }
                 }
                 cap = need;
             }
@@ -423,7 +473,6 @@ pub(crate) fn assert_work_boundaries<T>(
             }
         }
     }
-    panic!("work route did not finish within boundary bound");
 }
 
 /// Find the last named refusal after admitting each preceding resource boundary.
