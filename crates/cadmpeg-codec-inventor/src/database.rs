@@ -222,7 +222,7 @@ pub(crate) fn parse_registry(
         "admit Inventor segment registry entries",
     )?;
     let mut entries = ctx.vector_storage(count, "admit Inventor segment registry entries")?;
-    for _ in 0..count {
+    for _ in ctx.admit_iter(&(0..count), "visit Inventor database table records")? {
         let display_name = cursor.utf16(ctx, "segment display name", 4_096)?;
         let segment_id = cursor.array("segment id")?;
         let revision_id = cursor.array("segment revision id")?;
@@ -241,7 +241,7 @@ pub(crate) fn parse_registry(
         let mut objects =
             ctx.vector_storage(object_count, "admit Inventor segment registry objects")?;
         let mut node_count = None;
-        for _ in 0..object_count {
+        for _ in ctx.admit_iter(&(0..object_count), "visit Inventor segment objects")? {
             let object = SegmentObject {
                 revision_id: cursor.array("object revision id")?,
                 state: cursor.array("object state")?,
@@ -268,7 +268,7 @@ pub(crate) fn parse_registry(
             "admit Inventor segment registry nodes",
         )?;
         let mut nodes = ctx.vector_storage(node_count, "admit Inventor segment registry nodes")?;
-        for _ in 0..node_count {
+        for _ in ctx.admit_iter(&(0..node_count), "visit Inventor segment nodes")? {
             nodes.push(SegmentNode {
                 index: cursor.u32("node index")?,
                 segment_list_indexes: [
@@ -321,7 +321,7 @@ pub(crate) fn parse_revisions(
         "admit Inventor revision entries",
     )?;
     let mut entries = ctx.vector_storage(count, "admit Inventor revision entries")?;
-    for _ in 0..count {
+    for _ in ctx.admit_iter(&(0..count), "visit Inventor database table records")? {
         let id = cursor.array("revision id")?;
         let flags = cursor.u32("revision flags")?;
         let kind = cursor.u16("revision kind")?;
@@ -445,7 +445,7 @@ impl<'a> Cursor<'a> {
                 )
             })?;
         let mut ids = ctx.collection_vec(count, "admit Inventor registry identifier list")?;
-        for _ in 0..count {
+        for _ in ctx.admit_iter(&(0..count), "visit Inventor database table records")? {
             ids.push(self.array(field)?);
         }
         Ok(ids)
@@ -476,6 +476,24 @@ mod tests {
     use super::{
         parse_database, parse_registry, parse_revisions, DatabaseHeader, RevisionPayload, RseSchema,
     };
+
+    #[test]
+    fn revision_traversal_refuses_work_before_record_read() {
+        let mut bytes = Vec::new();
+        push_u32(&mut bytes, 3);
+        push_u32(&mut bytes, 1);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("revision header fits input cap");
+        assert!(matches!(
+            parse_revisions(&ctx, &bytes),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "visit Inventor database table records"
+        ));
+    }
 
     #[test]
     fn registry_identifiers_prove_extent_and_admit_retained_storage() {

@@ -211,7 +211,7 @@ pub(crate) fn parse_meta_tables<'a>(
     )?;
     let mut blocks = ctx.vector_storage(block_count, "admit Inventor RSe block descriptors")?;
     let mut sizes = section_1_payload;
-    for ordinal in 0..block_count {
+    for ordinal in ctx.admit_iter(&(0..block_count), "visit Inventor RSe table entries")? {
         let encoded = crate::reader::u32(&mut sizes, "block-size entry")?;
         blocks.push(BlockDescriptor {
             ordinal: u32::try_from(ordinal).map_err(|_| {
@@ -260,7 +260,7 @@ pub(crate) fn parse_meta_tables<'a>(
         "admit Inventor RSe metadata tables",
     )?;
     let mut types = ctx.vector_storage(type_count, "admit Inventor RSe metadata tables")?;
-    for index in 0..type_count {
+    for index in ctx.admit_iter(&(0..type_count), "visit Inventor RSe table entries")? {
         let entry = child(
             section_4_payload,
             index * type_desc::LEN,
@@ -542,7 +542,7 @@ fn parse_extended_record_trailer(
         u64::from(property_count),
         "admit Inventor RSe record trailer properties",
     )?;
-    for _ in 0..property_count {
+    for _ in ctx.admit_iter(&(0..property_count), "visit Inventor RSe table entries")? {
         cursor.sized_bytes(65_536, "record trailer property name")?;
         match cursor.u32("record trailer property type")? {
             1 => cursor.skip(3, "record trailer property")?,
@@ -587,7 +587,7 @@ fn parse_extended_record_trailer(
     )?;
     if reference_count != 0 {
         cursor.skip(8, "record trailer reference header")?;
-        for _ in 0..reference_count {
+        for _ in ctx.admit_iter(&(0..reference_count), "visit Inventor RSe table entries")? {
             cursor.sized_bytes(65_536, "record trailer reference name")?;
             cursor.skip(4, "record trailer reference value")?;
         }

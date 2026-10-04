@@ -439,7 +439,7 @@ fn parse_occurrence<'a>(
     if related_count != 0 {
         cursor.u32("occurrence related-list metadata")?;
         cursor.u32("occurrence related-list metadata")?;
-        for _ in 0..related_count {
+        for _ in ctx.admit_iter(&(0..related_count), "visit Inventor occurrence related references")? {
             related_references.push(cursor.u32("occurrence related reference")?);
         }
     }
