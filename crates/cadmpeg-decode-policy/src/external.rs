@@ -28,6 +28,7 @@ pub(crate) enum Work {
     Argument(usize),
     Arguments(&'static [usize]),
     Iterator,
+    TextCharacter,
     Comparison,
     Format,
     Repeat,
@@ -78,6 +79,7 @@ pub(crate) fn summary(
     let name = tcx.opt_item_name(definition)?;
     let path = tcx.def_path_str(definition);
     let value = receiver.map(|value| value.peel_refs());
+    let standard_string = receiver.is_some_and(|value| types::standard_string(tcx, value));
     let owner = value.and_then(|value| match value.kind() {
         ty::Adt(owner, _) => Some(tcx.item_name(owner.did())),
         _ => None,
@@ -489,6 +491,7 @@ pub(crate) fn summary(
         "pad" if path.contains("fmt::") => (Allocation::None, Work::Argument(1)),
         "write_fmt" => (Allocation::None, Work::Argument(1)),
         "write" if path.contains("fmt::") => (Allocation::None, Work::Argument(1)),
+        "write_char" if standard_string => (Allocation::Growth, Work::TextCharacter),
         "write_char" if path.contains("fmt::") => (Allocation::None, Work::Fixed),
         "first" | "last" if keyed => (Allocation::None, Work::Fixed),
         "first"
@@ -606,6 +609,9 @@ pub(crate) fn summary(
             (Allocation::None, Work::Comparison)
         }
         "finish" if path.contains("hash::") => (Allocation::None, Work::Fixed),
+        "write_str" if standard_string => {
+            (Allocation::Growth, Work::Argument(1))
+        }
         "write_str" if path.contains("fmt::") => (Allocation::None, Work::Argument(1)),
         "debug_struct_field1_finish" if path.contains("fmt::") => {
             (Allocation::None, Work::Argument(3))
@@ -625,6 +631,7 @@ pub(crate) fn summary(
         "from_elem" | "repeat" => (Allocation::Repeat, Work::Repeat),
         "with_capacity" | "with_capacity_in" => (Allocation::Capacity, Work::Fixed),
         "into_boxed_slice" => (Allocation::Reallocate, Work::Receiver),
+        "push" if standard_string => (Allocation::Growth, Work::TextCharacter),
         "push" | "push_back" | "push_front" | "reserve" | "reserve_exact" | "try_reserve"
         | "try_reserve_exact" => (Allocation::Growth, Work::Fixed),
         "push_str" | "extend" | "extend_from_slice" | "append" => {
@@ -787,7 +794,7 @@ pub(crate) fn summary(
         _ => None,
     };
     let empty_operand = match name.as_str() {
-        "push_str" | "extend" | "extend_from_slice" => Some(1),
+        "push_str" | "write_str" | "extend" | "extend_from_slice" => Some(1),
         _ => None,
     };
     Some(Summary {

@@ -152,6 +152,27 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if self.constant(expression, &mut Vec::new()) {
             return;
         }
+        if summary.work == external::Work::TextCharacter {
+            let Some(character) = operands.get(1) else {
+                self.work_report(expression, expression.span, Shape::Unknown, None, name);
+                return;
+            };
+            if self.constant(character, &mut Vec::new()) {
+                return;
+            }
+            let paid = match self.utf8_char_term(character) {
+                Some(term) => self.take_credit_for_keys(&term.factors),
+                None => None,
+            };
+            self.work_report(
+                expression,
+                expression.span,
+                Shape::Dynamic,
+                paid,
+                name,
+            );
+            return;
+        }
         if let external::Work::Arguments(indices) = summary.work {
             let mut complete = true;
             for index in indices {
@@ -160,8 +181,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     complete = false;
                     continue;
                 };
-                let shape = if self.constant(operand, &mut Vec::new()) || self.bounded_work(operand)
-                {
+                let shape = if self.constant(operand, &mut Vec::new()) || self.bounded_work(operand) {
                     Shape::Fixed
                 } else {
                     types::work(self.tcx, self.expr_ty(operand), &mut Vec::new())
@@ -473,6 +493,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
             external::Work::Argument(index) => operands.get(index).copied().unwrap_or(receiver),
             _ => receiver,
         };
+        let string_extension = name == "extend"
+            && operands
+                .first()
+                .is_some_and(|receiver| types::standard_string(self.tcx, self.expr_ty(receiver)));
         let shape = if name == "count" {
             Shape::Unknown
         } else if consumers {
@@ -480,6 +504,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
         } else {
             if self.constant(extent, &mut Vec::new()) || self.bounded_work(extent) {
                 Shape::Fixed
+            } else if string_extension {
+                self.iteration(extent, &mut Vec::new())
             } else {
                 types::work(self.tcx, self.expr_ty(extent), &mut Vec::new())
             }
