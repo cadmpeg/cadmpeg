@@ -154,6 +154,29 @@ pub fn fixed_constant_range() {
     }
 }
 
+pub fn standard_inclusive_end_is_fixed(_ctx: &DecodeContext, start: u32, end: u32) {
+    let range = std::ops::RangeInclusive::new(start, end);
+    std::hint::black_box(range.end());
+}
+
+pub trait CustomRangeEnd {
+    fn end(&self, capacity: usize) -> Vec<u8>;
+}
+
+struct AllocatingCustomRangeEnd;
+
+impl CustomRangeEnd for AllocatingCustomRangeEnd {
+    fn end(&self, capacity: usize) -> Vec<u8> {
+        Vec::with_capacity(capacity)
+    }
+}
+
+pub fn custom_allocating_end_remains_unproven(_ctx: &DecodeContext, capacity: usize) {
+    let source = AllocatingCustomRangeEnd;
+    let source: &dyn CustomRangeEnd = &source;
+    std::hint::black_box(source.end(capacity)); // finding: unproven_decode_charge
+}
+
 pub fn exact_manual_receipt(ctx: &DecodeContext, count: u32) -> Result<(), ()> {
     ctx.charge_work(u64::from(count), "range")?;
     for value in 0u32..count {
@@ -208,5 +231,81 @@ pub fn wrong_inclusive_bound(ctx: &DecodeContext, count: u32) -> Result<(), ()> 
         // finding: uncharged_decode_work
         std::hint::black_box(value);
     }
+    Ok(())
+}
+
+const SIGNED_NEGATIVE: i32 = -1;
+
+struct SignedBounds;
+
+impl SignedBounds {
+    const NEGATIVE: i32 = -1;
+    const POSITIVE: i32 = 3;
+}
+
+#[cfg(target_pointer_width = "64")]
+pub fn negative_associated_count_cannot_shrink_widened_visits(
+    ctx: &DecodeContext,
+    input: &[u8],
+) -> Result<(), ()> {
+    let work = 4_294_967_295u64
+        .checked_mul(input.len() as u64)
+        .ok_or_else(|| ())?;
+    ctx.charge_work(work, "signed associated count")?;
+    for _ in 0..SignedBounds::NEGATIVE as usize {
+        for value in input {
+            // finding: uncharged_decode_work
+            std::hint::black_box(value);
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_pointer_width = "64")]
+pub fn negative_named_count_cannot_shrink_widened_visits(
+    ctx: &DecodeContext,
+    input: &[u8],
+) -> Result<(), ()> {
+    let work = 4_294_967_295u64
+        .checked_mul(input.len() as u64)
+        .ok_or_else(|| ())?;
+    ctx.charge_work(work, "signed named count")?;
+    for _ in 0..SIGNED_NEGATIVE as usize {
+        for value in input {
+            // finding: uncharged_decode_work
+            std::hint::black_box(value);
+        }
+    }
+    Ok(())
+}
+
+pub fn positive_associated_count_preserves_exact_visits(
+    ctx: &DecodeContext,
+    input: &[u8],
+) -> Result<(), ()> {
+    let work = 3u64.checked_mul(input.len() as u64).ok_or_else(|| ())?;
+    ctx.charge_work(work, "positive associated count")?;
+    for _ in 0..SignedBounds::POSITIVE as usize {
+        for value in input {
+            std::hint::black_box(value);
+        }
+    }
+    Ok(())
+}
+
+pub fn vector_range_adapter_requires_visits(_ctx: &DecodeContext, end: usize) {
+    let mut visits = Vec::<()>::new();
+    visits.extend((0..end).map(|_| ())); // finding: uncharged_decode_work
+    std::hint::black_box(visits);
+}
+
+pub fn vector_admitted_range_adapter_keeps_visits(
+    ctx: &DecodeContext,
+    end: usize,
+) -> Result<(), ()> {
+    let source = ctx.admit_iter(0..end, "vector range traversal")?;
+    let mut visits = Vec::<()>::new();
+    visits.extend(source.map(|_| ()));
+    std::hint::black_box(visits);
     Ok(())
 }

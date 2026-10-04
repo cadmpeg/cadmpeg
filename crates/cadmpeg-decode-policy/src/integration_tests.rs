@@ -199,6 +199,7 @@ fn check_fixture(name: &str) {
             | "reader_callbacks"
             | "unicode_case"
             | "work_integer_ranges"
+            | "bounded_slices"
     ) {
         command.env("CADMPEG_POLICY_CRATE_NAME", "cadmpeg_core");
     }
@@ -294,7 +295,8 @@ fn check_fixture(name: &str) {
             )
             && (if matches!(
                 name,
-                "edges"
+                "bounded_slices"
+                    | "edges"
                     | "reachability"
                     | "indirect"
                     | "addresses"
@@ -564,6 +566,11 @@ fn constant_width_subslices() {
 #[test]
 fn charged_raw_steps() {
     check_fixture("raw_steps");
+}
+
+#[test]
+fn bounded_slice_copies_require_a_dominating_guard_and_exact_reserve() {
+    check_fixture("bounded_slices");
 }
 
 #[test]

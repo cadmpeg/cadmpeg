@@ -108,6 +108,15 @@ impl<'tcx> Analysis<'_, 'tcx> {
             return;
         }
         let name = name.as_str();
+        if self.bounded_slice_copy(expression) {
+            return;
+        }
+        if let Some(source) = self.copied_slice_source(expression) {
+            let shape = self.iteration(source, &mut Vec::new());
+            let paid = self.take_credit(&[source]);
+            self.work_report(expression, expression.span, shape, paid, name);
+            return;
+        }
         if self.key_work_paid(&operands, name)
             || self.move_work_paid(definition, &operands, name)
             || self.core_iterator_next(expression)
@@ -164,13 +173,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 Some(term) => self.take_credit_for_keys(&term.factors),
                 None => None,
             };
-            self.work_report(
-                expression,
-                expression.span,
-                Shape::Dynamic,
-                paid,
-                name,
-            );
+            self.work_report(expression, expression.span, Shape::Dynamic, paid, name);
             return;
         }
         if let external::Work::Arguments(indices) = summary.work {
@@ -181,7 +184,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     complete = false;
                     continue;
                 };
-                let shape = if self.constant(operand, &mut Vec::new()) || self.bounded_work(operand) {
+                let shape = if self.constant(operand, &mut Vec::new()) || self.bounded_work(operand)
+                {
                     Shape::Fixed
                 } else {
                     types::work(self.tcx, self.expr_ty(operand), &mut Vec::new())
@@ -493,10 +497,12 @@ impl<'tcx> Analysis<'_, 'tcx> {
             external::Work::Argument(index) => operands.get(index).copied().unwrap_or(receiver),
             _ => receiver,
         };
-        let string_extension = name == "extend"
-            && operands
-                .first()
-                .is_some_and(|receiver| types::standard_string(self.tcx, self.expr_ty(receiver)));
+        let iterator_extension = name == "extend"
+            && operands.first().is_some_and(|receiver| {
+                let receiver_type = self.expr_ty(receiver);
+                types::standard_string(self.tcx, receiver_type)
+                    || types::standard_vector(self.tcx, receiver_type)
+            });
         let shape = if name == "count" {
             Shape::Unknown
         } else if consumers {
@@ -504,7 +510,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         } else {
             if self.constant(extent, &mut Vec::new()) || self.bounded_work(extent) {
                 Shape::Fixed
-            } else if string_extension {
+            } else if iterator_extension {
                 self.iteration(extent, &mut Vec::new())
             } else {
                 types::work(self.tcx, self.expr_ty(extent), &mut Vec::new())
