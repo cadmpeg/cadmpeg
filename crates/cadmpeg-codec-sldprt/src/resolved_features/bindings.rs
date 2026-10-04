@@ -374,7 +374,7 @@ pub(crate) fn bind_pattern_inputs(
                             Ord::cmp,
                             "sort SLDPRT pattern input seeds",
                         )?;
-                        seeds.dedup();
+                        ctx.dedup_vec(&mut seeds, "deduplicate SLDPRT pattern input seeds")?;
                         if let [seed] = seeds.as_slice() {
                             let seed = copy_feature_binding_id(ctx, seed)?;
                             push_feature_binding_candidate(
@@ -1823,7 +1823,7 @@ pub(super) fn spatial_relation_manager_ranges_charged(
         Ord::cmp,
         "sort SLDPRT spatial relation ranges",
     )?;
-    ranges.dedup();
+    ctx.dedup_vec(&mut ranges, "deduplicate SLDPRT spatial relation ranges")?;
     Ok(ranges)
 }
 

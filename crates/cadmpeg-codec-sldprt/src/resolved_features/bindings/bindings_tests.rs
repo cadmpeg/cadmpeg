@@ -534,6 +534,26 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
         },
     ];
 
+    let mut duplicate_lane = lane.clone();
+    let mut duplicate = duplicate_lane.generated_surface_identities[0].clone();
+    duplicate.id = "identity-duplicate".into();
+    duplicate.ordinal = 1;
+    duplicate.offset = 170;
+    duplicate_lane.generated_surface_identities.push(duplicate);
+    let deduplicate = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let mut candidates = features.clone();
+        crate::resolved_features::bindings::bind_pattern_inputs(ctx, &mut candidates,
+            std::slice::from_ref(&history), std::slice::from_ref(&duplicate_lane))
+            .map(|()| candidates)
+    };
+    let admitted_duplicates = deduplicate(&cadmpeg_test_support::service_decode_context()).unwrap();
+    assert_eq!(admitted_duplicates[0].dependencies.as_slice(),
+        &[FeatureId::mint("synthetic:test:id#seed").expect("identity grammar")]);
+    assert!(matches!(admitted_duplicates[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. })
+            if seeds == &[PatternSeed::Feature(FeatureId::mint("synthetic:test:id#seed").expect("identity grammar"))]));
+    crate::test_support::work_refusal_at("deduplicate SLDPRT pattern input seeds", deduplicate);
+
     bind_pattern_inputs_test(
         &mut features,
         std::slice::from_ref(&history),
@@ -970,4 +990,26 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         .sketch_entities
         .iter()
         .all(|entity| entity.feature_ref.is_none()));
+}
+
+#[test]
+fn spatial_range_deduplication_preserves_ranges_and_refusal() {
+    let lane = FeatureInputLane {
+        id: "lane".into(), configuration: None, native_payload: Vec::new(),
+        classes: [(10, "moRelMgr_c"), (20, "sg3DPlaneHandle"), (30, "sg3DPlaneHandle"), (40, "suObList")]
+            .into_iter().enumerate().map(|(ordinal, (offset, name))| crate::records::FeatureInputClass {
+                id: format!("class-{ordinal}"), parent: "lane".into(), ordinal: u32::try_from(ordinal).unwrap(),
+                offset, name: name.into(),
+            }).collect(),
+        names: Vec::new(), scalars: Vec::new(), relation_bindings: Vec::new(),
+        relation_instances: Vec::new(), body_selections: Vec::new(), edge_selections: Vec::new(),
+        surface_selections: Vec::new(), generated_surface_identities: Vec::new(),
+        references: Vec::new(), sketch_entities: Vec::new(),
+    };
+    assert_eq!(super::spatial_relation_manager_ranges_charged(
+        &cadmpeg_test_support::service_decode_context(), &lane,
+    ).unwrap(), [(10, 40)]);
+    crate::test_support::work_refusal_at("deduplicate SLDPRT spatial relation ranges", |ctx| {
+        super::spatial_relation_manager_ranges_charged(ctx, &lane)
+    });
 }

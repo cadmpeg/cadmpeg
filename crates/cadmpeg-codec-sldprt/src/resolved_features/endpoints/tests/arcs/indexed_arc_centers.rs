@@ -69,6 +69,9 @@ fn indexed_arcs_use_one_equidistant_center_marker() {
         .iter()
         .chain(std::iter::once(&curve))
         .collect::<Vec<_>>();
+    crate::test_support::work_refusal_at("deduplicate SLDPRT endpoint centers", |ctx| {
+        coordinate_roster_arc_center(ctx, &payload, &curve, &markers, [&coordinates[8], &coordinates[10]])
+    });
     assert_eq!(
         coordinate_roster_arc_center(
             &cadmpeg_test_support::service_decode_context(),
@@ -231,6 +234,9 @@ fn compact_legacy_bounded_arc_uses_its_diameter_center_marker() {
     let off_axis = marker("handle", 4, SketchInputKind::Point, Some([0.0, 2.0]));
     let markers = [&start, &center, &end, &off_axis];
 
+    crate::test_support::work_refusal_at("deduplicate SLDPRT endpoint centers", |ctx| {
+        legacy_compact_diameter_arc_center(ctx, &payload, &curve, &markers, [&start, &end])
+    });
     assert_eq!(
         legacy_compact_diameter_arc_center(
             &cadmpeg_test_support::service_decode_context(),

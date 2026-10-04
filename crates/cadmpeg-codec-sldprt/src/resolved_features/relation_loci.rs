@@ -3474,7 +3474,7 @@ fn dynamic_line_operand_candidates(
     ctx.truncate_vec(&mut entities, write, OPERATION)?;
     if entities.len() > 1 {
         ctx.sort_unstable_by(&mut entities, |value| value, Ord::cmp, OPERATION)?;
-        entities.dedup();
+        ctx.dedup_vec(&mut entities, "deduplicate SLDPRT marker entities")?;
     }
     Ok(entities)
 }
@@ -3734,7 +3734,7 @@ fn dynamic_marker_line_candidates(
         }
     }
     ctx.sort_unstable_by(&mut candidates, |value| value, Ord::cmp, OPERATION)?;
-    candidates.dedup();
+    ctx.dedup_vec(&mut candidates, "deduplicate SLDPRT marker line candidates")?;
     Ok(candidates)
 }
 
@@ -5012,7 +5012,7 @@ pub(super) fn single_marker_line_entity(
         Ord::cmp,
         "sort SLDPRT single marker line entities",
     )?;
-    entities.dedup();
+    ctx.dedup_vec(&mut entities, "deduplicate SLDPRT marker entities")?;
     if entities.len() == 1 {
         return Ok(entities.into_iter().next());
     }
@@ -5348,7 +5348,7 @@ fn sort_profile_loci(
         |left, right| locus_key(left).cmp(&locus_key(right)),
         operation,
     )?;
-    loci.dedup();
+    ctx.dedup_vec(loci, "deduplicate SLDPRT profile loci")?;
     Ok(())
 }
 

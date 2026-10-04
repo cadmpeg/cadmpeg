@@ -49,3 +49,22 @@ fn surface_candidate_drain_propagates_scoped_refusal() {
             && limit.operation == "drain SLDPRT surface selection candidates"));
     }
 }
+
+#[test]
+fn cylinder_marker_reference_cost_counts_offset_tag_and_components() {
+    use cadmpeg_core::decode::cost::DecodeCost;
+    use crate::records::FeatureInputComponentPathEntry;
+    use crate::resolved_features::selections::CylinderMarkerReference;
+    let marker_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>());
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert_eq!(CylinderMarkerReference(7, None).decode_cost(&ctx, "SLDPRT marker reference cost").unwrap(), marker_bytes + 1);
+    let reference = CylinderMarkerReference(7, Some(vec![
+        FeatureInputComponentPathEntry { instance: None, type_signature: [0; 12], local_id: None },
+        FeatureInputComponentPathEntry { instance: Some(2), type_signature: [1; 12], local_id: Some(7) },
+    ]));
+    // Offset width, option tag, and components with fourteen and twenty bytes.
+    assert_eq!(reference.decode_cost(&ctx, "SLDPRT marker reference cost").unwrap(), marker_bytes + 35);
+    crate::test_support::work_refusal_at("SLDPRT marker reference cost", |ctx| {
+        reference.decode_cost(ctx, "SLDPRT marker reference cost")
+    });
+}

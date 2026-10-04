@@ -1900,7 +1900,7 @@ fn sort_axis_relation_point_loci(
         |left, right| locus_key(left).cmp(&locus_key(right)),
         OPERATION,
     )?;
-    loci.dedup();
+    ctx.dedup_vec(loci, "deduplicate SLDPRT axis relation point loci")?;
     Ok(())
 }
 

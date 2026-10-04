@@ -1433,6 +1433,10 @@ fn revolution_consumes_the_preceding_profile_object() {
         feature.source_id = None;
         feature.properties.clear();
     }
+    crate::test_support::work_refusal_at("deduplicate SLDPRT revolution profile sources", |ctx| {
+        let mut candidates = histories.clone();
+        super::enrich_history_revolution_inputs(ctx, &mut candidates, std::slice::from_ref(&lane))
+    });
     enrich_history_revolution_inputs_test(&mut histories, &[lane]);
     assert_eq!(
         histories[0].features[1].properties.get("Profile"),
