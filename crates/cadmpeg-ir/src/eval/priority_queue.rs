@@ -31,6 +31,8 @@ impl<'ctx, 'arena, T: Ord> PriorityQueue<'ctx, 'arena, T> {
         self.values.push(value);
         let mut index = self.values.len() - 1;
         while index > 0 {
+            self.context
+                .charge_work_limit(1, "IR priority queue traversal")?;
             let parent = (index - 1) / 2;
             self.context
                 .charge_work_limit(1, "IR priority queue comparison")?;
@@ -91,6 +93,8 @@ impl<'ctx, 'arena, T: Ord> PriorityQueue<'ctx, 'arena, T> {
     fn restore_root(&mut self) -> Result<(), ResourceLimit> {
         let mut index = 0usize;
         while let Some(left) = index.checked_mul(2).and_then(|index| index.checked_add(1)) {
+            self.context
+                .charge_work_limit(1, "IR priority queue traversal")?;
             if left >= self.values.len() {
                 break;
             }
@@ -181,19 +185,20 @@ mod tests {
 
     #[test]
     fn priority_queue_returns_comparison_and_removal_refusals_unchanged() {
-        for cap in [2, 6] {
+        // Caps count appends, heap traversal, comparisons, swaps and removal.
+        for cap in [3, 8] {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let arena = DecodeArena::new();
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             let mut queue = PriorityQueue::new(&ctx).expect("empty queue");
             queue.push(1_u32).expect("one append unit");
-            let limit = if cap == 2 {
-                queue.push(2).expect_err("comparison needs a third unit")
+            let limit = if cap == 3 {
+                queue.push(2).expect_err("comparison needs a fourth unit")
             } else {
                 queue
                     .push(2)
-                    .expect("append, comparison and two moved rows");
+                    .expect("append, traversal, comparison and two moved rows");
                 queue
                     .pop()
                     .expect_err("root replacement needs two more units")
@@ -201,7 +206,7 @@ mod tests {
             assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
             assert_eq!(
                 limit.operation,
-                if cap == 2 {
+                if cap == 3 {
                     "IR priority queue comparison"
                 } else {
                     "IR priority queue root replacement"
