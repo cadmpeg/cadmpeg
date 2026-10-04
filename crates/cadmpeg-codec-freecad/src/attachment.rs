@@ -129,21 +129,25 @@ pub(crate) fn transfer(
 ) -> Result<Vec<AttachmentRecord>, CodecError> {
     let mut owner_storage = ctx.reserve_scoped(0, "FreeCAD attachment owner storage")?;
     let mut by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
-    for property in properties {
+    for property in ctx.admit_iter(properties, "FreeCAD attachment properties")? {
         let owner = property.owner.as_str();
-        if !by_owner.contains_key(owner) {
-            owner_storage.with_storage(|| {
-                ctx.reserve_map(&mut by_owner, 1, "FreeCAD attachment owner lookup")
-            })?;
-        }
-        let owned = by_owner.entry(owner).or_default();
-        owner_storage
-            .with_storage(|| ctx.reserve_vec(owned, 1, "FreeCAD attachment owner properties"))?;
-        owned.push(property);
+        owner_storage.with_storage(|| {
+            ctx.push_hash_group(
+                &mut by_owner,
+                owner,
+                property,
+                "FreeCAD attachment owner lookup",
+                "FreeCAD attachment owner properties",
+            )
+        })?;
     }
     let mut records = Vec::new();
-    for object in objects {
-        let Some(owned) = by_owner.get(object.id().as_str()) else {
+    for object in ctx.admit_iter(objects, "FreeCAD attachment objects")? {
+        let Some(owned) = ctx.get_hash_map(
+            &by_owner,
+            object.id().as_str(),
+            "FreeCAD attachment object properties",
+        )? else {
             continue;
         };
         let support = sole_named_property(ctx, "attachment", owned, "AttachmentSupport")?;
@@ -217,8 +221,7 @@ fn support_links(
         .values()
         .first()
         .is_none_or(|value| value.tag != "LinkSubList")
-        || property.values()[1..]
-            .iter()
+        || ctx.admit_iter(&property.values()[1..], "FreeCAD attachment support values")?
             .any(|value| value.tag != "Link")
     {
         return Err(CodecError::Malformed(ctx.format_retained(
@@ -230,13 +233,15 @@ fn support_links(
         )?));
     }
     let mut links =
-        ctx.collection_vec(property.links().len(), "FreeCAD attachment support links")?;
-    for link in property.links() {
-        links.push(
+        ctx.vector_storage(property.links().len(), "FreeCAD attachment support links")?;
+    for link in ctx.admit_iter(property.links(), "FreeCAD attachment support link visits")? {
+        ctx.push_vec(
+            &mut links,
             link.as_ref()
                 .map(|link| link.clone_with_context(ctx))
                 .transpose()?,
-        );
+            "FreeCAD attachment support links",
+        )?;
     }
     Ok(links)
 }
@@ -278,7 +283,7 @@ fn map_mode_value(
             "FreeCAD attachment missing map-mode index",
         )?));
     };
-    let mode = match index.parse::<usize>() {
+    let mode = match ctx.parse_text::<usize>(index, "FreeCAD attachment map-mode parse")? {
         Ok(index) => MapModeIndex::try_new(index),
         Err(_) => Err(ctx.format_retained(
             format_args!("map_mode {index:?} is not an index"),
