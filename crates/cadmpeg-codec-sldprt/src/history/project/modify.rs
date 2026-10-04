@@ -25,9 +25,8 @@ fn property_text(
     feature: &Feature,
     name: &str,
 ) -> Result<Option<String>, CodecError> {
-    feature
-        .properties
-        .get(name)
+    ctx.get_btree_map(&(feature
+        .properties), name, "look up SLDPRT ordered key")?
         .map(|value| {
             ctx.format_retained(
                 format_args!("{value}"),
@@ -602,17 +601,16 @@ pub(super) fn project_scale(
         Some(_) => None,
     };
     let factor = |name| {
-        feature
-            .parameters
-            .get(name)
+        Ok::<_, cadmpeg_core::CodecError>(ctx.get_btree_map(&(feature
+            .parameters), name, "look up SLDPRT ordered key")?
             .and_then(|value| value.trim().parse::<f64>().ok())
-            .and_then(cadmpeg_ir::scalar::NonZeroReal::new)
+            .and_then(cadmpeg_ir::scalar::NonZeroReal::new))
     };
     let factors = match (
-        factor("Factor"),
-        factor("ScaleX"),
-        factor("ScaleY"),
-        factor("ScaleZ"),
+        factor("Factor")?,
+        factor("ScaleX")?,
+        factor("ScaleY")?,
+        factor("ScaleZ")?,
     ) {
         (Some(uniform), None, None, None) => ScaleFactors::Uniform { factor: uniform },
         (None, Some(x), Some(y), Some(z)) => ScaleFactors::PerAxis { factors: [x, y, z] },
@@ -631,16 +629,13 @@ pub(super) fn project_chamfer(
     feature: &Feature,
 ) -> Result<FeatureDefinition, CodecError> {
     let length = |name, positional| {
-        feature
-            .parameters
-            .get(name)
-            .and_then(|value| parse_positive_length_mm(value))
-            .or_else(|| {
-                feature
-                    .parameters
-                    .get(positional)
-                    .and_then(|value| parse_positive_dimension_length_mm(value))
-            })
+        let value = ctx.get_btree_map(&feature.parameters, name, "look up SLDPRT ordered key")?
+            .and_then(|value| parse_positive_length_mm(value));
+        match value {
+            Some(value) => Ok::<_, CodecError>(Some(value)),
+            None => Ok(ctx.get_btree_map(&feature.parameters, positional, "look up SLDPRT ordered key")?
+                .and_then(|value| parse_positive_dimension_length_mm(value))),
+        }
     };
     let positional_angle = feature
         .parameters
@@ -650,14 +645,14 @@ pub(super) fn project_chamfer(
         cadmpeg_core::decode::u64_from_index(feature.content.len()),
         "scan SLDPRT chamfer dimension order",
     )?;
-    let mut ordered_dimensions = feature.content.iter().filter_map(|content| match content {
-        FeatureContent::Dimension(name) => feature.parameters.get(name.as_str()),
+    let mut ordered_dimensions = feature.content.iter().map(|content| Ok::<_, CodecError>(match content {
+        FeatureContent::Dimension(name) => ctx.get_btree_map(&(feature.parameters), name.as_str(), "look up SLDPRT ordered key")?,
         FeatureContent::Feature(_) | FeatureContent::Text(_) => None,
-    });
+    })).filter_map(Result::transpose);
     let ordered_dimensions = (
-        ordered_dimensions.next(),
-        ordered_dimensions.next(),
-        ordered_dimensions.next(),
+        ordered_dimensions.next().transpose()?,
+        ordered_dimensions.next().transpose()?,
+        ordered_dimensions.next().transpose()?,
     );
     let ordered_spec = || match ordered_dimensions {
         (Some(distance), None, None) => Some(ChamferSpec::Distance {
@@ -682,23 +677,23 @@ pub(super) fn project_chamfer(
         _ => None,
     };
     let spec = (|| {
-        Some(
+        Ok::<_, cadmpeg_core::CodecError>(Some(
             if let Some(value) = feature.parameters.get("Angle").or(positional_angle) {
                 ChamferSpec::DistanceAngle {
-                    distance: length("Distance", "D1")?,
-                    angle: parse_bounded_angle_rad(value)?,
+                    distance: match length("Distance", "D1")? { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) },
+                    angle: match parse_bounded_angle_rad(value) { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) },
                 }
             } else if let (Some(first), Some(second)) =
-                (length("Distance1", "D1"), length("Distance2", "D2"))
+                (length("Distance1", "D1")?, length("Distance2", "D2")?)
             {
                 ChamferSpec::TwoDistances { first, second }
             } else {
                 ChamferSpec::Distance {
-                    distance: length("Distance", "D1")?,
+                    distance: match length("Distance", "D1")? { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) },
                 }
             },
-        )
-    })()
+        ))
+    })()?
     .or_else(ordered_spec)
     .unwrap_or_else(|| {
         if feature.parameters.contains_key("Angle") {

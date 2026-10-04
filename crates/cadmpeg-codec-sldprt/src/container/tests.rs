@@ -462,7 +462,7 @@ fn parasolid_partition_selection_uses_the_namespaced_manifest_active_id() {
         container::active_configuration_name_ref(&scan),
         Some("Second")
     );
-    assert_eq!(container::active_configuration_index(&scan), Some(1));
+    assert_eq!(container::active_configuration_index(&cadmpeg_test_support::service_decode_context(), &scan).unwrap(), Some(1));
     let site = container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &scan).unwrap().expect("manifest selects a site");
     assert_eq!(site.name(), "Contents/Config-1-Partition");
 }
@@ -478,7 +478,7 @@ fn parasolid_partition_selection_accepts_utf16_manifest_payloads() {
     source.extend(make_block(0x43, "Contents/Features", &payload));
     let scan = crate::test_support::container::scan(&source);
 
-    assert_eq!(container::active_configuration_index(&scan), Some(1));
+    assert_eq!(container::active_configuration_index(&cadmpeg_test_support::service_decode_context(), &scan).unwrap(), Some(1));
     let site = container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &scan).unwrap().expect("UTF-16 manifest");
     assert_eq!(site.name(), "Contents/Config-1-Partition");
 }
@@ -498,7 +498,7 @@ fn explicit_source_index_precedes_the_manifest_partition_id() {
     ));
     let scan = crate::test_support::container::scan(&source);
 
-    assert_eq!(container::active_configuration_index(&scan), Some(0));
+    assert_eq!(container::active_configuration_index(&cadmpeg_test_support::service_decode_context(), &scan).unwrap(), Some(0));
     let site = container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &scan).unwrap().expect("explicit source index");
     assert_eq!(site.name(), "Contents/Config-0-Partition");
 }
@@ -513,7 +513,7 @@ fn non_unique_manifest_activity_does_not_select_one_of_multiple_partitions() {
         source.extend(make_block(0x43, "Contents/Features", manifest));
         let scan = crate::test_support::container::scan(&source);
         assert_eq!(container::manifest_active_configuration(&scan), None);
-        assert_eq!(container::active_configuration_index(&scan), None);
+        assert_eq!(container::active_configuration_index(&cadmpeg_test_support::service_decode_context(), &scan).unwrap(), None);
         assert!(container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &scan).unwrap().is_none());
     }
 }
@@ -529,7 +529,7 @@ fn manifest_activity_is_read_only_from_the_features_stream() {
     let scan = crate::test_support::container::scan(&source);
 
     assert_eq!(container::manifest_active_configuration(&scan), None);
-    assert_eq!(container::active_configuration_index(&scan), None);
+    assert_eq!(container::active_configuration_index(&cadmpeg_test_support::service_decode_context(), &scan).unwrap(), None);
     assert!(container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &scan).unwrap().is_none());
 }
 

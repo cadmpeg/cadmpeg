@@ -75,9 +75,8 @@ pub(crate) fn project_parameters(
             {
                 let expression = &feature.parameters[name.as_str()];
                 let display = dimension_display(ctx, expression)?;
-                let properties = feature
-                    .dimension_properties
-                    .get(&name)
+                let properties = ctx.get_btree_map(&(feature
+                    .dimension_properties), &name, "look up SLDPRT ordered key")?
                     .map(|properties| {
                         copy_projected_feature_properties(
                             ctx,

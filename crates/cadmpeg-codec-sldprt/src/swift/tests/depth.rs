@@ -70,7 +70,7 @@ fn swift_measurement_depth_refuses_instead_of_missing_child() {
         .collect::<BTreeMap<_, _>>();
     let ctx = cadmpeg_test_support::service_decode_context();
     assert!(
-        matches!(crate::swift::measurement_for_feature(&ctx, "F0", &index, &mut BTreeSet::new(), 0, |_| None), Err(CodecError::ResourceLimit(limit)) if limit.operation == "measure SWIFT feature geometry")
+        matches!(crate::swift::measurement_for_feature(&ctx, "F0", &index, &mut BTreeSet::new(), 0, |_| Ok(None)), Err(CodecError::ResourceLimit(limit)) if limit.operation == "measure SWIFT feature geometry")
     );
 }
 
@@ -136,4 +136,40 @@ fn swift_cycles_remain_absent_and_pattern_leaves_are_visited() {
         .unwrap()
     );
     assert_eq!(visits, ["leaf"]);
+}
+
+#[test]
+fn swift_missing_vector_component_does_not_hide_later_lookup_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let mut geometry = entity("GeoCylinder");
+    geometry.doubles.insert("Other".into(), 0.0);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 11;
+    // One one-byte key admits eleven comparisons before the next component refuses.
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = crate::swift::vector(&ctx, &geometry, ["I", "J", "K"]).unwrap_err();
+    let CodecError::ResourceLimit(limit) = error else { panic!("expected work refusal"); };
+    assert_eq!(limit.operation, "look up SLDPRT ordered key");
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+}
+
+#[test]
+fn swift_missing_nominal_field_preserves_lookup_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let mut feature = entity("GdtCylinder");
+    let mut geometry = entity("GeoCylinder");
+    geometry.doubles.insert("Other".into(), 0.0);
+    feature.related.push(RelatedObject {
+        name: "NomCylinder".into(), class: "GeoCylinder".into(),
+        entity: geometry,
+    });
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = crate::swift::nominal_measurement(&ctx, &feature, "NomCylinder", "R").unwrap_err();
+    let CodecError::ResourceLimit(limit) = error else { panic!("expected work refusal"); };
+    assert_eq!(limit.operation, "look up SLDPRT ordered key");
+    assert_eq!(ctx.resource_refusal(), Some(limit));
 }

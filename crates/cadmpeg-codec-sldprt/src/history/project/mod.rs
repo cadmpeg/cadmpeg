@@ -1299,19 +1299,16 @@ pub(crate) fn incomplete_history_reference_features(
                 FeatureContent::Dimension(name) => !feature.parameters.contains_key(name.as_str()),
                 FeatureContent::Text(_) => false,
             });
-            let unresolved_dependency = ctx.admit_iter(&FEATURE_REFERENCE_PROPERTIES[..], "scan SLDPRT incomplete_history_reference_features values")?
-                .filter_map(|name| feature.properties.get(*name))
-                .flat_map(|value| {
-                    value.split(|character: char| {
-                        character == ',' || character == ';' || character.is_whitespace()
-                    })
-                })
-                .filter(|reference| !reference.is_empty()).try_fold(false, |found, reference| { Ok::<_, cadmpeg_core::CodecError>(found || ( {
-                    FeatureSource::try_from(reference)
+            let mut unresolved_dependency = false;
+            for name in ctx.admit_iter(FEATURE_REFERENCE_PROPERTIES, "scan SLDPRT incomplete_history_reference_features values")? {
+                let Some(value) = ctx.get_btree_map(&feature.properties, *name, "look up SLDPRT ordered key")? else { continue; };
+                for reference in value.split(|character: char| character == ',' || character == ';' || character.is_whitespace()).filter(|reference| !reference.is_empty()) {
+                    unresolved_dependency = unresolved_dependency || (FeatureSource::try_from(reference)
                         .ok().map(|reference| {Ok::<_, cadmpeg_core::CodecError>(ctx.get_hash_map(&(sources), &reference, "look up SLDPRT hash key")?)}).transpose()?.flatten()
                         .and_then(Option::as_ref)
-                        .is_none_or(|binding| binding.neutral == owner_id)
-                } )) })?;
+                        .is_none_or(|binding| binding.neutral == owner_id));
+                }
+            }
             if duplicate_source
                 || (parent_requested && !parent_resolved)
                 || incomplete_content
@@ -1412,7 +1409,7 @@ fn project_feature_dependencies(
     let owner = neutral_feature_id_charged(ctx, &feature.id)?;
     let mut dependencies = cadmpeg_ir::features::DistinctMembers::default();
     for property in FEATURE_REFERENCE_PROPERTIES {
-        let Some(value) = feature.properties.get(*property) else {
+        let Some(value) = ctx.get_btree_map(&(feature.properties), *property, "look up SLDPRT ordered key")? else {
             continue;
         };
         charge_projected_text_work(ctx, value, "scan SLDPRT feature dependencies")?;

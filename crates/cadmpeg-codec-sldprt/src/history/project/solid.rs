@@ -91,24 +91,22 @@ pub(super) fn project_extrude(
         parse_positive_length_mm(sole).or_else(|| parse_positive_dimension_length_mm(sole))
     };
     let legacy_length = || {
-        source_depth
-            .and_then(|name| feature.parameters.get(name))
+        Ok::<_, cadmpeg_core::CodecError>(source_depth.map(|name| {Ok::<_, cadmpeg_core::CodecError>(ctx.get_btree_map(&(feature.parameters), name, "look up SLDPRT ordered key")?)}).transpose()?.flatten()
             .and_then(|value| {
                 parse_positive_length_mm(value)
                     .or_else(|| parse_positive_dimension_length_mm(value))
-            })
+            }))
     };
     let length = |name| {
-        feature
-            .parameters
-            .get(name)
+        Ok::<_, cadmpeg_core::CodecError>(ctx.get_btree_map(&(feature
+            .parameters), name, "look up SLDPRT ordered key")?
             .and_then(|value| parse_positive_length_mm(value))
             .or_else(|| {
                 (name == "Depth")
                     .then(|| feature.parameters.get("D1"))
                     .flatten()
                     .and_then(|value| parse_positive_dimension_length_mm(value))
-            })
+            }))
     };
     let draft = match feature.parameters.get("Draft") {
         Some(value) => {
@@ -132,8 +130,8 @@ pub(super) fn project_extrude(
         {
             one_sided(LinearTermination::Unresolved {})
         }
-        None | Some("Blind") => match length("Depth")
-            .or_else(|| legacy_history_extrusion.then(legacy_length).flatten())
+        None | Some("Blind") => match length("Depth")?
+            .map(|value| Ok::<_, CodecError>(Some(value))).unwrap_or_else(|| if legacy_history_extrusion { legacy_length() } else { Ok(None) })?
             .or_else(sole_length)
         {
             Some(length) => one_sided(LinearTermination::Blind {
@@ -141,7 +139,7 @@ pub(super) fn project_extrude(
             }),
             None => one_sided(LinearTermination::Unresolved {}),
         },
-        Some("Symmetric") => match length("Depth").or_else(sole_length) {
+        Some("Symmetric") => match length("Depth")?.or_else(sole_length) {
             Some(length) => ExtrudeExtent::Symmetric {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
@@ -153,7 +151,7 @@ pub(super) fn project_extrude(
             None => one_sided(LinearTermination::Unresolved {}),
         },
         Some("TwoSided") => {
-            let (Some(first), Some(second)) = (length("Depth"), length("Depth2")) else {
+            let (Some(first), Some(second)) = (length("Depth")?, length("Depth2")?) else {
                 return Ok(None);
             };
             ExtrudeExtent::TwoSided {
@@ -201,7 +199,7 @@ pub(super) fn project_extrude(
                     .unwrap_or(VertexSelection::Unresolved),
             })
         }
-        Some("OffsetFromFace") => match length("Depth").or_else(sole_length) {
+        Some("OffsetFromFace") => match length("Depth")?.or_else(sole_length) {
             Some(offset) => {
                 let Some(face) = feature.properties.get("Face") else {
                     return Ok(None);
@@ -591,13 +589,14 @@ pub(super) fn hole_sketch_construction(
     let has_source_dimensions = ctx.admit_iter(&profile.content[..], "scan SLDPRT hole_sketch_construction values")?
         .any(|content| matches!(content, FeatureContent::Dimension(_)));
     let expressions = ctx.admit_iter(&profile.parameters, "scan SLDPRT hole sketch parameters")?
-        .map(|(_, value)| value)
+        .map(|(_, value)| Ok::<_, CodecError>(value))
         .filter(|_| !has_source_dimensions)
-        .chain(ctx.admit_iter(&profile.content, "scan SLDPRT hole sketch dimensions")?.filter_map(|content| match content {
-            FeatureContent::Dimension(name) => profile.parameters.get(name.as_str()),
+        .chain(ctx.admit_iter(&profile.content, "scan SLDPRT hole sketch dimensions")?.map(|content| Ok::<_, CodecError>(match content {
+            FeatureContent::Dimension(name) => ctx.get_btree_map(&(profile.parameters), name.as_str(), "look up SLDPRT ordered key")?,
             FeatureContent::Feature(_) | FeatureContent::Text(_) => None,
-        }));
+        })).filter_map(Result::transpose));
     for expression in expressions {
+        let expression = expression?;
         let dimension = if strip_diameter_modifier(expression).is_some() {
             parse_dimension_display_length(ctx, expression)?
                 .and_then(|value| PositiveLength::try_from(value).ok())

@@ -294,19 +294,19 @@ pub(super) fn project_revolve(
     native_by_source: &HashMap<String, &str>,
 ) -> Result<FeatureDefinition, CodecError> {
     let ordered_angle = |ordinal| -> Result<Option<cadmpeg_ir::scalar::PositiveAngle>, CodecError> {
-        Ok(
-        ctx.admit_iter(&feature.content[..], "scan SLDPRT project_revolve values")?
-            .filter_map(|content| match content {
-                FeatureContent::Dimension(name) => feature.parameters.get(name.as_str()),
-                FeatureContent::Feature(_) | FeatureContent::Text(_) => None,
-            })
-            .filter_map(|value| parse_positive_angle_rad(value))
-            .nth(ordinal))
+        let mut remaining = ordinal;
+        for content in ctx.admit_iter(&feature.content, "scan SLDPRT project_revolve values")? {
+            let FeatureContent::Dimension(name) = content else { continue; };
+            let Some(value) = ctx.get_btree_map(&feature.parameters, name.as_str(), "look up SLDPRT ordered key")? else { continue; };
+            let Some(angle) = parse_positive_angle_rad(value) else { continue; };
+            if remaining == 0 { return Ok(Some(angle)); }
+            remaining -= 1;
+        }
+        Ok(None)
     };
     let angle = |name, ordinal| -> Result<_, CodecError> {
-        let value = feature
-            .parameters
-            .get(name)
+        let value = ctx.get_btree_map(&(feature
+            .parameters), name, "look up SLDPRT ordered key")?
             .or_else(|| match name {
                 "Angle" => feature.parameters.get("D1"),
                 "Angle2" => feature.parameters.get("D2"),

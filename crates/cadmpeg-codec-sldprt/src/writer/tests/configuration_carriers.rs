@@ -501,7 +501,7 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
         .blocks
         .iter()
         .any(|block| { block.section.name() == Some("Contents/Config-1-Partition") }));
-    assert_eq!(container::active_configuration_index(&scan), Some(1));
+    assert_eq!(container::active_configuration_index(&cadmpeg_test_support::service_decode_context(), &scan).unwrap(), Some(1));
     assert_eq!(
         container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &scan).unwrap()
             .unwrap()
@@ -589,7 +589,7 @@ fn semantic_writer_remaps_partition_without_remapping_resolved_features() {
         .blocks
         .iter()
         .any(|block| { block.section.name() == Some("Contents/Config-3-ResolvedFeatures") }));
-    assert_eq!(container::active_configuration_index(&scan), Some(5));
+    assert_eq!(container::active_configuration_index(&cadmpeg_test_support::service_decode_context(), &scan).unwrap(), Some(5));
     assert_eq!(
         container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &scan).unwrap()
             .unwrap()

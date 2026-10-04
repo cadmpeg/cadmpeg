@@ -388,7 +388,7 @@ fn regeneration_order(
             }
             for configuration in &model.configurations {
                 ctx.charge_work(1, "scan SLDPRT configuration feature dependencies")?;
-                if let Some(state) = configuration.feature_states.get(&feature.id) {
+                if let Some(state) = ctx.get_btree_map(&(configuration.feature_states), &feature.id, "look up SLDPRT ordered key")? {
                     for dependency in ctx.admit_iter(state.dependencies.as_slice(), "scan SLDPRT configuration feature dependencies")? {
                         add_regeneration_predecessor(ctx, &mut predecessors, dependency)?;
                     }

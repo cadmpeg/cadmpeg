@@ -108,29 +108,9 @@ fn copy_configuration_state_features(
     states: &BTreeMap<FeatureId, cadmpeg_ir::features::ConfigurationFeatureState>,
 ) -> Result<Vec<cadmpeg_ir::features::Feature>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "retain SLDPRT evaluated configuration features";
-    let key_bytes = ctx.admit_iter(states, OPERATION)?
-        .map(|(key, _)| key)
-        .try_fold(0u64, |bytes, key| {
-            bytes.checked_add(cadmpeg_core::decode::u64_from_index(key.as_str().len()))
-        })
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     let mut copied = Vec::new();
     for feature in ctx.admit_iter(features, "scan SLDPRT copy_configuration_state_features values")? {
-        ctx.charge_work(
-            key_bytes
-                .checked_add(cadmpeg_core::decode::u64_from_index(
-                    feature.id.as_str().len(),
-                ))
-                .and_then(|bytes| bytes.checked_mul(8))
-                .and_then(|work| {
-                    work.checked_add(
-                        cadmpeg_core::decode::u64_from_index(states.len()).checked_mul(64)?,
-                    )
-                })
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-            OPERATION,
-        )?;
-        let Some(state) = states.get(&feature.id) else {
+        let Some(state) = ctx.get_btree_map(&(states), &feature.id, "look up SLDPRT ordered key")? else {
             continue;
         };
         ctx.reserve_vec(&mut copied, 1, OPERATION)?;
@@ -560,8 +540,7 @@ pub(crate) fn project_configuration_supplemental_edge_selections(
         let states = &ir.model.configurations[configuration_index].feature_states;
         let mut features = copy_configuration_features(ctx, &ir.model.features)?;
         for feature in &mut features {
-            charge_configuration_state_lookup(ctx, states, &feature.id)?;
-            let Some(state) = states.get(&feature.id) else {
+            let Some(state) = ctx.get_btree_map(&(states), &feature.id, "look up SLDPRT ordered key")? else {
                 continue;
             };
             apply_configuration_state(ctx, feature, state)?;
@@ -791,18 +770,8 @@ pub(crate) fn project_configuration_sketch_states(
         let result = (|| -> Result<(), cadmpeg_core::CodecError> {
             const OPERATION: &str = "overlay SLDPRT configuration parameter values";
             let values = &ir.model.configurations[configuration_index].parameter_values;
-            let key_bytes = ctx.admit_iter(values, "scan SLDPRT project_configuration_sketch_states map keys")?.map(|(key, _)| key).try_fold(0_usize, |bytes, id| {
-                bytes
-                    .checked_add(id.as_str().len())
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))
-            })?;
             for (index, parameter) in parameters.iter_mut().enumerate() {
-                let work = key_bytes
-                    .checked_add(parameter.id.as_str().len())
-                    .and_then(|bytes| bytes.checked_add(1))
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
-                let Some(value) = values.get(&parameter.id) else {
+                let Some(value) = ctx.get_btree_map(&(values), &parameter.id, "look up SLDPRT ordered key")? else {
                     continue;
                 };
                 let work = saved_values
