@@ -499,13 +499,7 @@ impl SolvedCurveGeometry {
             Self::Nurbs(value) => Self::Nurbs(value.try_clone_for_decode(ctx, operation)?),
             Self::Polyline(value) => Self::Polyline(value.try_clone_for_decode(ctx, operation)?),
             Self::Transformed(value) => {
-                let _depth = ctx.enter_nested(operation)?;
-                charge_decode_copy::<Self>(1, ctx, operation)?;
-                Self::Transformed(PlacedCurve {
-                    basis: Box::new(value.basis.try_clone_for_decode(ctx, operation)?),
-                    transform: value.transform,
-                    depth: value.depth,
-                })
+                Self::Transformed(value.try_clone_for_decode(ctx, operation)?)
             }
             Self::Unknown { record } => Self::Unknown {
                 record: record
@@ -564,6 +558,27 @@ struct PlacedCurveWire {
 }
 
 impl PlacedCurve {
+    // Keep placement recursion out of the carrier match's large stack frame.
+    fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        let _depth = ctx.enter_nested(operation)?;
+        charge_decode_copy::<SolvedCurveGeometry>(1, ctx, operation)?;
+        let basis = if let SolvedCurveGeometry::Transformed(placed) = self.basis.as_ref() {
+            ctx.charge_work(1, operation)?;
+            SolvedCurveGeometry::Transformed(placed.try_clone_for_decode(ctx, operation)?)
+        } else {
+            self.basis.try_clone_for_decode(ctx, operation)?
+        };
+        Ok(Self {
+            basis: Box::new(basis),
+            transform: self.transform,
+            depth: self.depth,
+        })
+    }
+
     /// Place a basis curve, refusing a chain past [`MAX_GEOMETRY_NESTING`].
     ///
     /// # Errors
@@ -6778,6 +6793,19 @@ impl From<PcurveGeometry> for SupportPcurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct DirectedParameterRange([f64; 2]);
+
+impl cadmpeg_core::decode::cost::DecodeCost for DirectedParameterRange {
+    const FIXED_BYTES: Option<u64> =
+        <[f64; 2] as cadmpeg_core::decode::cost::DecodeCost>::FIXED_BYTES;
+
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        self.0.decode_cost(ctx, operation)
+    }
+}
 
 /// Error returned when a directed parameter range cannot be admitted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

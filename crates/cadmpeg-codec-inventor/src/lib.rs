@@ -45,11 +45,15 @@ use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::{report::check::Finding, CadIr};
 
-fn issue_detail(error: CodecError) -> Result<String, CodecError> {
+fn issue_detail(
+    ctx: &DecodeContext<'_>,
+    error: CodecError,
+    operation: &'static str,
+) -> Result<String, CodecError> {
     if matches!(&error, CodecError::ResourceLimit(_)) {
         Err(error)
     } else {
-        Ok(error.to_string())
+        ctx.format_retained(format_args!("{error}"), operation)
     }
 }
 

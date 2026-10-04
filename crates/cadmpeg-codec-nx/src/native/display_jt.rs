@@ -3509,7 +3509,7 @@ pub(super) fn display_jt_tri_strip_lod_headers(
         ctx.reserve_record_vec(&mut headers, 1, 0, "nx JT tri-strip headers")?;
         headers.push(DisplayJtTriStripLodHeader {
             id: ctx.join_retained(
-                &[&element.id, "-tri-strip-header"],
+                &[element.id.as_str(), "-tri-strip-header"],
                 "",
                 "nx JT tri-strip identity",
             )?,
@@ -3578,7 +3578,7 @@ pub(super) fn display_jt_initial_face_degree_symbols(
         ctx.reserve_record_vec(&mut vectors, 1, 0, "nx JT face degree records")?;
         vectors.push(DisplayJtInitialFaceDegreeSymbols {
             id: ctx.join_retained(
-                &[&element.id, "-initial-face-degrees"],
+                &[element.id.as_str(), "-initial-face-degrees"],
                 "",
                 "nx JT face degree identity",
             )?,
@@ -3799,7 +3799,7 @@ pub(super) fn display_jt_topology_packet_sequences(
             ctx.reserve_record_vec(&mut coordinate_headers, 1, 0, "nx JT coordinate headers")?;
             coordinate_headers.push(DisplayJtVertexCoordinateArrayHeader {
                 id: ctx.join_retained(
-                    &[&element.id, "-coordinate-array-header"],
+                    &[element.id.as_str(), "-coordinate-array-header"],
                     "",
                     "nx JT coordinate header identity",
                 )?,
@@ -3822,7 +3822,7 @@ pub(super) fn display_jt_topology_packet_sequences(
         ctx.reserve_record_vec(&mut sequences, 1, 0, "nx JT topology sequences")?;
         sequences.push(DisplayJtTopologyPacketSequence {
             id: ctx.join_retained(
-                &[&element.id, "-topology-packets"],
+                &[element.id.as_str(), "-topology-packets"],
                 "",
                 "nx JT topology sequence identity",
             )?,
@@ -3835,7 +3835,7 @@ pub(super) fn display_jt_topology_packet_sequences(
         ctx.reserve_record_vec(&mut headers, 1, 0, "nx JT vertex headers")?;
         headers.push(DisplayJtCompressedVertexRecordsHeader {
             id: ctx.join_retained(
-                &[&element.id, "-vertex-records-header"],
+                &[element.id.as_str(), "-vertex-records-header"],
                 "",
                 "nx JT vertex header identity",
             )?,
@@ -4120,7 +4120,7 @@ pub(super) fn display_jt_vertex_normals(
         ctx.reserve_record_vec(&mut arrays, 1, 0, "nx JT vertex normals")?;
         arrays.push(DisplayJtVertexNormals {
             id: ctx.join_retained(
-                &[&vertex_header.element, "-vertex-normals"],
+                &[vertex_header.element.as_str(), "-vertex-normals"],
                 "",
                 "nx JT normal identity",
             )?,
@@ -4204,7 +4204,7 @@ pub(super) fn display_jt_vertex_colors(
         ctx.reserve_record_vec(&mut arrays, 1, 0, "nx JT vertex colors")?;
         arrays.push(DisplayJtVertexColors {
             id: ctx.join_retained(
-                &[&vertex_header.element, "-vertex-colors"],
+                &[vertex_header.element.as_str(), "-vertex-colors"],
                 "",
                 "nx JT color identity",
             )?,
@@ -4310,7 +4310,7 @@ pub(super) fn display_jt_vertex_texture_coordinates(
             arrays.push(DisplayJtVertexTextureCoordinates {
                 id: ctx.join_retained(
                     &[
-                        &vertex_header.element,
+                        vertex_header.element.as_str(),
                         "-texture-coordinates-",
                         ["0", "1", "2", "3", "4", "5", "6", "7"][channel],
                     ],
@@ -4441,7 +4441,7 @@ pub(super) fn display_jt_vertex_flags(
         ctx.reserve_record_vec(&mut arrays, 1, 0, "nx JT vertex flags")?;
         arrays.push(DisplayJtVertexFlags {
             id: ctx.join_retained(
-                &[&vertex_header.element, "-vertex-flags"],
+                &[vertex_header.element.as_str(), "-vertex-flags"],
                 "",
                 "nx JT flag identity",
             )?,
