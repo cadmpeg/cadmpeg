@@ -1060,16 +1060,11 @@ fn ensure_rm_color_appearance(
     annotations
         .derived(ctx, id.as_str(), "base_color")
         .map_err(cadmpeg_core::CodecError::from)?;
-    let appearance_bytes = definition.name.len();
     ctx.charge_collection_items(1, "NX RM color appearances")?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(appearance_bytes),
-        "NX RM color appearance",
-    )?;
     ctx.reserve_capacity(&mut ir.model.appearances, 1, "NX RM color appearances")?;
     ir.model.appearances.push(Appearance {
         id: id.try_clone_for_decode(ctx, "NX decoded IR value copy")?,
-        name: Some(definition.name.clone()),
+        name: Some(ctx.copy_retained_text(&definition.name, "NX RM color appearance")?),
         asset_guid: None,
         library_id: None,
         visual_guid: None,
