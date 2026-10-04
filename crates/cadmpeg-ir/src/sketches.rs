@@ -857,7 +857,7 @@ impl cadmpeg_core::decode::cost::DecodeCost for SketchGeometry {
                     major_angle.get(),
                     radii.major().get(),
                     radii.minor().get(),
-                    bounds.map(|bounds| bounds.map(|value| value.get())),
+                    bounds.map(|bounds| bounds.map(Angle::get)),
                 ),
                 ctx,
                 operation,
@@ -875,7 +875,7 @@ impl cadmpeg_core::decode::cost::DecodeCost for SketchGeometry {
                     major_angle.get(),
                     major_radius.get(),
                     minor_radius.get(),
-                    bounds.map(|bounds| bounds.map(|value| value.get())),
+                    bounds.map(|bounds| bounds.map(FiniteReal::get)),
                 ),
                 ctx,
                 operation,
@@ -891,7 +891,7 @@ impl cadmpeg_core::decode::cost::DecodeCost for SketchGeometry {
                     vertex.get(),
                     axis_angle.get(),
                     focal_length.get(),
-                    bounds.map(|bounds| bounds.map(|value| value.get())),
+                    bounds.map(|bounds| bounds.map(FiniteReal::get)),
                 ),
                 ctx,
                 operation,
@@ -916,7 +916,7 @@ impl cadmpeg_core::decode::cost::DecodeCost for SketchGeometry {
                         font_family.as_str(),
                         i32::from(*font_weight),
                         height.get(),
-                        width_factor.map(|value| value.get()),
+                        width_factor.map(PositiveReal::get),
                     ),
                     (
                         placement
@@ -4731,7 +4731,7 @@ impl cadmpeg_core::decode::cost::DecodeCost for SketchConstraintDefinitionInput 
             }
             Self::PointCoordinateValues { point, values } => {
                 cadmpeg_core::decode::cost::DecodeCost::decode_cost(
-                    &(0u8, point, values.map(|value| value.get())),
+                    &(0u8, point, values.map(Length::get)),
                     ctx,
                     operation,
                 )
@@ -4910,7 +4910,7 @@ impl cadmpeg_core::decode::cost::DecodeCost for SketchConstraintDefinitionInput 
                     first,
                     second,
                     distance.get(),
-                    angle.map(|value| value.get()),
+                    angle.map(Angle::get),
                     distance_parameter,
                 ),
                 ctx,
