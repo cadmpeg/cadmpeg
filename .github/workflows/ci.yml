@@ -189,7 +189,7 @@ jobs:
       - name: Unit and integration tests
         # Compile selected packages and their dependencies before running.
         # A separate `cargo build` step would repeat that compilation.
-        run: python3 scripts/ci_cargo.py test --lib --bins --tests --no-fail-fast
+        run: python3 scripts/ci_cargo.py test --bins --tests --no-fail-fast
 
       - name: Bounded IGES decode and round-trip gate
         if: needs.changes.outputs.iges == 'true'
@@ -346,7 +346,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Unit and integration tests
-        run: python3 scripts/ci_cargo.py test --lib --bins --tests --no-fail-fast
+        run: python3 scripts/ci_cargo.py test --bins --tests --no-fail-fast
 
   # RustSec advisory scan of the dependency tree.
   audit:
