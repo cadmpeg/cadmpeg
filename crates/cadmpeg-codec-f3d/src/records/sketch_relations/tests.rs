@@ -78,6 +78,50 @@ fn sketch_relation_return_member_resolution_refuses_collection_limit() {
     assert_eq!(members, unchanged);
 }
 
+#[test]
+fn sketch_relation_member_resolution_refuses_scan_work_limit() {
+    let wire: super::SketchRelationSerde = serde_json::from_str(RELATION_WIRE).unwrap();
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan F3D sketch relation members for resolution",
+        0,
+        |ctx| {
+            let mut relation = SketchRelation::from_wire_charged(ctx, wire.clone())?;
+            relation.resolve_members(ctx, |record_index| super::SketchRelationOperand::Record {
+                record_index,
+            })?;
+            Ok(relation)
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "scan F3D sketch relation members for resolution"
+    ));
+}
+
+#[test]
+fn sketch_relation_return_member_resolution_refuses_scan_work_limit() {
+    let wire: super::SketchRelationSerde = serde_json::from_str(RELATION_WIRE).unwrap();
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan F3D sketch relation return members for resolution",
+        0,
+        |ctx| {
+            let mut relation = SketchRelation::from_wire_charged(ctx, wire.clone())?;
+            relation.resolve_members(ctx, |record_index| super::SketchRelationOperand::Record {
+                record_index,
+            })?;
+            Ok(relation)
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "scan F3D sketch relation return members for resolution"
+    ));
+}
+
 fn charged_relation_error(
     wire: super::SketchRelationSerde,
     max_collection_items: u64,

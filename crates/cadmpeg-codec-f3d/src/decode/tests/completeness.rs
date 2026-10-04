@@ -98,6 +98,44 @@ fn configuration_member_loss_refuses_collection_limit() {
 }
 
 #[test]
+fn configuration_member_variant_scan_refuses_work_limit() {
+    let configuration = crate::test_support::with_decode_context(|ctx| {
+        crate::records::configuration::DesignConfiguration::try_new_charged(
+            ctx,
+            "table.dsgcfg".into(),
+            crate::records::configuration::DesignConfigurationKind::Table,
+            vec!["variant".into()],
+            serde_json::from_value(serde_json::json!({
+                "configurations": {"variant": {"unknown": true}}
+            }))
+            .unwrap(),
+        )
+    })
+    .unwrap();
+    let native = crate::native::F3dNative {
+        design_configurations: vec![configuration],
+        ..Default::default()
+    };
+    let ir = cadmpeg_ir::document::CadIr::empty();
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan F3D configuration variants for members",
+        0,
+        |ctx| {
+            let mut report = cadmpeg_ir::codec::DecodeBody::new(
+                cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
+            );
+            super::super::report_unresolved_configuration_rules(ctx, &mut report, &native, &ir)
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "scan F3D configuration variants for members"
+    ));
+}
+
+#[test]
 fn direct_datum_planes_are_complete_but_unresolved_frames_are_not() {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, UnresolvedFamily};
     use cadmpeg_ir::math::{Point3, Vector3};

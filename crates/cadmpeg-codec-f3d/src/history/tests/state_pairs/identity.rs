@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use crate::history::selection::bind_circular_pattern_axes;
 use crate::history::selection::entity_selection_edge_candidates;
 use crate::history::selection::historical_identity_kind;
 use crate::history::selection::historical_selection_identity_kind;
@@ -436,4 +437,135 @@ fn a_retained_state_beside_a_complete_snapshot_resolves_no_reconstructed_revisio
         .unwrap(),
         None
     );
+}
+
+fn pattern_axis_scope() -> crate::records::feature::scope::DesignParameterScope {
+    use crate::records::feature::patterns::{
+        DesignCircularPatternAxis, DesignCircularPatternConstruction, DesignPatternAxisWrapper,
+    };
+
+    let construction = DesignCircularPatternConstruction {
+        count: std::num::NonZeroU32::new(2).unwrap(),
+        count_record_index: 1,
+        count_offset: 10,
+        angle: cadmpeg_ir::scalar::PositiveAngle::new(1.0).unwrap(),
+        angle_record_index: 2,
+        angle_offset: 20,
+        axis: DesignCircularPatternAxis::HistoricalEdge {
+            wrappers: vec![DesignPatternAxisWrapper {
+                record_index: 3,
+                identity_offset: 30,
+            }]
+            .try_into()
+            .unwrap(),
+            persistent_identity: 7,
+            resolved: None,
+        },
+        axis_record_index: 3,
+        selection_record_index: 4,
+    };
+    let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
+        "f3d:scope#1",
+        crate::records::feature::scope::DesignFeatureKind::CircularPattern,
+        1,
+    );
+    let crate::records::feature::scope::DesignScopePayloadMut::CircularPattern(slot) =
+        scope.payload_mut()
+    else {
+        panic!("circular-pattern scope has a different payload variant");
+    };
+    *slot = Some(construction);
+    scope
+}
+
+fn pattern_axis_history() -> AsmHistory {
+    let topology = |origin| AsmHistoricalTopology {
+        edges: vec![7],
+        curves: vec![70],
+        curve_axes: vec![crate::history_records::AsmHistoricalCurveAxis {
+            curve: 70,
+            origin,
+            direction: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+        }],
+        edge_curves: vec![crate::history_records::AsmHistoricalOptionalCarrierBinding {
+            entity: 7,
+            carrier: Some(70),
+        }],
+        ..AsmHistoricalTopology::default()
+    };
+    let state = |state_id, topology| AsmDeltaState {
+        id: format!("state-{state_id}"),
+        parent: "history".into(),
+        byte_offset: 0,
+        state_id,
+        version_flag: 1,
+        state_flag: 0,
+        previous_ref: None,
+        next_ref: None,
+        node_index: state_id,
+        partner_ref: None,
+        owner_ref: 0,
+        bulletin_boards: Vec::new(),
+        records: Vec::new(),
+        entity_versions: Vec::new(),
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
+        transition: None,
+    };
+    AsmHistory {
+        id: "history".into(),
+        byte_offset: 0,
+        preamble: None,
+        record_table_binding_budget_exceeded: false,
+        states: vec![
+            state(1, topology(cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0))),
+            state(2, topology(cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0))),
+        ],
+    }
+}
+
+#[test]
+fn circular_pattern_binding_keeps_ambiguous_historical_axes_unresolved() {
+    let history = pattern_axis_history();
+    let mut scope = pattern_axis_scope();
+
+    crate::test_support::with_decode_context(|decode_ctx| {
+        bind_circular_pattern_axes(
+            decode_ctx,
+            std::slice::from_mut(&mut scope),
+            std::slice::from_ref(&history),
+            &std::collections::HashMap::new(),
+        )
+    })
+    .unwrap();
+
+    let construction = scope.circular_pattern_construction().unwrap();
+    let crate::records::feature::patterns::DesignCircularPatternAxis::HistoricalEdge {
+        resolved, ..
+    } = &construction.axis
+    else {
+        panic!("historical axis fixture has an inline axis");
+    };
+    assert!(resolved.is_none());
+}
+
+#[test]
+fn circular_pattern_binding_propagates_axis_scan_work_refusal() {
+    let history = pattern_axis_history();
+    let operation = "scan F3D circular pattern identity axes";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |decode_ctx| {
+            let mut scope = pattern_axis_scope();
+            bind_circular_pattern_axes(
+                decode_ctx,
+                std::slice::from_mut(&mut scope),
+                std::slice::from_ref(&history),
+                &std::collections::HashMap::new(),
+            )
+        },
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == operation));
 }

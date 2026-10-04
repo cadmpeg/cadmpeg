@@ -301,6 +301,128 @@ fn edge_axis_candidate_scan_propagates_work_refusal() {
         if limit.operation == "scan F3D edge axis candidates"));
 }
 
+#[test]
+fn pattern_identity_face_surface_binding_scan_propagates_work_refusal() {
+    let mut state = change_state(3);
+    state.topology_cache = crate::history_records::AsmTopologyCache::Complete(
+        AsmHistoricalTopology {
+            faces: vec![11],
+            face_surfaces: vec![crate::history_records::AsmHistoricalCarrierBinding {
+                entity: 11,
+                carrier: 41,
+            }],
+            surface_axes: vec![crate::history_records::AsmHistoricalSurfaceAxis {
+                surface: 41,
+                origin: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+                direction: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 2.0),
+            }],
+            ..Default::default()
+        },
+    );
+    let history = AsmHistory {
+        id: "history".into(),
+        byte_offset: 0,
+        preamble: None,
+        record_table_binding_budget_exceeded: false,
+        states: vec![state],
+    };
+    let state_ids = [3];
+    let operation = "find F3D pattern face surface binding";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |decode| {
+            historical_pattern_identity_axes_for_selection(
+                decode,
+                Some((AsmHistoricalEntityKind::Face, 11, &state_ids)),
+                &history,
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == operation));
+}
+
+#[test]
+fn pattern_identity_surface_axis_scan_propagates_work_refusal() {
+    let mut state = change_state(3);
+    state.topology_cache = crate::history_records::AsmTopologyCache::Complete(
+        AsmHistoricalTopology {
+            surface_axes: vec![crate::history_records::AsmHistoricalSurfaceAxis {
+                surface: 41,
+                origin: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+                direction: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 2.0),
+            }],
+            ..Default::default()
+        },
+    );
+    let history = AsmHistory {
+        id: "history".into(),
+        byte_offset: 0,
+        preamble: None,
+        record_table_binding_budget_exceeded: false,
+        states: vec![state],
+    };
+    let state_ids = [3];
+    let operation = "find F3D pattern surface axis";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |decode| {
+            historical_pattern_identity_axes_for_selection(
+                decode,
+                Some((AsmHistoricalEntityKind::Surface, 41, &state_ids)),
+                &history,
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == operation));
+}
+
+#[test]
+fn pattern_identity_surface_plane_scan_propagates_work_refusal() {
+    let mut state = change_state(3);
+    state.topology_cache = crate::history_records::AsmTopologyCache::Complete(
+        AsmHistoricalTopology {
+            surface_planes: vec![crate::history_records::AsmHistoricalPlane {
+                surface: 41,
+                origin: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+                normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 2.0),
+            }],
+            ..Default::default()
+        },
+    );
+    let history = AsmHistory {
+        id: "history".into(),
+        byte_offset: 0,
+        preamble: None,
+        record_table_binding_budget_exceeded: false,
+        states: vec![state],
+    };
+    let state_ids = [3];
+    let operation = "find F3D pattern surface plane";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |decode| {
+            historical_pattern_identity_axes_for_selection(
+                decode,
+                Some((AsmHistoricalEntityKind::Surface, 41, &state_ids)),
+                &history,
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == operation));
+}
+
 fn edge_context_topology() -> AsmHistoricalTopology {
     use crate::history_records::{
         AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalRelation,

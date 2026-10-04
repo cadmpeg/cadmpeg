@@ -207,9 +207,7 @@ pub(crate) fn decode(
     width: RefWidth,
     limits: &cadmpeg_core::decode::ResourceLimits,
 ) -> Result<Option<AsmHistory>, cadmpeg_core::CodecError> {
-    let preamble_offset = bytes
-        .windows(PREAMBLE.len())
-        .position(|window| window == PREAMBLE);
+    let preamble_offset = ctx.find_bytes(bytes, PREAMBLE, "find F3D ASM preamble")?;
     let history_offset = preamble_offset.unwrap_or(0);
     let history_id = crate::ids::native_scoped_id(
         ctx,
@@ -218,19 +216,15 @@ pub(crate) fn decode(
         format_args!("{history_offset:010}"),
     )?;
     let mut delta_offsets = Vec::new();
-    let mut search = 0usize;
-    while let Some(relative) = bytes[search..]
-        .windows(DELTA.len())
-        .position(|window| window == DELTA)
-    {
-        let offset = search + relative;
-
+    for offset in ctx.find_bytes_iter(bytes, DELTA, "find F3D ASM delta markers")? {
         ctx.reserve_vec(&mut delta_offsets, 1, "f3d history delta offsets")?;
         delta_offsets.push(offset);
-        search = offset + DELTA.len();
     }
     let mut states = Vec::new();
-    for (ordinal, &offset) in delta_offsets.iter().enumerate() {
+    for (ordinal, &offset) in ctx
+        .admit_iter(&delta_offsets, "scan F3D ASM delta offsets")?
+        .enumerate()
+    {
         let state_record_id = crate::ids::native_scoped_id(
             ctx,
             stream,
@@ -1044,7 +1038,10 @@ fn bind_historical_transitions(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut by_node = HashMap::new();
     ctx.reserve_map(&mut by_node, states.len(), "index F3D transition nodes")?;
-    for (ordinal, state) in states.iter().enumerate() {
+    for (ordinal, state) in ctx
+        .admit_iter(&*states, "scan F3D transition nodes")?
+        .enumerate()
+    {
         by_node.insert(state.node_index, ordinal);
     }
     if by_node.len() != states.len() {
@@ -4840,50 +4837,104 @@ pub(crate) fn hem_geometry_semantics(
         return Ok(unresolved);
     };
     let inserted_surfaces = &transition.topology.surfaces.inserted;
-    if !current_topology
-        .surface_cylinders
-        .iter()
-        .any(|cylinder| inserted_surfaces.contains(&cylinder.surface))
-    {
+    if !decode.any_by(
+        &current_topology.surface_cylinders,
+        |cylinder| {
+            decode.contains(
+                inserted_surfaces,
+                &cylinder.surface,
+                "find F3D inserted Hem cylinder surface",
+            )
+        },
+        "scan F3D inserted Hem cylinders",
+    )? {
         return Ok(unresolved);
     }
     let edge_direction =
         historical_edge_axis(decode, edge_slot, previous_topology)?.map(|(_, direction)| direction);
-    let cylinders = || {
-        current_topology
-            .surface_cylinders
-            .iter()
-            .filter(|cylinder| {
-                inserted_surfaces.contains(&cylinder.surface)
-                    && edge_direction
-                        .is_none_or(|direction| parallel_directions(direction, cylinder.axis))
-            })
-    };
-    if cylinders().next().is_none() {
+    let Some(_) = decode.find_by(
+        &current_topology.surface_cylinders,
+        |cylinder| {
+            hem_cylinder_matches(
+                decode,
+                cylinder,
+                inserted_surfaces,
+                edge_direction,
+                "match F3D inserted Hem cylinder surface",
+            )
+        },
+        "find F3D Hem direction cylinder",
+    )? else {
         return Ok(unresolved);
-    }
+    };
     Ok(HemGeometrySemantics {
         direction: hem_direction_from_transition(
             decode,
             edge_slot,
-            &cylinders(),
+            &current_topology.surface_cylinders,
+            inserted_surfaces,
+            edge_direction,
             previous_topology,
             transition,
         )?,
-        gap_length_form: hem_gap_length_form(cylinders()),
+        gap_length_form: hem_gap_length_form(
+            decode,
+            &current_topology.surface_cylinders,
+            inserted_surfaces,
+            edge_direction,
+        )?,
     })
 }
 
-fn hem_gap_length_form<'a>(
-    mut cylinders: impl Iterator<Item = &'a AsmHistoricalCylinder>,
-) -> Option<HemGapLengthForm> {
-    let first = cylinders.next()?;
-    let second = cylinders.next()?;
-    if cylinders.next().is_some() {
-        return None;
+fn hem_cylinder_matches(
+    decode: &cadmpeg_core::decode::DecodeContext<'_>,
+    cylinder: &AsmHistoricalCylinder,
+    inserted_surfaces: &[i64],
+    edge_direction: Option<cadmpeg_ir::math::Vector3>,
+    membership_operation: &'static str,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    if !decode.contains(
+        inserted_surfaces,
+        &cylinder.surface,
+        membership_operation,
+    )? {
+        return Ok(false);
     }
+    Ok(edge_direction
+        .is_none_or(|direction| parallel_directions(direction, cylinder.axis)))
+}
+
+fn hem_gap_length_form(
+    decode: &cadmpeg_core::decode::DecodeContext<'_>,
+    cylinders: &[AsmHistoricalCylinder],
+    inserted_surfaces: &[i64],
+    edge_direction: Option<cadmpeg_ir::math::Vector3>,
+) -> Result<Option<HemGapLengthForm>, cadmpeg_core::CodecError> {
+    let mut first = None;
+    let mut second = None;
+    for cylinder in decode.admit_iter(cylinders, "scan F3D Hem gap-length carriers")? {
+        if !hem_cylinder_matches(
+            decode,
+            cylinder,
+            inserted_surfaces,
+            edge_direction,
+            "match F3D inserted Hem cylinder surface",
+        )? {
+            continue;
+        }
+        if first.is_none() {
+            first = Some(cylinder);
+        } else if second.is_none() {
+            second = Some(cylinder);
+        } else {
+            return Ok(None);
+        }
+    }
+    let (Some(first), Some(second)) = (first, second) else {
+        return Ok(None);
+    };
     if !same_axis_line((first.origin, first.axis), (second.origin, second.axis)) {
-        return None;
+        return Ok(None);
     }
     let [inner, outer] = if first.radius <= second.radius {
         [first.radius, second.radius]
@@ -4891,40 +4942,70 @@ fn hem_gap_length_form<'a>(
         [second.radius, first.radius]
     };
     if !inner.is_finite() || !outer.is_finite() || inner < 0.0 || outer <= inner {
-        return None;
+        return Ok(None);
     }
     let thickness = outer - inner;
     let tolerance = EPS_HISTORY_HEM_GAP_LENGTH_FORM_E7 * (1.0 + outer.abs() + inner.abs());
     if (2.0 * inner - thickness).abs() <= tolerance {
-        Some(HemGapLengthForm::Open)
+        Ok(Some(HemGapLengthForm::Open))
     } else if 2.0 * inner < thickness - tolerance {
-        Some(HemGapLengthForm::Flat)
+        Ok(Some(HemGapLengthForm::Flat))
     } else {
-        None
+        Ok(None)
     }
 }
 
-fn hem_direction_from_transition<'a>(
+fn hem_direction_from_transition(
     decode: &cadmpeg_core::decode::DecodeContext<'_>,
     edge_slot: i64,
-    cylinders: &(impl Iterator<Item = &'a AsmHistoricalCylinder> + Clone),
+    cylinders: &[AsmHistoricalCylinder],
+    inserted_surfaces: &[i64],
+    edge_direction: Option<cadmpeg_ir::math::Vector3>,
     previous: &AsmHistoricalTopology,
     transition: &AsmHistoricalTransition,
 ) -> Result<Option<cadmpeg_ir::features::SheetMetalHemDirection>, cadmpeg_core::CodecError> {
-    if (*cylinders).clone().next().is_none() {
+    if decode
+        .find_by(
+            cylinders,
+            |cylinder| {
+                hem_cylinder_matches(
+                    decode,
+                    cylinder,
+                    inserted_surfaces,
+                    edge_direction,
+                    "match F3D inserted Hem cylinder surface",
+                )
+            },
+            "find F3D Hem direction cylinder",
+        )?
+        .is_none()
+    {
         return Ok(None);
     }
     let edge_context = selection::historical_edge_context(decode, edge_slot, previous)?;
     let mut candidate = None;
-    for (ordinal, incident) in edge_context.incident_loops.iter().enumerate() {
+    for (ordinal, incident) in decode
+        .admit_iter(
+            &edge_context.incident_loops,
+            "scan F3D Hem incident loops",
+        )?
+        .enumerate()
+    {
         let face = incident.face_slot;
-        if edge_context.incident_loops[..ordinal]
-            .iter()
-            .any(|earlier| earlier.face_slot == face)
-        {
+        let duplicate = decode
+            .admit_iter(
+                &edge_context.incident_loops[..ordinal],
+                "find duplicate F3D Hem incident face",
+            )?
+            .any(|earlier| earlier.face_slot == face);
+        if duplicate {
             continue;
         }
-        if transition.topology.faces.deleted.contains(&face) {
+        if decode.contains(
+            &transition.topology.faces.deleted,
+            &face,
+            "find deleted F3D Hem face",
+        )? {
             continue;
         }
         let mut bindings = previous
@@ -4952,31 +5033,71 @@ fn hem_direction_from_transition<'a>(
             continue;
         }
         let normal = plane.normal.scale(1.0 / length);
-        let Some(first_cylinder) = (*cylinders).clone().next() else {
+        let Some(first_cylinder) = decode.find_by(
+            cylinders,
+            |cylinder| {
+                hem_cylinder_matches(
+                    decode,
+                    cylinder,
+                    inserted_surfaces,
+                    edge_direction,
+                    "match F3D inserted Hem cylinder surface",
+                )
+            },
+            "find F3D Hem direction cylinder",
+        )? else {
             continue;
         };
         let first = normal.dot(first_cylinder.origin.vector_from(plane.origin));
         if !first.is_finite() {
             continue;
         }
+        let scale = decode.fold(
+            cylinders,
+            0.0_f64,
+            |scale, cylinder| {
+                if !hem_cylinder_matches(
+                    decode,
+                    cylinder,
+                    inserted_surfaces,
+                    edge_direction,
+                    "match F3D inserted Hem cylinder surface",
+                )? {
+                    return Ok(scale);
+                }
+                Ok(scale
+                    .max(cylinder.origin.x.abs())
+                    .max(cylinder.origin.y.abs())
+                    .max(cylinder.origin.z.abs()))
+            },
+            "scan F3D Hem cylinder direction scale",
+        )?;
         let sign_tolerance = EPS_HISTORY_HEM_DIRECTION_FROM_TRANSITION_E7
             * (1.0
                 + plane.origin.x.abs()
                 + plane.origin.y.abs()
                 + plane.origin.z.abs()
-                + (*cylinders).clone().fold(0.0_f64, |scale, cylinder| {
-                    scale
-                        .max(cylinder.origin.x.abs())
-                        .max(cylinder.origin.y.abs())
-                        .max(cylinder.origin.z.abs())
-                }));
+                + scale);
         if first.abs() <= sign_tolerance
-            || (*cylinders).clone().any(|cylinder| {
-                let offset = normal.dot(cylinder.origin.vector_from(plane.origin));
-                !offset.is_finite()
-                    || offset.abs() <= sign_tolerance
-                    || offset.is_sign_positive() != first.is_sign_positive()
-            })
+            || decode.any_by(
+                cylinders,
+                |cylinder| {
+                    if !hem_cylinder_matches(
+                        decode,
+                        cylinder,
+                        inserted_surfaces,
+                        edge_direction,
+                        "match F3D inserted Hem cylinder surface",
+                    )? {
+                        return Ok(false);
+                    }
+                    let offset = normal.dot(cylinder.origin.vector_from(plane.origin));
+                    Ok(!offset.is_finite()
+                        || offset.abs() <= sign_tolerance
+                        || offset.is_sign_positive() != first.is_sign_positive())
+                },
+                "check F3D Hem cylinder direction offsets",
+            )?
         {
             continue;
         }
@@ -10070,21 +10191,104 @@ fn historical_topology(
         )
     }
 
-    fn relations<'a, M>(
+    fn relations<'a, Owner, Members, Member, OwnerMembers, MemberId>(
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        items: impl Iterator<Item = (&'a str, M)>,
+        owners: &'a [Owner],
+        owner_members: OwnerMembers,
+        member_id: MemberId,
     ) -> Result<Option<Vec<AsmHistoricalRelation>>, cadmpeg_core::CodecError>
     where
-        M: Iterator<Item = &'a str>,
+        Members: cadmpeg_core::decode::iter_source::IterSource + ?Sized + 'a,
+        Member: 'a,
+        Members::Iter<'a>: Iterator<Item = &'a Member>,
+        OwnerMembers: Fn(&'a Owner) -> (&'a str, &'a Members),
+        MemberId: Fn(&'a Member) -> &'a str,
     {
+        let owners = ctx.admit_iter(
+            owners,
+            "scan F3D historical topology relation owners",
+        )?;
         ctx.collect_fallible_options(
-            items.map(|(owner, members)| -> Result<Option<AsmHistoricalRelation>, cadmpeg_core::CodecError> {
+            owners.map(|owner| -> Result<Option<AsmHistoricalRelation>, cadmpeg_core::CodecError> {
+                let (owner, members) = owner_members(owner);
                 let Some(owner_ref) = stable_ref(ctx, owner)? else {
                     return Ok(None);
                 };
-                let Some(member_refs) = refs(ctx, members)? else {
+                let member_refs = ctx.collect_fallible_options(
+                    ctx.admit_iter(
+                        members,
+                        "scan F3D historical topology relation members",
+                    )?
+                    .map(|member| stable_ref(ctx, member_id(member))),
+                    "collect F3D historical topology references",
+                )?;
+                let Some(member_refs) = member_refs else {
                     return Ok(None);
                 };
+                Ok(Some(AsmHistoricalRelation {
+                    owner_ref,
+                    member_refs,
+                }))
+            }),
+            "collect F3D historical topology relations",
+        )
+    }
+
+    fn face_loop_relations(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        faces: &[cadmpeg_ir::topology::Face],
+    ) -> Result<Option<Vec<AsmHistoricalRelation>>, cadmpeg_core::CodecError> {
+        let faces = ctx.admit_iter(
+            faces,
+            "scan F3D historical topology relation owners",
+        )?;
+        ctx.collect_fallible_options(
+            faces.map(|face| -> Result<Option<AsmHistoricalRelation>, cadmpeg_core::CodecError> {
+                let Some(owner_ref) = stable_ref(ctx, face.id.as_str())? else {
+                    return Ok(None);
+                };
+                let mut member_refs = Vec::new();
+                match &face.loops {
+                    cadmpeg_ir::topology::FaceLoops::Unspecified { loops } => {
+                        for loop_id in ctx.admit_iter(
+                            loops,
+                            "scan F3D historical topology relation members",
+                        )? {
+                            let Some(loop_ref) = stable_ref(ctx, loop_id.as_str())? else {
+                                return Ok(None);
+                            };
+                            ctx.push_vec(
+                                &mut member_refs,
+                                loop_ref,
+                                "collect F3D historical topology references",
+                            )?;
+                        }
+                    }
+                    cadmpeg_ir::topology::FaceLoops::Classified { outer, inner } => {
+                        ctx.charge_work(1, "visit F3D historical classified face loop")?;
+                        let Some(outer_ref) = stable_ref(ctx, outer.as_str())? else {
+                            return Ok(None);
+                        };
+                        ctx.push_vec(
+                            &mut member_refs,
+                            outer_ref,
+                            "collect F3D historical topology references",
+                        )?;
+                        for loop_id in ctx.admit_iter(
+                            inner,
+                            "scan F3D historical topology relation members",
+                        )? {
+                            let Some(loop_ref) = stable_ref(ctx, loop_id.as_str())? else {
+                                return Ok(None);
+                            };
+                            ctx.push_vec(
+                                &mut member_refs,
+                                loop_ref,
+                                "collect F3D historical topology references",
+                            )?;
+                        }
+                    }
+                }
                 Ok(Some(AsmHistoricalRelation {
                     owner_ref,
                     member_refs,
@@ -10337,75 +10541,40 @@ fn historical_topology(
         persistent_subentity_tags: Vec::new(),
         body_regions: topology_some!(relations(
             ctx,
-            brep.bodies.iter().map(|body| {
-                (
-                    body.id.as_str(),
-                    body.regions.iter().map(cadmpeg_ir::ids::RegionId::as_str),
-                )
-            })
+            &brep.bodies,
+            |body| (body.id.as_str(), &body.regions),
+            cadmpeg_ir::ids::RegionId::as_str,
         )?),
         region_shells: topology_some!(relations(
             ctx,
-            brep.regions.iter().map(|region| {
-                (
-                    region.id.as_str(),
-                    region.shells.iter().map(cadmpeg_ir::ids::ShellId::as_str),
-                )
-            })
+            &brep.regions,
+            |region| (region.id.as_str(), &region.shells),
+            cadmpeg_ir::ids::ShellId::as_str,
         )?),
         shell_faces: topology_some!(relations(
             ctx,
-            brep.shells.iter().map(|shell| {
-                (
-                    shell.id.as_str(),
-                    shell.faces().iter().map(cadmpeg_ir::ids::FaceId::as_str),
-                )
-            })
+            &brep.shells,
+            |shell| (shell.id.as_str(), shell.faces()),
+            cadmpeg_ir::ids::FaceId::as_str,
         )?),
         shell_wire_edges: topology_some!(relations(
             ctx,
-            brep.shells.iter().map(|shell| {
-                (
-                    shell.id.as_str(),
-                    shell
-                        .wire_edges()
-                        .iter()
-                        .map(cadmpeg_ir::ids::EdgeId::as_str),
-                )
-            })
+            &brep.shells,
+            |shell| (shell.id.as_str(), shell.wire_edges()),
+            cadmpeg_ir::ids::EdgeId::as_str,
         )?),
         shell_free_vertices: topology_some!(relations(
             ctx,
-            brep.shells.iter().map(|shell| {
-                (
-                    shell.id.as_str(),
-                    shell
-                        .free_vertices()
-                        .iter()
-                        .map(cadmpeg_ir::ids::VertexId::as_str),
-                )
-            })
+            &brep.shells,
+            |shell| (shell.id.as_str(), shell.free_vertices()),
+            cadmpeg_ir::ids::VertexId::as_str,
         )?),
-        face_loops: topology_some!(relations(
-            ctx,
-            brep.faces.iter().map(|face| {
-                (
-                    face.id.as_str(),
-                    face.loops.iter().map(cadmpeg_ir::ids::LoopId::as_str),
-                )
-            })
-        )?),
+        face_loops: topology_some!(face_loop_relations(ctx, &brep.faces)?),
         loop_coedges: topology_some!(relations(
             ctx,
-            brep.loops.iter().map(|loop_| {
-                (
-                    loop_.id.as_str(),
-                    loop_
-                        .coedges()
-                        .iter()
-                        .map(cadmpeg_ir::ids::CoedgeId::as_str),
-                )
-            })
+            &brep.loops,
+            |loop_| (loop_.id.as_str(), loop_.coedges()),
+            cadmpeg_ir::ids::CoedgeId::as_str,
         )?),
         coedge_topology: topology_some!(ctx.collect_fallible_options(
             brep.coedges.iter().map(|coedge| -> Result<Option<AsmHistoricalCoedge>, cadmpeg_core::CodecError> {
@@ -10753,9 +10922,11 @@ fn decode_history_records(
         Ok(records) => {
             let mut decoded = Vec::new();
             for record in records {
-                let reference_count = record
-                    .tokens
-                    .iter()
+                let reference_count = ctx
+                    .admit_iter(
+                        record.tokens.as_ref(),
+                        "count F3D history record references",
+                    )?
                     .filter(|token| matches!(token, cadmpeg_asm::sab::Token::Ref(_)))
                     .count();
 

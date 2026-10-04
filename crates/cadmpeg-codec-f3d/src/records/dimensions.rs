@@ -749,7 +749,7 @@ impl DesignDimensionAnnotationFrame {
     ) -> Result<Self, cadmpeg_core::CodecError> {
         Self::try_new_inner(RecordAdmission::Charged(ctx), draft).map_err(|error| match error {
             AnnotationFrameBuildError::Invalid(message) => {
-                cadmpeg_core::CodecError::malformed(message)
+                cadmpeg_core::CodecError::Malformed(message)
             }
             AnnotationFrameBuildError::Resource(error) => error,
         })

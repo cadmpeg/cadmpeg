@@ -571,7 +571,7 @@ fn persistent_subentity_tags(
     };
     let mut position: usize = 0;
     let mut groups = Vec::new();
-    for ordinal in 0..group_count {
+    for ordinal in ctx.admit_iter(&(0..group_count), "visit F3D persistent subentity groups")? {
         let Some(
             [AttributeValue::Integer(selector), AttributeValue::String(token), AttributeValue::Integer(0), AttributeValue::Integer(reference_count)],
         ) = rest.get(position..position + 4)

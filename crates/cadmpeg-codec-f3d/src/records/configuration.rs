@@ -672,19 +672,31 @@ impl DesignConfiguration {
         }
     }
 
-    pub(crate) fn unknown_member_count(&self) -> usize {
+    pub(crate) fn unknown_member_count(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<usize, CodecError> {
         match &self.payload {
-            ConfigurationPayload::Rule(payload) => payload
+            ConfigurationPayload::Rule(payload) => Ok(payload
                 .keys()
                 .filter(|key| !matches!(key.as_str(), "when" | "activate"))
-                .count(),
+                .count()),
             ConfigurationPayload::Table { extensions, .. } => {
-                extensions.len()
-                    + self
-                        .variants()
-                        .iter()
-                        .map(|(_, variant)| variant.extensions.len())
-                        .sum::<usize>()
+                let operation = "count F3D configuration extension members";
+                let mut count = extensions.len();
+                for (_, variant) in
+                    ctx.admit_iter(self.variants(), "scan F3D configuration variants for members")?
+                {
+                    let members = variant.extensions.len();
+                    count = count.checked_add(members).ok_or_else(|| {
+                        ctx.refuse_codec_limit(
+                            operation,
+                            cadmpeg_core::decode::u64_from_index(count),
+                            cadmpeg_core::decode::u64_from_index(members),
+                        )
+                    })?;
+                }
+                Ok(count)
             }
         }
     }
