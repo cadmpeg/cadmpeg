@@ -1014,8 +1014,13 @@ fn coordinate_line_handle_uses_its_own_coordinate_and_one_point_link() {
 fn scalar_operands_select_the_only_second_operand_alternative() {
     let marker = |id: &str, ordinal, object_index, local_id| {
         let mut entity = SketchInputEntity::new(
-            id, "lane", ordinal, u64::from(ordinal), SketchInputKind::Point,
-        ).with_test_identity(object_index, Some(local_id));
+            id,
+            "lane",
+            ordinal,
+            u64::from(ordinal),
+            SketchInputKind::Point,
+        )
+        .with_test_identity(object_index, Some(local_id));
         entity.feature_ref = Some("feature".into());
         entity.coordinates_m = cadmpeg_ir::units::FiniteVector::new([1.0, 2.0]);
         entity
@@ -1024,17 +1029,26 @@ fn scalar_operands_select_the_only_second_operand_alternative() {
     let operands = [
         FeatureInputOperand {
             // D6 addresses the first compatible point by ordinal.
-            kind: FeatureInputOperandKind::D6, entity_index: 0, offset: 0,
-            reference_ref: "first-ref".into(), entity_ref: None,
+            kind: FeatureInputOperandKind::D6,
+            entity_index: 0,
+            offset: 0,
+            reference_ref: "first-ref".into(),
+            entity_ref: None,
         },
         FeatureInputOperand {
             kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_BC7C),
-            entity_index: 8, offset: 0, reference_ref: "second-ref".into(), entity_ref: None,
+            entity_index: 8,
+            offset: 0,
+            reference_ref: "second-ref".into(),
+            entity_ref: None,
         },
     ];
     let resolved = resolve_scalar_operand_markers(
-        &cadmpeg_test_support::service_decode_context(), &markers.each_ref(), &operands,
-    ).unwrap();
+        &cadmpeg_test_support::service_decode_context(),
+        &markers.each_ref(),
+        &operands,
+    )
+    .unwrap();
     assert_eq!(resolved[0].map(SketchInputEntity::id), Some("first"));
     assert_eq!(resolved[1].map(SketchInputEntity::id), Some("second"));
 }

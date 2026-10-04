@@ -55,20 +55,17 @@ fn compact_profile_source_refuses_class_scan_work_limit() {
 
     let payload = b"moCompRefPlane_c";
     let index_arena = DecodeArena::new();
-    let (index_ctx, _) = DecodeContext::from_root_bytes(
-        payload,
-        &index_arena,
-        &DecodePolicy::service(),
-    )
-    .expect("index context");
+    let (index_ctx, _) =
+        DecodeContext::from_root_bytes(payload, &index_arena, &DecodePolicy::service())
+            .expect("index context");
     let index = CompactReferencePlaneIndex::new(&index_ctx, payload).expect("index");
 
     let query_arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     // The lookup must admit its one class-offset slot before filtering.
     policy.limits.max_work_units = 0;
-    let (query_ctx, _) = DecodeContext::from_root_bytes(payload, &query_arena, &policy)
-        .expect("query context");
+    let (query_ctx, _) =
+        DecodeContext::from_root_bytes(payload, &query_arena, &policy).expect("query context");
     let error = index
         .profile_source(&query_ctx, 0, 0, payload.len())
         .expect_err("class offset scan exceeds work limit");

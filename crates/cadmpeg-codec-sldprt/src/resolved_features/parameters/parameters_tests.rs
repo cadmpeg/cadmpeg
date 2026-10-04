@@ -168,8 +168,7 @@ fn fillet_display_placeholder_establishes_length_unit() {
     };
     let ctx = cadmpeg_test_support::service_decode_context();
     assert_eq!(
-        scalar_unit_from_feature_parameter(&ctx, &feature, "D1")
-            .expect("unit inference succeeds"),
+        scalar_unit_from_feature_parameter(&ctx, &feature, "D1").expect("unit inference succeeds"),
         Some(super::ScalarUnit::Length)
     );
     assert_eq!(
@@ -182,8 +181,7 @@ fn fillet_display_placeholder_establishes_length_unit() {
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("D1"), "0".into());
     assert_eq!(
-        scalar_unit_from_feature_parameter(&ctx, &numeric, "D1")
-            .expect("unit inference succeeds"),
+        scalar_unit_from_feature_parameter(&ctx, &numeric, "D1").expect("unit inference succeeds"),
         None
     );
 
@@ -210,8 +208,7 @@ fn fillet_display_placeholder_establishes_length_unit() {
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("D01"), "R0".into());
     assert_eq!(
-        scalar_unit_from_feature_parameter(&ctx, &variable, "D0")
-            .expect("unit inference succeeds"),
+        scalar_unit_from_feature_parameter(&ctx, &variable, "D0").expect("unit inference succeeds"),
         Some(super::ScalarUnit::Length)
     );
     assert_eq!(
@@ -220,8 +217,7 @@ fn fillet_display_placeholder_establishes_length_unit() {
         Some(super::ScalarUnit::Length)
     );
     assert_eq!(
-        scalar_unit_from_feature_parameter(&ctx, &variable, "D1")
-            .expect("unit inference succeeds"),
+        scalar_unit_from_feature_parameter(&ctx, &variable, "D1").expect("unit inference succeeds"),
         None
     );
 }
@@ -259,8 +255,7 @@ fn thin_cut_native_dimensions_are_lengths() {
         );
     }
     assert_eq!(
-        scalar_unit_from_feature_parameter(&ctx, &feature, "D8")
-            .expect("unit inference succeeds"),
+        scalar_unit_from_feature_parameter(&ctx, &feature, "D8").expect("unit inference succeeds"),
         None
     );
 }

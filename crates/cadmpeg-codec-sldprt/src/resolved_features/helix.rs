@@ -366,13 +366,10 @@ mod tests {
             &cadmpeg_core::decode::DecodePolicy::service(),
         )
         .unwrap();
-        let (origin, radius) = super::fit_circle_on_axis(
-            &ctx,
-            &points,
-            Vector3::new(0.0, 0.0, 1.0),
-        )
-        .unwrap()
-        .unwrap();
+        let (origin, radius) =
+            super::fit_circle_on_axis(&ctx, &points, Vector3::new(0.0, 0.0, 1.0))
+                .unwrap()
+                .unwrap();
         assert_eq!(origin.x, -5.0);
         assert_eq!(origin.y, 0.0);
         assert_eq!(origin.z, 0.0);

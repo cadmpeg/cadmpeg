@@ -3,15 +3,16 @@
 use super::super::curves::SketchPlaneUAxisSource;
 use super::super::{CLASS_MARKER, NAME_MARKER};
 use super::{
-    for_each_angled_reference_plane_frame, compact_offset_plane_source,
-    compact_reference_plane_frame, constraint_midplane_frame, constraint_reference_plane_frame,
-    explicit_reference_axis_frame, explicit_reference_plane_frame, fixed_reference_plane_frame,
-    legacy_reference_axis_triads, matrix_reference_plane_frame,
-    offset_plane_reference_frame_matches, offset_reference_plane_frame_pair,
-    plane_intersection_axis_frame, plane_intersection_axis_sources,
-    reconcile_reference_plane_frame_with_source, reference_plane_frame_key,
-    resolved_reference_point, sketch_block_identity_normalization_origin,
-    sketch_block_record_origin, MINIMAL_REFERENCE_PLANE_FRAME_LEN,
+    compact_offset_plane_source, compact_reference_plane_frame, constraint_midplane_frame,
+    constraint_reference_plane_frame, explicit_reference_axis_frame,
+    explicit_reference_plane_frame, fixed_reference_plane_frame,
+    for_each_angled_reference_plane_frame, legacy_reference_axis_triads,
+    matrix_reference_plane_frame, offset_plane_reference_frame_matches,
+    offset_reference_plane_frame_pair, plane_intersection_axis_frame,
+    plane_intersection_axis_sources, reconcile_reference_plane_frame_with_source,
+    reference_plane_frame_key, resolved_reference_point,
+    sketch_block_identity_normalization_origin, sketch_block_record_origin,
+    MINIMAL_REFERENCE_PLANE_FRAME_LEN,
 };
 use crate::layout::constructed_reference_plane_fixed_frame as fixed_plane;
 use crate::layout::constructed_reference_plane_matrix_frame as matrix_plane;
@@ -1406,11 +1407,8 @@ fn matrix_reference_plane_uses_basis_columns() {
     }
     payload[root + 48] = 1;
     assert_eq!(
-        matrix_reference_plane_frame(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-        )
-        .expect("matrix plane frame scan fits service policy"),
+        matrix_reference_plane_frame(&cadmpeg_test_support::service_decode_context(), &payload,)
+            .expect("matrix plane frame scan fits service policy"),
         Some((
             Point3::new(
                 0.008_400_719_262_519_38 * 1000.0,
@@ -1424,11 +1422,8 @@ fn matrix_reference_plane_uses_basis_columns() {
 
     payload[root + 113..root + 121].copy_from_slice(&1.0f64.to_le_bytes());
     assert_eq!(
-        matrix_reference_plane_frame(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-        )
-        .expect("matrix plane frame scan fits service policy"),
+        matrix_reference_plane_frame(&cadmpeg_test_support::service_decode_context(), &payload,)
+            .expect("matrix plane frame scan fits service policy"),
         None
     );
 }

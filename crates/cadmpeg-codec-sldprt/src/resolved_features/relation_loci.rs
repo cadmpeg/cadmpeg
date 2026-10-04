@@ -604,8 +604,11 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             }
         }
         if let Some(entity) = selected_geometry.filter(|entity| {
-            matches!(*entity.geometry.definition(), SketchGeometryDefinition::Point { .. })
-        })        {
+            matches!(
+                *entity.geometry.definition(),
+                SketchGeometryDefinition::Point { .. }
+            )
+        }) {
             return super::transforms::SketchLocusRole::Entity
                 .copy_locus(ctx, entity.id(), "retain SLDPRT relation point identity")
                 .map(Some);
@@ -1694,22 +1697,27 @@ fn solver_line_entity(
     for entity in sketch_entities {
         charge_relation_identity_work(
             ctx,
-            [
-                entity.sketch.as_str(),
-                sketch.as_str(),
-
-            ],
+            [entity.sketch.as_str(), sketch.as_str()],
             32,
             OPERATION,
         )?;
-        if entity.sketch != *sketch { continue; }
+        if entity.sketch != *sketch {
+            continue;
+        }
         let matches_geometry = match entity.geometry_ref.as_deref() {
             Some(geometry_ref) => solver_line_geometry_ref_matches(
-                ctx, geometry_ref, &relation.feature_ref, operand.entity_index)?,
+                ctx,
+                geometry_ref,
+                &relation.feature_ref,
+                operand.entity_index,
+            )?,
             None => false,
         };
         if !matches_geometry
-            || !matches!(entity.geometry.definition(), SketchGeometryDefinition::Line { .. })
+            || !matches!(
+                entity.geometry.definition(),
+                SketchGeometryDefinition::Line { .. }
+            )
         {
             continue;
         }

@@ -107,7 +107,10 @@ impl CompactReferencePlaneIndex {
             return Ok(None);
         }
         let mut sources = ctx
-            .admit_iter(&self.declared, "scan declared compact reference plane records")?
+            .admit_iter(
+                &self.declared,
+                "scan declared compact reference plane records",
+            )?
             .filter(|(offset, _)| {
                 *offset >= start
                     && offset
@@ -118,7 +121,9 @@ impl CompactReferencePlaneIndex {
         let Some(source) = sources.next() else {
             return Ok(None);
         };
-        Ok(sources.all(|candidate| candidate == source).then_some(source))
+        Ok(sources
+            .all(|candidate| candidate == source)
+            .then_some(source))
     }
 
     fn reference_source(

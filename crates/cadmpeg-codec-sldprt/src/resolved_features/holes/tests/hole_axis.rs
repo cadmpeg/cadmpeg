@@ -54,7 +54,8 @@ fn generated_hole_axis_route_refuses_feature_index_collection() {
 fn generated_hole_axis_route_refuses_feature_index_work() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_work_units = 0;
+    // Admit the history and its single feature before refusing index-key work.
+    policy.limits.max_work_units = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = project_generated_hole_axes(&ctx, &mut [], &[native_history()], &[], &[], &[], &[])
         .expect_err("native feature index requires work admission");

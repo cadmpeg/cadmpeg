@@ -1,5 +1,7 @@
 use super::super::hole_child_tokens;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ResourceFailure};
+use cadmpeg_core::decode::{
+    DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ResourceFailure,
+};
 use cadmpeg_core::CodecError;
 
 #[test]
@@ -10,7 +12,10 @@ fn hole_child_tokens_preserve_unicode_and_empty_parts() {
         ("", vec![""]),
         ("α,", vec!["α", ""]),
     ] {
-        let tokens = hole_child_tokens(&ctx, text).unwrap().collect::<Result<Vec<_>, _>>().unwrap();
+        let tokens = hole_child_tokens(&ctx, text)
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
         assert_eq!(tokens, expected);
     }
 }

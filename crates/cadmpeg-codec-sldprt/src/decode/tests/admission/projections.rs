@@ -718,6 +718,33 @@ fn class_binding_source() -> Vec<u8> {
     source
 }
 
+fn class_binding_scoped_refusal(options: DecodeOptions) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let source = class_binding_source();
+    // Decode setup has its own scratch peak; the fresh caller context isolates this index.
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(&source), &options)
+        .unwrap();
+    let native = crate::test_support::native::sldprt_native(decoded.ir());
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "index SLDPRT input class names",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)?;
+            let mut histories = native.feature_histories.clone();
+            crate::resolved_features::classes::bind_history_classes(
+                &ctx,
+                &mut histories,
+                &native.feature_input_lanes,
+            )
+        },
+    )
+}
+
 #[test]
 fn metadata_class_binding_refuses_collection_limit() {
     let options = DecodeOptions {
@@ -727,7 +754,7 @@ fn metadata_class_binding_refuses_collection_limit() {
     let refusal = collection_refusal_with_options(
         &class_binding_source(),
         options,
-        "validate SLDPRT history class candidates",
+        "index SLDPRT input class names",
     );
     assert_eq!(
         refusal.dimension,
@@ -739,7 +766,7 @@ fn metadata_class_binding_refuses_collection_limit() {
 fn geometry_class_binding_refuses_collection_limit() {
     let refusal = collection_refusal_at(
         &class_binding_source(),
-        "validate SLDPRT history class candidates",
+        "index SLDPRT input class names",
     );
     assert_eq!(
         refusal.dimension,
@@ -749,56 +776,24 @@ fn geometry_class_binding_refuses_collection_limit() {
 
 #[test]
 fn metadata_class_binding_refuses_scoped_limit() {
-    let mut options = DecodeOptions {
+    let error = class_binding_scoped_refusal(DecodeOptions {
         container_only: true,
         ..DecodeOptions::default()
-    };
-    options.policy.limits.max_materialized_bytes = 1;
-    let source = class_binding_source();
-    let error = cadmpeg_ir::DecodeFailure::Codec(cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-        "bind SLDPRT history classes",
-        |cap| {
-            let mut options = options;
-            options.policy.limits.max_materialized_bytes = cap;
-            SldprtCodec
-                .decode(&mut std::io::Cursor::new(&source), &options)
-                .map_err(|error| match error {
-                    cadmpeg_ir::DecodeFailure::Codec(error) => error,
-                    error => panic!("unexpected decode refusal: {error:?}"),
-                })
-        },
-    ));
+    });
     assert!(
-        matches!(error, cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-            && limit.operation == "bind SLDPRT history classes")
+            && limit.operation == "index SLDPRT input class names")
     );
 }
 
 #[test]
 fn geometry_class_binding_refuses_scoped_limit() {
-    let mut options = DecodeOptions::default();
-    options.policy.limits.max_materialized_bytes = 1;
-    let source = class_binding_source();
-    let error = cadmpeg_ir::DecodeFailure::Codec(cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-        "bind SLDPRT history classes",
-        |cap| {
-            let mut options = options;
-            options.policy.limits.max_materialized_bytes = cap;
-            SldprtCodec
-                .decode(&mut std::io::Cursor::new(&source), &options)
-                .map_err(|error| match error {
-                    cadmpeg_ir::DecodeFailure::Codec(error) => error,
-                    error => panic!("unexpected decode refusal: {error:?}"),
-                })
-        },
-    ));
+    let error = class_binding_scoped_refusal(DecodeOptions::default());
     assert!(
-        matches!(error, cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-            && limit.operation == "bind SLDPRT history classes")
+            && limit.operation == "index SLDPRT input class names")
     );
 }
 
