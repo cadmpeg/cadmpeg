@@ -428,10 +428,6 @@ fn parse_occurrence<'a>(
         "occurrence related-list marker",
     )?;
     let related_count = cursor.count32("occurrence related-list count", 65_536)?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(related_count),
-        "admit Inventor occurrence related references",
-    )?;
     let mut related_references = ctx.vector_storage(
         related_count,
         "admit Inventor occurrence related references",
@@ -440,7 +436,7 @@ fn parse_occurrence<'a>(
         cursor.u32("occurrence related-list metadata")?;
         cursor.u32("occurrence related-list metadata")?;
         for _ in ctx.admit_iter(&(0..related_count), "visit Inventor occurrence related references")? {
-            related_references.push(cursor.u32("occurrence related reference")?);
+            ctx.push_vec(&mut related_references, cursor.u32("occurrence related reference")?, "admit Inventor occurrence related references")?;
         }
     }
     let child_reference = cursor.u32("occurrence child reference")?;
