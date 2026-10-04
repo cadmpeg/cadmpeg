@@ -741,3 +741,25 @@ fn operation_feature_identity_refuses_before_btree_node() {
     );
     assert!(ids.is_empty());
 }
+
+#[test]
+fn model_feature_identity_grammar_refuses_after_formatting() {
+    let run = |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        compose_feature_id(&ctx, 40).map(|(id, _reservation)| id)
+    };
+    let limit = crate::test_support::allocation_limit_at(
+        ResourceDimension::WorkUnits,
+        Some("creo model feature identity grammar"),
+        run,
+    );
+    assert!(matches!(run(limit), Err(cadmpeg_core::CodecError::ResourceLimit(resource))
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo model feature identity grammar"));
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx|
+        compose_feature_id(ctx, 40).map(|(id, _reservation)| id)
+    ).expect("service identity grammar").as_str(), "creo:model:feature#40");
+}
