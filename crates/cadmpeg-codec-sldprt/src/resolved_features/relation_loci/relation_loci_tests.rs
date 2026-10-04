@@ -1679,3 +1679,5 @@ fn qualified_point_suffix_propagates_work_refusal() {
 }
 
 mod deduplication;
+
+mod approximate_deduplication;

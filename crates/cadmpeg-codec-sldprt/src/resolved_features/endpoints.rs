@@ -2149,10 +2149,10 @@ pub(super) fn inferred_point_coordinates_by_index(
         },
         "sldprt point solver candidates sort",
     )?;
-    charge_endpoint_work(ctx, candidates.len(), 64, POINT_SOLVER_OPERATION)?;
-    candidates.dedup_by(|left, right| {
-        same_dimension_length(left[0], right[0]) && same_dimension_length(left[1], right[1])
-    });
+
+    ctx.dedup_by(&mut candidates, |left, right| {
+        Ok(same_dimension_length(left[0], right[0]) && same_dimension_length(left[1], right[1]))
+    }, "deduplicate SLDPRT inferred point coordinates")?;
 
     let mut constraints_storage = ctx.reserve_scoped(0, POINT_SOLVER_OPERATION)?;
     let mut constraints = Vec::new();
@@ -3043,9 +3043,9 @@ pub(super) fn legacy_marker104_arc_center(
         });
     let mut centers = collect_endpoint_values(ctx, eligible, OPERATION)?;
     sort_endpoint_points(ctx, &mut centers, OPERATION)?;
-    centers.dedup_by(|left, right| {
-        same_dimension_length(left[0], right[0]) && same_dimension_length(left[1], right[1])
-    });
+    ctx.dedup_by(&mut centers, |left, right| {
+        Ok(same_dimension_length(left[0], right[0]) && same_dimension_length(left[1], right[1]))
+    }, "deduplicate SLDPRT marker104 arc centers")?;
     let [center] = centers.as_slice() else {
         return Ok(None);
     };
@@ -3970,9 +3970,9 @@ pub(super) fn compact_profile_full_circle(
         },
         "sldprt ellipse radial points sort",
     )?;
-    radials.dedup_by(|left, right| {
-        same_dimension_length(left[0], right[0]) && same_dimension_length(left[1], right[1])
-    });
+    ctx.dedup_by(&mut radials, |left, right| {
+        Ok(same_dimension_length(left[0], right[0]) && same_dimension_length(left[1], right[1]))
+    }, "deduplicate SLDPRT ellipse radial coordinates")?;
     Ok((|| {
         let [radial] = radials.as_slice() else {
             return None;

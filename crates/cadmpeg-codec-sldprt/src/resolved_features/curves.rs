@@ -1722,7 +1722,7 @@ fn ordered_tolerant_rectangle_corners(
         f64::total_cmp,
         "sldprt tolerant rectangle v sort",
     )?;
-    v.dedup_by(|left, right| same_dimension_length(*left, *right));
+    ctx.dedup_by(&mut v, |left, right| Ok(same_dimension_length(*left, *right)), "deduplicate SLDPRT tolerant rectangle v coordinates")?;
     let ([u0, u1], [v0, v1]) = (u.as_slice(), v.as_slice()) else {
         return Ok(None);
     };

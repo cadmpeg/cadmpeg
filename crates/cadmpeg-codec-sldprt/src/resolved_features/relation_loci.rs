@@ -2285,9 +2285,9 @@ pub(super) fn canonical_profile_loci(
         },
         OPERATION,
     )?;
-    indexed.dedup_by(|(_, left_point, _), (_, right_point, _)| {
-        quantize(*left_point, QUANTUM) == quantize(*right_point, QUANTUM)
-    });
+    ctx.dedup_by(&mut indexed, |(_, left_point, _), (_, right_point, _)| {
+        Ok(quantize(*left_point, QUANTUM) == quantize(*right_point, QUANTUM))
+    }, "deduplicate SLDPRT canonical profile loci")?;
     let mut loci = Vec::new();
     ctx.reserve_vec(&mut loci, indexed.len(), OPERATION)?;
     for (_, point, locus) in indexed {
