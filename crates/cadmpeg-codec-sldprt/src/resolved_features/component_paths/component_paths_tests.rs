@@ -258,3 +258,28 @@ fn adjacent_profile_vote_lookup_propagates_work_refusal() {
         &cadmpeg_test_support::service_decode_context(), &mut [], &histories, std::slice::from_ref(&lane),
     ).unwrap();
 }
+
+#[test]
+fn profile_block_identity_parsers_preserve_ownership_and_refusals() {
+    let feature = |source: u32, class: &str| Feature {
+        id: format!("feature#{source}"), parent: "history".into(),
+        xml_tag: "Feature".into(), tree_parent: None,
+        source_id: FeatureSource::from_value(source), ordinal: 0,
+        name: String::new(), kind: String::new(), input_class: Some(class.into()),
+        suppressed: false, parameters: BTreeMap::new(), dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(), text: None, content: Vec::new(),
+    };
+    let mut profile = feature(1, "moProfileFeature_c");
+    profile.properties.insert(cadmpeg_core::nonblank_literal!("DissectableChildren"), "23".into());
+    let definition = feature(23, "moSketchBlockDef_c");
+    let mut instance = feature(25, "moSketchBlockInst_c");
+    instance.properties.insert(cadmpeg_core::nonblank_literal!("BlockDefinition"), "23".into());
+    let objects = [&instance, &definition];
+    let solve = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        super::profile_owns_intervening_sketch_blocks(ctx, &profile, objects)
+    };
+    assert!(solve(&cadmpeg_test_support::service_decode_context()).unwrap());
+    for operation in ["parse SLDPRT profile child identity", "parse SLDPRT sketch block definition identity"] {
+        crate::test_support::work_refusal_at(operation, solve);
+    }
+}

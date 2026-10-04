@@ -750,14 +750,24 @@ pub(crate) fn bind_pattern_inputs(
             .native_ref
             .as_deref()
             .and_then(|native| history_features.iter().find(|feature| feature.id == native));
-        let parameters = native.and_then(|feature| {
-            Some((
-                feature.parameters.get("D4").and_then(|value| {
+        let parameters = match native {
+            Some(feature) => {
+                let spacing = feature.parameters.get("D4").and_then(|value| {
                     crate::history::literals::parse_positive_dimension_length_mm(value)
-                })?,
-                feature.parameters.get("D2")?.parse::<u32>().ok()?,
-            ))
-        });
+                });
+                match spacing {
+                    Some(spacing) => match feature.parameters.get("D2") {
+                        Some(value) => ctx
+                            .parse_text::<u32>(value, "parse SLDPRT second linear pattern count")?
+                            .ok()
+                            .map(|count| (spacing, count)),
+                        None => None,
+                    },
+                    None => None,
+                }
+            }
+            None => None,
+        };
         let mut edit_result = Ok(());
         model_features[index].evaluation.edit(|definition, _| {
             edit_result = (|| {
