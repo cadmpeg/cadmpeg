@@ -32,6 +32,14 @@ pub(crate) enum FeatureParameterFrameKind {
     Transform,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureParameterFrameKind {
+    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
+    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    }
+}
+
+
 /// One `f9 04 03` definition-space parameter frame.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct FeatureParameterFrame {
@@ -44,6 +52,13 @@ pub(crate) struct FeatureParameterFrame {
     /// Byte offset of the field label in the original stream.
     pub(crate) offset: usize,
 }
+
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureParameterFrame {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.kind, &self.body, self.decoded_values.as_ref().map(|value| value.as_raw()), &self.offset,), ctx, operation)
+    }
+}
+
 
 /// One instantiated row from a feature definition's `place_instruction_ptrs`
 /// table.
@@ -80,6 +95,14 @@ pub(crate) enum OutlinePhase {
     PostRegen,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for OutlinePhase {
+    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
+    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    }
+}
+
+
 /// Six-slot feature-local outline bounds.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct FeatureOutline {
@@ -90,6 +113,13 @@ pub(crate) struct FeatureOutline {
     /// Byte offset of the outline label in the original stream.
     pub(crate) offset: usize,
 }
+
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureOutline {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.phase, &self.local_scalars, &self.offset,), ctx, operation)
+    }
+}
+
 
 fn outline_scalars(
     ctx: &DecodeContext<'_>,
@@ -128,6 +158,14 @@ pub(crate) enum ScalarLane {
     DimensionDriven,
     Undefined,
 }
+
+impl cadmpeg_core::decode::cost::DecodeCost for ScalarLane {
+    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
+    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    }
+}
+
 
 impl ScalarLane {
     pub(crate) fn value(self) -> Option<f64> {
@@ -229,6 +267,13 @@ pub(crate) struct FeatureVariableRow {
     pub(crate) offset: usize,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureVariableRow {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&((&self.variable_type, &self.key, &self.value, &self.value_body, &self.guess, &self.guess_body,), (&self.known, &self.homogeneity, &self.uvar_id, &self.offset,),), ctx, operation)
+    }
+}
+
+
 /// One section-frame point joined from `var_arr` type-1/type-2 rows.
 #[cfg(test)]
 #[derive(Debug, Clone, PartialEq)]
@@ -253,6 +298,13 @@ pub(crate) struct FeatureVariableTable {
     /// Byte offset of the `var_arr` label in the original stream.
     pub(crate) offset: usize,
 }
+
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureVariableTable {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.declared_count, &self.entity_ref, &self.rows, &self.offset,), ctx, operation)
+    }
+}
+
 
 #[derive(Debug)]
 pub(crate) struct ReconciledPoints<T> {
@@ -399,6 +451,14 @@ pub(crate) enum FeatureSegmentKind {
     Point(u32),
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureSegmentKind {
+    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
+    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    }
+}
+
+
 /// One positional `segtab_ptr` replay row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FeatureSegment {
@@ -426,6 +486,13 @@ pub(crate) struct FeatureSegment {
     pub(crate) offset: usize,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureSegment {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&((&self.kind, &self.directions, &self.center_id, &self.arc_orientation, &self.vertical_horizontal, &self.radius_ref,), (&self.radius2_ref, &self.external_id, &self.body, &self.offset,),), ctx, operation)
+    }
+}
+
+
 impl FeatureSegment {
     /// Endpoint slots into the section variable table. A point repeats its ID.
     pub(crate) fn point_ids(&self) -> [u32; 2] {
@@ -449,6 +516,13 @@ pub(crate) struct FeatureCircleSegment {
     pub(crate) offset: usize,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureCircleSegment {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.center_id, &self.radius_ref, &self.external_id, &self.offset,), ctx, operation)
+    }
+}
+
+
 /// One point type `1` `segtab_ptr` row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FeaturePointSegment {
@@ -460,6 +534,13 @@ pub(crate) struct FeaturePointSegment {
     pub(crate) offset: usize,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeaturePointSegment {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.point_id, &self.external_id, &self.offset,), ctx, operation)
+    }
+}
+
+
 /// One centered construction-line type `47` `segtab_ptr` row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FeatureCenteredLineSegment {
@@ -470,6 +551,13 @@ pub(crate) struct FeatureCenteredLineSegment {
     /// Byte offset of the positional row in the original stream.
     pub(crate) offset: usize,
 }
+
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureCenteredLineSegment {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.center_id, &self.external_id, &self.offset,), ctx, operation)
+    }
+}
+
 
 /// One type `25` section-reference line.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -485,6 +573,13 @@ pub(crate) struct FeatureReferenceLineSegment {
     /// Byte offset of the positional row in the original stream.
     pub(crate) offset: usize,
 }
+
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureReferenceLineSegment {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.directions, &self.point_ids, &self.vertical_horizontal, &self.external_id, &self.offset,), ctx, operation)
+    }
+}
+
 
 /// One type `12` bounded section curve.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -509,6 +604,13 @@ pub(crate) struct FeatureBoundedCurveSegment {
     pub(crate) offset: usize,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureBoundedCurveSegment {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&((&self.directions, &self.point_ids, &self.center_id, &self.arc_orientation, &self.vertical_horizontal, &self.radius_ref,), (&self.radius2_ref, &self.external_id, &self.offset,),), ctx, operation)
+    }
+}
+
+
 /// One type `58` saved-conic section row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FeatureConicSegment {
@@ -523,6 +625,13 @@ pub(crate) struct FeatureConicSegment {
     /// Byte offset of the positional row in the original stream.
     pub(crate) offset: usize,
 }
+
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureConicSegment {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.center_id, &self.first_coefficient_ref, &self.second_coefficient_ref, &self.external_id, &self.offset,), ctx, operation)
+    }
+}
+
 
 /// One fully framed `segtab_ptr` row outside the core segment-family enum.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -553,6 +662,13 @@ pub(crate) struct FeatureOpaqueSegment {
     pub(crate) offset: usize,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureOpaqueSegment {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&((&self.kind, &self.directions, &self.point_ids, &self.center_id, &self.arc_orientation, &self.vertical_horizontal,), (&self.radius_ref, &self.radius2_ref, &self.external_id, &self.body, &self.offset,),), ctx, operation)
+    }
+}
+
+
 /// Defining-sketch segment table from one feature definition.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FeatureSegmentTable {
@@ -568,6 +684,13 @@ pub(crate) struct FeatureSegmentTable {
     /// Byte offset of the `segtab_ptr` label in the original stream.
     pub(crate) offset: usize,
 }
+
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureSegmentTable {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.declared_count, &self.has_elided_prototype, &self.entity_ref, &self.rows, &self.offset,), ctx, operation)
+    }
+}
+
 
 impl FeatureSegmentTable {
     /// Whether every row declared by the table decoded.
@@ -603,6 +726,14 @@ pub(crate) enum TrimEntityKind {
     },
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for TrimEntityKind {
+    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
+    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    }
+}
+
+
 /// One positional `ent_tab` replay row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FeatureTrimEntity {
@@ -617,6 +748,13 @@ pub(crate) struct FeatureTrimEntity {
     /// Byte offset of the positional row in the original stream.
     pub(crate) offset: usize,
 }
+
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureTrimEntity {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.external_id, &self.mode, &self.vertices, &self.kind, &self.offset,), ctx, operation)
+    }
+}
+
 
 impl FeatureTrimEntity {
     /// Solved center vertex identifier for an arc.
@@ -643,6 +781,13 @@ pub(crate) struct FeatureTrimBucket {
     pub(crate) offset: usize,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureTrimBucket {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.index, &self.declared_entry_count, &self.decoded_entry_count, &self.offset,), ctx, operation)
+    }
+}
+
+
 impl FeatureTrimBucket {
     /// Whether every declared entry has one complete stored body.
     fn is_complete(&self) -> bool {
@@ -668,6 +813,13 @@ pub(crate) struct FeatureTrimEntityTable {
     /// Byte offset of the `ent_tab` label in the original stream.
     pub(crate) offset: usize,
 }
+
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureTrimEntityTable {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&((&self.declared_count, &self.entity_ref, &self.entry_ref, &self.buckets, &self.rows, &self.solved_external_ids,), (&self.offset,),), ctx, operation)
+    }
+}
+
 
 impl FeatureTrimEntityTable {
     /// Whether every declared hash-bucket index was decoded in order.
@@ -704,6 +856,13 @@ pub(crate) struct FeatureTrimVertex {
     pub(crate) offset: usize,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureTrimVertex {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.vertex_id, &self.entities, self.section_coordinates.map(|value| (value.get().u, value.get().v)), &self.offset,), ctx, operation)
+    }
+}
+
+
 /// Solved trim-vertex adjacency table for one feature definition.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct FeatureTrimVertexTable {
@@ -720,6 +879,13 @@ pub(crate) struct FeatureTrimVertexTable {
     /// Byte offset of the `vert_tab` label in the original stream.
     pub(crate) offset: usize,
 }
+
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureTrimVertexTable {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.declared_count, &self.entity_ref, &self.entry_ref, &self.buckets, &self.rows, &self.offset,), ctx, operation)
+    }
+}
+
 
 impl FeatureTrimVertexTable {
     /// Whether every declared hash-bucket index was decoded in order.
@@ -757,6 +923,13 @@ pub(crate) struct FeatureOrderRow {
     pub(crate) offset: usize,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureOrderRow {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.external_id, &self.internal_id, &self.bitmask, &self.offset,), ctx, operation)
+    }
+}
+
+
 /// Generated-entity ordering table for one gsec3d section.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FeatureOrderTable {
@@ -771,6 +944,13 @@ pub(crate) struct FeatureOrderTable {
     /// Byte offset of the `order_table` label in the original stream.
     pub(crate) offset: usize,
 }
+
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureOrderTable {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.declared_count, &self.has_prototype, &self.entity_ref, &self.rows, &self.offset,), ctx, operation)
+    }
+}
+
 
 impl FeatureOrderTable {
     /// Whether every entry declared by the table opener was decoded.
@@ -812,6 +992,14 @@ pub(crate) enum BinaryFlag {
     Set,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for BinaryFlag {
+    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
+    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    }
+}
+
+
 impl BinaryFlag {
     fn decode(value: u8) -> Option<Self> {
         match value {
@@ -835,6 +1023,13 @@ pub(crate) struct FeatureSectionOrientation {
     pub(crate) reference_flip: Option<BinaryFlag>,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureSectionOrientation {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.section_flip, &self.reference_type, &self.segment_id, &self.reference_flip,), ctx, operation)
+    }
+}
+
+
 /// One positional gsec3d reference-plane row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FeatureSectionReferencePlane {
@@ -851,6 +1046,13 @@ pub(crate) struct FeatureSectionReferencePlane {
     /// Row `flip_flag`.
     pub(crate) reference_flip: Option<BinaryFlag>,
 }
+
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureSectionReferencePlane {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.plane_entity_id, &self.reference_type, &self.external_reference_id, &self.segment_id, &self.sub_index, &self.reference_flip,), ctx, operation)
+    }
+}
+
 
 /// Byte-backed gsec3d placement and ordering inputs.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -871,12 +1073,29 @@ pub(crate) struct FeatureSection3d {
     pub(crate) offset: usize,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureSection3d {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&((&self.sketch_plane_entity_id, &self.sketch_plane_flip, &self.reference_planes, &self.reference_plane_datum_geometry_id, &self.orientation, &self.dimension_ids,), (&self.offset,),), ctx, operation)
+    }
+}
+
+
 /// Reference-plane representation selected by the section layout.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ReferencePlanes {
     Named(Vec<u32>),
     Positional(Vec<FeatureSectionReferencePlane>),
 }
+
+impl cadmpeg_core::decode::cost::DecodeCost for ReferencePlanes {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::Named(field_0) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&0_u8, field_0,), ctx, operation),
+            Self::Positional(field_0) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&0_u8, field_0,), ctx, operation),
+        }
+    }
+}
+
 
 impl ReferencePlanes {
     pub(crate) fn entity_ids(&self) -> impl Iterator<Item = u32> + '_ {
@@ -915,6 +1134,13 @@ pub(crate) struct FeatureDimensionReference {
     pub(crate) offset: usize,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureDimensionReference {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.item_id, &self.sense, &self.point, &self.offset,), ctx, operation)
+    }
+}
+
+
 /// Nested `dim_ref` table carried by a named `dimtab_ptr` prototype.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FeatureDimensionReferenceTable {
@@ -928,6 +1154,13 @@ pub(crate) struct FeatureDimensionReferenceTable {
     pub(crate) offset: usize,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureDimensionReferenceTable {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.declared_count, &self.entity_ref, &self.rows, &self.offset,), ctx, operation)
+    }
+}
+
+
 /// Primary dimension scalar state.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum DimensionValue {
@@ -935,6 +1168,17 @@ pub(crate) enum DimensionValue {
     UnresolvedToken(Vec<u8>),
     Undefined,
 }
+
+impl cadmpeg_core::decode::cost::DecodeCost for DimensionValue {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::Resolved(field_0) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&0_u8, field_0,), ctx, operation),
+            Self::UnresolvedToken(field_0) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&0_u8, field_0,), ctx, operation),
+            Self::Undefined => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&0_u8,), ctx, operation),
+        }
+    }
+}
+
 
 impl DimensionValue {
     fn decoded(
@@ -991,6 +1235,13 @@ pub(crate) struct FeatureDimension {
     pub(crate) offset: usize,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureDimension {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&((&self.dimension_type, &self.value, &self.value_body, &self.direction_byte, &self.auxiliary_value, &self.auxiliary_body,), (&self.external_id, &self.references, &self.offset,),), ctx, operation)
+    }
+}
+
+
 impl FeatureDimension {
     pub(crate) fn unit(&self) -> DimensionUnit {
         dimension_unit(self.dimension_type)
@@ -1009,6 +1260,13 @@ pub(crate) struct FeatureDimensionTable {
     /// Byte offset of the `dimtab_ptr` label in the original stream.
     pub(crate) offset: usize,
 }
+
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureDimensionTable {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.declared_count, &self.entity_ref, &self.rows, &self.offset,), ctx, operation)
+    }
+}
+
 
 /// One positional constraint-relation row from `relat_ptr`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1033,6 +1291,13 @@ pub(crate) struct FeatureRelation {
     pub(crate) offset: usize,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureRelation {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&((&self.relation_id, &self.used, &self.operands, &self.operand_vectors, &self.sign, &self.dimension_id,), (&self.relation_type, &self.body, &self.offset,),), ctx, operation)
+    }
+}
+
+
 /// Counted `relat_ptr` constraint-relation table.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FeatureRelationTable {
@@ -1051,6 +1316,13 @@ pub(crate) struct FeatureRelationTable {
     pub(crate) offset: usize,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureRelationTable {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.declared_count, &self.entity_ref, &self.rows, &self.skamps, &self.triples, &self.offset,), ctx, operation)
+    }
+}
+
+
 /// A solver table declaration with retained rows, or rows with no decoded declaration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SolverSubtable<T> {
@@ -1061,9 +1333,26 @@ pub(crate) enum SolverSubtable<T> {
     Unframed(NonEmptySolverRows<T>),
 }
 
+impl<T: cadmpeg_core::decode::cost::DecodeCost> cadmpeg_core::decode::cost::DecodeCost for SolverSubtable<T> {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::Declared { header, rows } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&0_u8, header, rows,), ctx, operation),
+            Self::Unframed(field_0) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&0_u8, field_0,), ctx, operation),
+        }
+    }
+}
+
+
 /// Retained rows without a decoded table declaration. The collection is nonempty.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct NonEmptySolverRows<T>(Vec<T>);
+
+impl<T: cadmpeg_core::decode::cost::DecodeCost> cadmpeg_core::decode::cost::DecodeCost for NonEmptySolverRows<T> {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.0,), ctx, operation)
+    }
+}
+
 
 impl<T> SolverSubtable<T> {
     fn from_parts(header: Option<FeatureSolverTableHeader>, rows: Vec<T>) -> Option<Self> {
@@ -1187,6 +1476,13 @@ pub(crate) struct FeatureSolverTableHeader {
     pub(crate) offset: usize,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureSolverTableHeader {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.declared_count, &self.entity_ref, &self.offset,), ctx, operation)
+    }
+}
+
+
 /// One entity incidence within a section solver `skamp_ptr` row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FeatureSkampItem {
@@ -1195,6 +1491,13 @@ pub(crate) struct FeatureSkampItem {
     /// Stored endpoint or locus selector.
     pub(crate) sense: u32,
 }
+
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureSkampItem {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.entity_id, &self.sense,), ctx, operation)
+    }
+}
+
 
 /// One counted section solver `skamp_ptr` row.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1213,6 +1516,13 @@ pub(crate) struct FeatureSkamp {
     pub(crate) offset: usize,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureSkamp {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.id, &self.kind, &self.flags, &self.status, &self.items, &self.offset,), ctx, operation)
+    }
+}
+
+
 /// One `triples_ptr` join between solver namespaces.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FeatureRelationTriple {
@@ -1225,6 +1535,13 @@ pub(crate) struct FeatureRelationTriple {
     /// Byte offset of the row in the original stream.
     pub(crate) offset: usize,
 }
+
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureRelationTriple {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.relation_id, &self.equation_id, &self.skamp_id, &self.offset,), ctx, operation)
+    }
+}
+
 
 /// One solved line retained in feature-definition section coordinates.
 #[derive(Debug, Clone, PartialEq)]
@@ -1242,6 +1559,13 @@ pub(crate) struct FeatureSavedLine {
     /// Byte offset of the record preamble in the original stream.
     pub(crate) offset: usize,
 }
+
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureSavedLine {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.entity_id, &self.references, &self.attributes, &self.endpoints, &self.body, &self.offset,), ctx, operation)
+    }
+}
+
 
 /// One solved circular arc retained in section coordinates.
 #[derive(Debug, Clone, PartialEq)]
@@ -1262,6 +1586,13 @@ pub(crate) struct FeatureSavedArc {
     pub(crate) offset: usize,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureSavedArc {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&((&self.entity_id, &self.center, &self.radius, &self.endpoints, &self.parameters, &self.body,), (&self.offset,),), ctx, operation)
+    }
+}
+
+
 /// One solved circle retained in section coordinates.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct FeatureSavedCircle {
@@ -1276,6 +1607,13 @@ pub(crate) struct FeatureSavedCircle {
     /// Byte offset of the entity label in the original stream.
     pub(crate) offset: usize,
 }
+
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureSavedCircle {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.entity_id, &self.center, &self.radius, &self.body, &self.offset,), ctx, operation)
+    }
+}
+
 
 /// One solved conic retained in section coordinates.
 #[derive(Debug, Clone, PartialEq)]
@@ -1296,12 +1634,26 @@ pub(crate) struct FeatureSavedConic {
     pub(crate) offset: usize,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureSavedConic {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&((&self.entity_id, &self.endpoints, &self.parameters, &self.coefficients, self.local_system.as_ref().map(|value| value.as_raw()), &self.body,), (&self.offset,),), ctx, operation)
+    }
+}
+
+
 /// A decoded field and its complete encoded value bytes.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DecodedField<T> {
     pub(crate) value: T,
     pub(crate) body: Vec<u8>,
 }
+
+impl<T: cadmpeg_core::decode::cost::DecodeCost> cadmpeg_core::decode::cost::DecodeCost for DecodedField<T> {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.value, &self.body,), ctx, operation)
+    }
+}
+
 
 /// One saved interpolation spline retained in section coordinates.
 #[derive(Debug, Clone, PartialEq)]
@@ -1322,6 +1674,13 @@ pub(crate) struct FeatureSavedSpline {
     pub(crate) offset: usize,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureSavedSpline {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&((&self.entity_id, &self.declared_point_count, &self.interpolation_points, &self.interpolation_points_body, &self.endpoint_tangents, &self.parameters,), (&self.offset,),), ctx, operation)
+    }
+}
+
+
 /// One saved placeholder entity without analytic geometry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FeatureSavedDummy {
@@ -1332,6 +1691,13 @@ pub(crate) struct FeatureSavedDummy {
     /// Byte offset of the entity label in the original stream.
     pub(crate) offset: usize,
 }
+
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureSavedDummy {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.entity_id, &self.body, &self.offset,), ctx, operation)
+    }
+}
+
 
 /// Solved saved-section entity with kind-specific valid fields.
 #[derive(Debug, Clone, PartialEq)]
@@ -1350,6 +1716,20 @@ pub(crate) enum FeatureSavedEntity {
     Dummy(FeatureSavedDummy),
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureSavedEntity {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::Line(field_0) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&0_u8, field_0,), ctx, operation),
+            Self::Arc(field_0) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&0_u8, field_0,), ctx, operation),
+            Self::Circle(field_0) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&0_u8, field_0,), ctx, operation),
+            Self::Conic(field_0) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&0_u8, field_0,), ctx, operation),
+            Self::Spline(field_0) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&0_u8, field_0,), ctx, operation),
+            Self::Dummy(field_0) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&0_u8, field_0,), ctx, operation),
+        }
+    }
+}
+
+
 /// Solved entity table stored below `p_saved_result`.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct FeatureSavedSection {
@@ -1358,6 +1738,13 @@ pub(crate) struct FeatureSavedSection {
     /// Byte offset of the `p_saved_result` record header in the original stream.
     pub(crate) offset: usize,
 }
+
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureSavedSection {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.entities, &self.offset,), ctx, operation)
+    }
+}
+
 
 /// One byte-bounded feature-definition template or instantiated saved section.
 #[derive(Debug, Clone, PartialEq)]
@@ -1391,6 +1778,13 @@ pub(crate) struct FeatureDefinition {
     /// Byte offset of the record name in the original stream.
     pub(crate) offset: usize,
 }
+
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureDefinition {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&((&self.identity, &self.body, &self.parameter_frames, &self.outlines, &self.variables, &self.segments,), (&self.trim_entities, &self.trim_vertices, &self.order_table, &self.section_3d, &self.dimensions, &self.relations,), (&self.saved_section, &self.offset,),), ctx, operation)
+    }
+}
+
 
 /// A position inside one definition's copied body.
 pub(crate) struct DefinitionBodyPosition<'a> {
@@ -1448,6 +1842,14 @@ pub(crate) enum DefinitionIdentity {
         owner_feature_id: u32,
     },
 }
+
+impl cadmpeg_core::decode::cost::DecodeCost for DefinitionIdentity {
+    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
+    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    }
+}
+
 
 impl DefinitionIdentity {
     /// Numeric record identity. Anonymous source definitions retain zero on the wire.
@@ -8236,7 +8638,7 @@ pub(crate) fn definitions(
     )?;
     starts.dedup_by_key(|entry| entry.offset);
     let mut definitions = definitions_in_ranges(ctx, payload, &starts)?;
-    definitions.retain(|definition| retained_offsets.contains(&definition.offset));
+    ctx.retain_vec(&mut definitions, |definition| Ok(retained_offsets.contains(&definition.offset)), "creo definition offset retain")?;
     Ok(definitions)
 }
 
@@ -8369,7 +8771,7 @@ pub(crate) fn positional_replay_definitions(
     )?;
     starts.dedup_by_key(|entry| entry.offset);
     let mut definitions = definitions_in_ranges(ctx, payload, &starts)?;
-    definitions.retain(|definition| pending_offsets.contains(&definition.offset));
+    ctx.retain_vec(&mut definitions, |definition| Ok(pending_offsets.contains(&definition.offset)), "creo replay definition retain")?;
     Ok(definitions)
 }
 

@@ -1768,3 +1768,15 @@ fn legacy_string_utf8_refuses_before_binary_fallback() {
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
             && resource.operation == "creo UTF-8 validation"));
 }
+
+#[test]
+fn legacy_candidate_retain_refuses_work() {
+    let payload = b"@foo 1 1\n0 1 7\n";
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo legacy candidate retain",
+        |ctx| super::scan_scope(ctx, payload, 0..payload.len()),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo legacy candidate retain"));
+}

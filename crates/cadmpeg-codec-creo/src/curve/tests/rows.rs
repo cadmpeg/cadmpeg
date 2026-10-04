@@ -1480,3 +1480,28 @@ fn exact_helix_constructor_rejects_nonfinite_axial_coordinates() {
     assert_eq!(helix.height.get(), -2.0);
     assert_eq!(helix.z_start.get(), 3.0);
 }
+
+#[test]
+fn sampled_pcurve_retain_refuses_work() {
+    let (payload, face_ids) = canonical_and_positional_two_chart_input();
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo sampled pcurve retain",
+        |ctx| crate::curve::two_chart_pcurve_samples(ctx, &payload, Some(&face_ids)),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo sampled pcurve retain"));
+}
+
+#[test]
+fn pcurve_decode_cost_counts_each_sample_coordinate() {
+    let record = crate::curve::TwoChartPcurveSamples {
+        curve_id: 7, faces: [10, 11], samples: vec![[[1.0, 2.0], [3.0, 4.0]]; 2], offset: 0,
+    };
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let cost = cadmpeg_core::decode::cost::DecodeCost::decode_cost(&record, ctx, "pcurve record cost")?;
+        // The cost counts one curve ID, two face IDs, eight scalar coordinates and one offset.
+        assert_eq!(cost, 4 + 2 * 4 + 8 * 8 + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>()));
+        Ok::<(), cadmpeg_core::CodecError>(())
+    }).expect("pcurve cost fits service work");
+}

@@ -1327,3 +1327,21 @@ fn feature_reference_utf8_refuses_before_invalid_identity() {
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
             && resource.operation == "creo UTF-8 validation"));
 }
+
+#[test]
+fn aggregate_pcurve_retain_refuses_work() {
+    let samples = [0x0f, 0xe4, 0x0d, 0x18, 0xe4, 0x0f, 0x18, 0x0d, 0x0d, 0x18, 0xe4, 0x0f];
+    let mut payload = b"topol_ref_data\0".to_vec();
+    payload.extend_from_slice(&[7, 0, 4, 1, 0xf6, 0xfc, 3]);
+    payload.extend_from_slice(&samples);
+    payload.extend_from_slice(&[10, 11, 8, 9, 0, 0, 0xe3, 0xe1, 0xe3]);
+    let section = super::Section::scan("VisibGeom".to_string(), 0, payload.len(), None, &payload)
+        .expect("complete synthetic pcurve section");
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo aggregate pcurve retain",
+        |ctx| super::two_chart_pcurves(ctx, std::slice::from_ref(&section), &std::collections::BTreeSet::from([10, 11])),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo aggregate pcurve retain"));
+}

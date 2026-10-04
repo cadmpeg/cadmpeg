@@ -2053,7 +2053,7 @@ fn two_chart_pcurves(
         };
         *count += 1;
     }
-    records.retain(|record| counts.get(&record.curve_id) == Some(&1));
+    ctx.retain_vec(&mut records, |record| Ok(counts.get(&record.curve_id) == Some(&1)), "creo aggregate pcurve retain")?;
     Ok(records)
 }
 

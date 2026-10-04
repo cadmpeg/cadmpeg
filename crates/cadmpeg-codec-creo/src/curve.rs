@@ -631,6 +631,13 @@ pub(crate) struct TwoChartPcurveSamples {
     pub(crate) offset: usize,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for TwoChartPcurveSamples {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.curve_id, &self.faces, &self.samples, &self.offset,), ctx, operation)
+    }
+}
+
+
 /// One-sided endpoint path from the complete short fc 02 curve body.
 /// Every stored endpoint coordinate is finite at reader admission.
 ///
@@ -8668,7 +8675,7 @@ pub(crate) fn two_chart_pcurve_samples(
         };
         *count += 1;
     }
-    result.retain(|record| counts.get(&record.curve_id) == Some(&1));
+    ctx.retain_vec(&mut result, |record| Ok(counts.get(&record.curve_id) == Some(&1)), "creo sampled pcurve retain")?;
     Ok(result)
 }
 
