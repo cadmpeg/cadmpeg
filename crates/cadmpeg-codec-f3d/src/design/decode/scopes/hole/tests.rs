@@ -61,15 +61,19 @@ fn hole_scopes_propagate_reference_and_ascii_scan_refusals() {
     let (bytes, scope, _, _) = hole_point_stream();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let stream_types = HashMap::from([(55_u64, (HOLE_POINT_DATA_TYPE_GUID, 4))]);
+    // A record name of one graphic byte after an empty eleven-byte header
+    // and its four-byte word.
+    let mut named = vec![0; 15];
+    named.extend_from_slice(&[1, 0, 0, 0, b'a']);
     assert_eq!(
-        super::graphic_ascii_end(
+        super::record_name_end(
             &cadmpeg_test_support::service_decode_context(),
-            &[1, 0, 0, 0, b'a'],
+            &named,
             0,
-            0..=256,
+            "validate F3D hole ASCII field",
         )
         .unwrap(),
-        Some(5),
+        Some(20),
     );
     for operation in [
         "scan F3D Hole face-selection scope references",
@@ -83,8 +87,7 @@ fn hole_scopes_propagate_reference_and_ascii_scan_refusals() {
             0,
             |ctx| {
                 if operation == "validate F3D hole ASCII field" {
-                    return super::graphic_ascii_end(ctx, &[1, 0, 0, 0, b'a'], 0, 0..=256)
-                        .map(|_| ());
+                    return super::record_name_end(ctx, &named, 0, operation).map(|_| ());
                 }
                 exact_hole_construction_with_ctx(
                     ctx,
