@@ -383,7 +383,7 @@ impl Exchange {
 
         for identifier in self.schema_identifiers() {
             if !joined.is_empty() {
-                joined.push(',');
+                ctx.push_retained_char(&mut joined, ',', "STEP schema list separator character")?;
             }
             joined.push_str(identifier);
         }
