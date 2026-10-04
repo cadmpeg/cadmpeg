@@ -181,14 +181,14 @@ fn scan_skips_empty_binary_model_name_fields() {
 #[test]
 fn relation_model_name_accepts_binary_root_name() {
     assert_eq!(
-        super::super::relation_model_name("DRILL_BIT_10D0_SUPPRESSED_FEAT"),
+        crate::decode::with_test_decode_ctx(|ctx| super::super::relation_model_name(ctx, "DRILL_BIT_10D0_SUPPRESSED_FEAT")).expect("relation model name"),
         Some("DRILL_BIT_10D0_SUPPRESSED_FEAT")
     );
     assert_eq!(
-        super::super::relation_model_name("widget.PrT "),
+        crate::decode::with_test_decode_ctx(|ctx| super::super::relation_model_name(ctx, "widget.PrT ")).expect("relation model name"),
         Some("widget")
     );
-    assert_eq!(super::super::relation_model_name("widget.step"), None);
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| super::super::relation_model_name(ctx, "widget.step")).expect("relation model name"), None);
 }
 
 #[test]

@@ -1542,18 +1542,27 @@ fn native_model_name(
     Ok(None)
 }
 
-fn relation_model_name(filename: &str) -> Option<&str> {
+fn relation_model_name<'a>(
+    ctx: &DecodeContext<'_>,
+    filename: &'a str,
+) -> Result<Option<&'a str>, CodecError> {
     let filename = filename.trim_end_matches(' ');
-    let name = if filename.len() >= 4
-        && filename.as_bytes()[filename.len() - 4..].eq_ignore_ascii_case(b".prt")
-    {
+    let part_suffix = if filename.len() >= 4 {
+        match filename.get(filename.len() - 4..) {
+            Some(suffix) => ctx.eq_ignore_ascii_case(suffix, ".prt", "creo relation model suffix")?,
+            None => false,
+        }
+    } else {
+        false
+    };
+    let name = if part_suffix {
         &filename[..filename.len() - 4]
     } else if !filename.contains('.') {
         filename
     } else {
-        return None;
+        return Ok(None);
     };
-    (!name.is_empty()).then_some(name)
+    Ok((!name.is_empty()).then_some(name))
 }
 
 fn family_table(
@@ -3230,9 +3239,10 @@ pub(crate) fn scan_bytes<'a>(
     let mut curve_expressions = curve_expressions(
         ctx,
         &sections,
-        model_name
-            .as_ref()
-            .and_then(|model| relation_model_name(&model.name)),
+        match &model_name {
+            Some(model) => relation_model_name(ctx, &model.name)?,
+            None => None,
+        },
     )?;
     let topology_face_ids = topology_face_ids(
         ctx,
@@ -3410,9 +3420,10 @@ pub(crate) fn scan_bytes<'a>(
     curve::reevaluate_expression_records(
         ctx,
         &mut curve_expressions,
-        model_name
-            .as_ref()
-            .and_then(|model| relation_model_name(&model.name)),
+        match &model_name {
+            Some(model) => relation_model_name(ctx, &model.name)?,
+            None => None,
+        },
         &relation_dimension_symbols,
     )?;
     let feature_revolution_extents = feature_revolution_extents(
