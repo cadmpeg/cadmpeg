@@ -285,7 +285,7 @@ jobs:
 
       - name: Single-codec CLI feature gate
         # Per-codec optional deps must keep a one-feature binary compiling.
-        run: cargo build -q -p cadmpeg --no-default-features --features sldprt
+        run: cargo check -q -p cadmpeg --no-default-features --features sldprt
 
       - name: STEP-only low-confidence regression
         # This test target only exists when STEP is enabled without FCStd or F3D.
