@@ -218,8 +218,11 @@ pub fn classify_layer(
         carrier_text,
         "collect Parasolid declarations",
     )?;
-    ctx.charge_work(u64_from_index(verified.len()), "scan Parasolid verified rows")?;
-    let matched = if verified.contains(&id) {
+    let matched = if ctx.any_by(
+        verified,
+        |candidate| ctx.equal(candidate.as_str(), id.as_str(), "compare Parasolid verified row"),
+        "scan Parasolid verified rows",
+    )? {
         DialectMatch::admitted(id)
     } else {
         DialectMatch::residual(id)
