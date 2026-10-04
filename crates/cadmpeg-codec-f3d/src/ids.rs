@@ -1358,16 +1358,6 @@ pub(crate) fn native_design_feature_timeline_id_in_stream(
     format!("{stream}:design-feature-timeline#{offset}")
 }
 native_record_id!(
-    /// The native design Canvas image-plane binding key.
-    native_design_canvas_image_id,
-    "design-canvas-image"
-);
-native_record_id!(
-    /// The native design Decal image and target binding key.
-    native_design_decal_image_id,
-    "design-decal-image"
-);
-native_record_id!(
     /// The native persistent-reference record key.
     #[cfg(test)]
     native_persistent_reference_id,
