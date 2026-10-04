@@ -986,7 +986,7 @@ fn parse_extref_records(
             };
             handles.push(handle);
         }
-        let Ok(handles) = ExtrefHandles::new(handles) else {
+        let Ok(handles) = ExtrefHandles::from_wire(ctx, handles)? else {
             return Ok(None);
         };
         let prefix_byte_len = handles.prefix_byte_len();
