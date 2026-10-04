@@ -898,7 +898,7 @@ pub(crate) fn line(data: &[u8], start: usize) -> Option<(&[u8], usize)> {
 }
 
 pub(crate) fn parse_declaration<'a>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, line: &'a [u8]) -> Result<Option<(u32, &'a str, LegacyTypeCode)>, cadmpeg_core::CodecError> {
-    let line = { let Some(value) = std::str::from_utf8(line).ok() else { return Ok(None); }; value };
+    let line = { let Some(value) = ctx.validate_utf8(line, "creo legacy declaration UTF-8 validation")?.ok() else { return Ok(None); }; value };
     let mut fields = line.split_ascii_whitespace();
     let name = { let Some(value) = { let Some(value) = fields.next() else { return Ok(None); }; value }.strip_prefix('@') else { return Ok(None); }; value };
     if name.is_empty() || !name.bytes().all(|byte| byte.is_ascii_graphic()) {
