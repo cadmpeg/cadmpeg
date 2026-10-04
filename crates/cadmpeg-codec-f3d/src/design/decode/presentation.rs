@@ -300,14 +300,6 @@ fn copy_browser_node(
         &node.guid,
         "f3d body presentation browser node GUID",
     )?;
-    match ctx.validate_utf8(guid.as_bytes(), "validate F3D body presentation browser node GUID")? {
-        Ok(_) => {}
-        Err(_) => {
-            return Err(CodecError::Malformed(
-                "F3D browser node GUID is invalid UTF-8".into(),
-            ));
-        }
-    }
     Ok(BrowserNodeRecord {
         record_index: node.record_index,
         guid,
@@ -1019,19 +1011,6 @@ mod tests {
         });
         assert_eq!(nodes.len(), 1);
         assert_eq!(nodes[0].entity_suffix, 42);
-        let error = crate::test_support::resource_refusal_at(
-            ResourceDimension::WorkUnits,
-            "validate F3D body presentation browser node GUID",
-            0,
-            |ctx| super::copy_browser_node(ctx, &nodes[0]).map(|_| ()),
-        );
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "validate F3D body presentation browser node GUID"
-                    && limit.additional == u64::try_from(nodes[0].guid.len()).unwrap()
-        ));
     }
 
     #[test]

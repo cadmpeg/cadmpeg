@@ -147,25 +147,6 @@ fn sketch_scope_entity_id_copy_refuses_retained_limit() {
 }
 
 #[test]
-fn sketch_scope_entity_id_validation_refuses_work() {
-    let source =
-        crate::records::identity::DesignEntityId::try_from("entity_42".to_owned()).unwrap();
-    let error = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "validate F3D Sketch scope entity ID",
-        0,
-        |ctx| copy_sketch_entity_id(ctx, &source).map(|_| ()),
-    );
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == "validate F3D Sketch scope entity ID"
-                && limit.additional == u64::try_from(source.as_str().len()).unwrap()
-    ));
-}
-
-#[test]
 fn scope_payload_length_counts_supplementary_utf16_units_and_refuses_work() {
     let kind = crate::records::feature::scope::DesignFeatureKind::try_from("A😀".to_owned()).unwrap();
     let scope = crate::records::feature::scope::DesignParameterScope::empty("scope", kind, 1);

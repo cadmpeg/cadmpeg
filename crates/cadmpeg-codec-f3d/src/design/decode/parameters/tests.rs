@@ -1504,26 +1504,6 @@ fn parameter_companion_binding_refuses_output_recipe_and_id_limits() {
             "item limit {items}, retained limit {retained}: {result:?}"
         );
     }
-    let work_refusal = crate::test_support::resource_refusal_at(
-        ResourceDimension::WorkUnits,
-        "validate F3D companion owned recipe identifier",
-        0,
-        |ctx| {
-            super::bind_parameter_companion_payloads(
-                ctx,
-                vec![companion.clone()],
-                &inputs,
-            )
-            .map(|_| ())
-        },
-    );
-    assert!(matches!(
-        work_refusal,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "validate F3D companion owned recipe identifier"
-                && limit.additional == u64::try_from(recipe.id.len()).unwrap()
-    ));
     let bound = super::bind_parameter_companion_payloads(
         &cadmpeg_test_support::service_decode_context(),
         vec![companion],
