@@ -2,11 +2,35 @@
 //! Charged equality, ordering, and collection lookup.
 
 use super::cost::DecodeCost;
-use super::DecodeContext;
+use super::{u64_from_index, DecodeContext};
 use crate::CodecError;
 use std::borrow::Borrow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::hash::{BuildHasher, Hash};
+
+mod hash_set_source_sealed {
+    pub trait Sealed {}
+}
+
+/// A direct or optional hash set that equality can borrow without conversion.
+pub trait HashSetSource<T, S>: hash_set_source_sealed::Sealed {
+    /// Projects the set as a borrowed value, preserving an absent state.
+    fn as_hash_set(&self) -> Option<&HashSet<T, S>>;
+}
+
+impl<T, S> hash_set_source_sealed::Sealed for HashSet<T, S> {}
+impl<T, S> HashSetSource<T, S> for HashSet<T, S> {
+    fn as_hash_set(&self) -> Option<&HashSet<T, S>> {
+        Some(self)
+    }
+}
+
+impl<T, S> hash_set_source_sealed::Sealed for Option<HashSet<T, S>> {}
+impl<T, S> HashSetSource<T, S> for Option<HashSet<T, S>> {
+    fn as_hash_set(&self) -> Option<&HashSet<T, S>> {
+        self.as_ref()
+    }
+}
 
 impl DecodeContext<'_> {
     /// Compares values after admitting both operands and their owned children.
@@ -19,6 +43,56 @@ impl DecodeContext<'_> {
         self.charge_key(left, 1, operation)?;
         self.charge_key(right, 1, operation)?;
         Ok(left == right)
+    }
+    /// Compares direct or optional hash sets after admitting a collision bound.
+    ///
+    /// Each source key is charged once for hashing and at most `right.len()`
+    /// comparisons. The maximum right-key cost bounds the stored operand for
+    /// every comparison, so the lookup work is admitted before `HashSet::contains`
+    /// invokes `Hash` or `Eq`. Two absent optional sets compare equal; one absent
+    /// and one present set compare unequal.
+    pub fn equal_hash_set<T, S1, S2>(
+        &self,
+        left: &impl HashSetSource<T, S1>,
+        right: &impl HashSetSource<T, S2>,
+        operation: &'static str,
+    ) -> Result<bool, CodecError>
+    where
+        T: DecodeCost + Eq + Hash,
+        S1: BuildHasher,
+        S2: BuildHasher,
+    {
+        self.charge_work(0, operation)?;
+        let (left, right) = match (left.as_hash_set(), right.as_hash_set()) {
+            (None, None) => return Ok(true),
+            (Some(_), None) | (None, Some(_)) => return Ok(false),
+            (Some(left), Some(right)) => (left, right),
+        };
+        if left.len() != right.len() {
+            return Ok(false);
+        }
+
+        let mut maximum_right_key_bytes = 0_u64;
+        for key in self.admit_iter(right, operation)? {
+            maximum_right_key_bytes =
+                maximum_right_key_bytes.max(key.decode_cost(self, operation)?);
+        }
+
+        let right_len = u64_from_index(right.len());
+        for key in self.admit_iter(left, operation)? {
+            let key_bytes = key.decode_cost(self, operation)?;
+            let comparison_bytes = self.cost_sum(key_bytes, maximum_right_key_bytes, operation)?;
+            let lookup_bytes = self.cost_sum(
+                key_bytes,
+                self.cost_product(right_len, comparison_bytes, operation)?,
+                operation,
+            )?;
+            self.charge_work(lookup_bytes, operation)?;
+            if !right.contains(key) {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
     /// Orders values after admitting both operands and their owned children.
     pub fn compare<T: DecodeCost + Ord + ?Sized>(
