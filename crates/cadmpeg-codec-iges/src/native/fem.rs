@@ -110,7 +110,7 @@ pub(super) fn build(
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<NativeFemEntity>, CodecError> {
     let mut result = Vec::new();
-    for entry in directory.iter().filter(|entry| is_fem(entry)) {
+    for entry in ctx.admit_iter(directory, "iges FEM directory scan")?.filter(|entry| is_fem(entry)) {
         ctx.reserve_vec(&mut result, 1, "iges FEM native entities")?;
         let record = records.get(&entry.sequence).copied();
         let native = match entry.entity_type {
@@ -686,6 +686,31 @@ mod tests {
                 .collect(),
             Vec::new(),
         )
+    }
+
+    #[test]
+    fn fem_directory_scan_refuses_before_filtering_a_non_fem_entry() {
+        use crate::graph::ParameterResolver;
+        use crate::test_support::directory_target;
+        use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        use std::collections::BTreeMap;
+
+        let directory = [directory_target(1, 116)];
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        crate::test_support::with_policy_context(&[], &policy, |ctx| {
+            let resolver = ParameterResolver::new(&[], ctx).unwrap();
+            assert!(matches!(super::build(&directory, &BTreeMap::new(), &resolver, ctx),
+                Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "iges FEM directory scan"
+                    && limit.used == 0 && limit.additional == 1));
+        });
+        crate::test_support::with_service_context(&[], |ctx| {
+            let resolver = ParameterResolver::new(&[], ctx).unwrap();
+            assert!(super::build(&directory, &BTreeMap::new(), &resolver, ctx).unwrap().is_empty());
+        });
     }
 
     #[test]
