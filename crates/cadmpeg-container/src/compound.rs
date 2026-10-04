@@ -1933,7 +1933,7 @@ fn path_key(ctx: &DecodeContext<'_>, path: &str) -> Result<Vec<Vec<u16>>, CodecE
         } else {
             let mut encoded = [0_u16; 2];
             for &unit in ctx.admit_iter(
-                character.encode_utf16(&mut encoded),
+                &*character.encode_utf16(&mut encoded),
                 "encode CFB path units",
             )? {
                 ctx.push_vec(&mut component, cfb_upper_unit(unit), "CFB path key units")?;
