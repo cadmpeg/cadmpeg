@@ -22,14 +22,32 @@ pub(in crate::design::decode) fn class_tag_from_view(
     .ok())
 }
 
-/// Copy a class tag that an indexed-header read already validated as three
-/// ASCII digits into retained storage.
+/// Split `text` at its last ASCII `separator` without allocating either half.
+/// The byte search admits the text and the one-byte pattern.
+pub(in crate::design::decode) fn rsplit_once_ascii<'text>(
+    ctx: &DecodeContext<'_>,
+    text: &'text str,
+    separator: u8,
+    operation: &'static str,
+) -> Result<Option<(&'text str, &'text str)>, CodecError> {
+    debug_assert!(separator.is_ascii());
+    let Some(at) = ctx.rfind_bytes(text.as_bytes(), &[separator], operation)? else {
+        return Ok(None);
+    };
+    // An ASCII byte is a character boundary on both sides.
+    Ok(text.get(..at).zip(text.get(at + 1..)))
+}
+
+/// Copy a three-digit class tag that an indexed-header read already
+/// validated into retained storage.
 pub(in crate::design::decode) fn retain_class_tag(
     ctx: &DecodeContext<'_>,
-    value: &str,
+    value: &[u8; 3],
     operation: &'static str,
 ) -> Result<crate::records::references::DesignClassTag, CodecError> {
-    crate::records::references::DesignClassTag::try_from(ctx.copy_retained_text(value, operation)?)
+    let text = std::str::from_utf8(value)
+        .map_err(|_| CodecError::malformed("F3D class tag must be three ASCII digits"))?;
+    crate::records::references::DesignClassTag::try_from(ctx.copy_retained_text(text, operation)?)
         .map_err(CodecError::Malformed)
 }
 
@@ -139,10 +157,11 @@ pub(in crate::design::decode) fn fixed_utf16_ascii_eq(
     count_at: usize,
     expected: &str,
 ) -> Result<Option<usize>, CodecError> {
+    if !ctx.is_ascii(expected.as_bytes(), "check F3D UTF-16 ASCII literal")? {
+        return Ok(None);
+    }
     let Some((units, end)) = (|| {
-        if !expected.is_ascii()
-            || usize::try_from(View::u32_le_at(bytes, count_at)?).ok()? != expected.len()
-        {
+        if usize::try_from(View::u32_le_at(bytes, count_at)?).ok()? != expected.len() {
             return None;
         }
         let start = count_at.checked_add(4)?;
@@ -414,14 +433,16 @@ mod tests {
 
     #[test]
     fn fixed_utf16_ascii_eq_refuses_work_before_code_unit_comparison() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::decode::ResourceDimension;
         let bytes = crate::bytes::lp_utf16_bytes("Thicken").unwrap();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(fixed_utf16_ascii_eq(&ctx, &bytes, 0, "Thicken"),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            "match F3D UTF-16 ASCII field",
+            0,
+            |ctx| fixed_utf16_ascii_eq(ctx, &bytes, 0, "Thicken"),
+        );
+        assert!(matches!(error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::WorkUnits
                     && limit.operation == "match F3D UTF-16 ASCII field"
                     && limit.additional == 14));

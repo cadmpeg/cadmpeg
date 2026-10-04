@@ -192,20 +192,20 @@ pub(super) fn bind_axial_assembly_operand_targets(
 
 struct AxialComponentOperand<'bytes> {
     construction_record_index: u32,
-    construction_class_tag: &'bytes str,
+    construction_class_tag: &'bytes [u8; 3],
     construction_byte_offset: u64,
     construction_transform_offset: u64,
     axis_record_index_offsets: [u64; 2],
-    construction_paired_class_tag: &'bytes str,
+    construction_paired_class_tag: &'bytes [u8; 3],
     construction_paired_byte_offset: u64,
     selectors: Box<[DesignAssemblyAxialSelectorIdentity; 2]>,
 }
 
 struct ExactIndexedRecordPair<'bytes> {
     record_index: u32,
-    class_tag: &'bytes str,
+    class_tag: &'bytes [u8; 3],
     byte_offset: usize,
-    paired_class_tag: &'bytes str,
+    paired_class_tag: &'bytes [u8; 3],
     paired_byte_offset: usize,
 }
 

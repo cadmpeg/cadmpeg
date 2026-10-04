@@ -13,6 +13,7 @@ use cadmpeg_core::container::ContainerRole;
 use crate::bytes::lp_ascii_filtered_view;
 use crate::bytes::{f64s_at, take_reference, Reference};
 use crate::container::ContainerScan;
+use crate::design::decode::byte_fields::bytes_at;
 use crate::design::decode::text::design_record_id_charged;
 
 use crate::design::{design_feature_family, DesignFeatureFamily};
@@ -238,21 +239,11 @@ pub(in crate::design) fn native_scope_scoped<'a>(
 }
 
 fn native_scope_encoded_len(ctx: &DecodeContext<'_>, name: &str) -> Result<usize, CodecError> {
-    let encoded_len = ctx
-        .admit_iter(name, "measure F3D native stream key")?
-        .try_fold(ids::SCHEME_PREFIX.len(), |length, character| {
-            let character_len = if matches!(character, ':' | '#' | '%') || character.is_whitespace()
-            {
-                character.len_utf8().checked_mul(3)?
-            } else {
-                character.len_utf8()
-            };
-            length.checked_add(character_len)
-        })
+    percent_encoded_len(ctx, name, "measure F3D native stream key")?
+        .checked_add(ids::SCHEME_PREFIX.len())
         .ok_or_else(|| {
-            ctx.refuse_codec_limit("f3d native stream key length", u64::MAX - 1, u64::MAX)
-        })?;
-    Ok(encoded_len)
+            ctx.refuse_codec_limit("measure F3D native stream key", u64::MAX - 1, u64::MAX)
+        })
 }
 
 fn append_native_scope(
@@ -260,21 +251,58 @@ fn append_native_scope(
     name: &str,
     out: &mut String,
 ) -> Result<(), CodecError> {
-    out.push_str(ids::SCHEME_PREFIX);
-    for character in ctx.admit_iter(name, "scan F3D native stream key characters")? {
-        if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
-            let mut bytes = [0; 4];
-            for byte in ctx.admit_iter(
-                character.encode_utf8(&mut bytes).as_bytes(),
-                "scan F3D native stream key escaped bytes",
-            )? {
-                const HEX: &[u8; 16] = b"0123456789ABCDEF";
-                out.push('%');
-                out.push(char::from(HEX[usize::from(byte >> 4)]));
-                out.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    ctx.append_retained(out, ids::SCHEME_PREFIX, "write F3D native stream key")?;
+    append_percent_encoded(ctx, name, out, "write F3D native stream key")
+}
+
+/// Whether the identity component's percent encoding escapes `character`.
+fn is_percent_escaped(character: char) -> bool {
+    matches!(character, ':' | '#' | '%') || character.is_whitespace()
+}
+
+/// Byte length of `name` under the identity component's percent encoding.
+pub(in crate::design::decode) fn percent_encoded_len(
+    ctx: &DecodeContext<'_>,
+    name: &str,
+    operation: &'static str,
+) -> Result<usize, CodecError> {
+    ctx.admit_iter(name, operation)?
+        .try_fold(0usize, |length, character| {
+            let width = if is_percent_escaped(character) {
+                character.len_utf8().checked_mul(3)?
+            } else {
+                character.len_utf8()
+            };
+            length.checked_add(width)
+        })
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))
+}
+
+/// Append `name` under the identity component's percent encoding. Each
+/// written character is charged; a caller that reserved the encoded length
+/// grows `out` no further.
+pub(in crate::design::decode) fn append_percent_encoded(
+    ctx: &DecodeContext<'_>,
+    name: &str,
+    out: &mut String,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    for character in ctx.admit_iter(name, operation)? {
+        if !is_percent_escaped(character) {
+            ctx.push_retained_char(out, character, operation)?;
+            continue;
+        }
+        let mut buffer = [0; 4];
+        let length = character.encode_utf8(&mut buffer).len();
+        for byte in buffer.into_iter().take(length) {
+            for escaped in [
+                '%',
+                char::from(HEX[usize::from(byte >> 4)]),
+                char::from(HEX[usize::from(byte & 0x0f)]),
+            ] {
+                ctx.push_retained_char(out, escaped, operation)?;
             }
-        } else {
-            out.push(character);
         }
     }
     Ok(())
@@ -5548,7 +5576,7 @@ pub(in crate::design::decode) struct IndexedRecordHeader<'bytes> {
     pub(super) offset: usize,
     pub(super) record_index: u32,
     /// Three ASCII digits borrowed from the header.
-    pub(super) class_tag: &'bytes str,
+    pub(super) class_tag: &'bytes [u8; 3],
     /// Numeric value of the three-digit class tag.
     pub(super) class_code: u32,
 }
@@ -5560,10 +5588,7 @@ impl IndexedRecordHeader<'_> {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<crate::records::references::DesignClassTag, CodecError> {
-        crate::records::references::DesignClassTag::try_from(
-            ctx.copy_retained_text(self.class_tag, operation)?,
-        )
-        .map_err(CodecError::Malformed)
+        crate::design::decode::text::retain_class_tag(ctx, self.class_tag, operation)
     }
 }
 
@@ -5573,14 +5598,13 @@ pub(super) fn indexed_record_header_at(bytes: &[u8], at: usize) -> Option<Indexe
     if View::u32_le_at(bytes, at) != Some(3) {
         return None;
     }
-    let tag = bytes.get(at.checked_add(4)?..)?.first_chunk::<3>()?;
-    if !tag.iter().all(u8::is_ascii_digit) {
+    let class_tag = bytes_at::<3>(bytes, at.checked_add(4)?)?;
+    if !class_tag.iter().all(u8::is_ascii_digit) {
         return None;
     }
-    let class_code = tag
+    let class_code = class_tag
         .iter()
         .fold(0, |value, digit| value * 10 + u32::from(digit - b'0'));
-    let class_tag = std::str::from_utf8(tag).ok()?;
     let record_index = View::u32_le_at(bytes, at.checked_add(7)?)?;
     Some(IndexedRecordHeader {
         offset: at,

@@ -260,9 +260,9 @@ pub(super) fn exact_legacy_as_built_421_solved_frame(
             .iter()
             .copied()
             .filter_map(|frame_start| {
-                (exact_indexed_header_at(bytes, frame_start, frame_record_index)
-                    == Some(expected_class_tag))
-                .then_some(Ok(frame_start))
+                exact_indexed_header_at(bytes, frame_start, frame_record_index)
+                    .is_some_and(|tag| tag.as_slice() == expected_class_tag.as_bytes())
+                    .then_some(Ok(frame_start))
             });
         let frame_start = match frame_candidates.next() {
             Some(Ok(frame_start)) => frame_start,
@@ -296,7 +296,7 @@ pub(super) fn exact_legacy_as_built_421_solved_frame(
             frame_start.checked_add(frame_length)?,
             frame_record_index,
         )?;
-        if paired_class_tag != generation.frame_paired_class_tag() {
+        if paired_class_tag.as_slice() != generation.frame_paired_class_tag().as_bytes() {
             return None;
         }
         if bytes.get(

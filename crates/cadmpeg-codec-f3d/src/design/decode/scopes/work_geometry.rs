@@ -6,6 +6,8 @@ use cadmpeg_core::decode::u64_from_index;
 use super::shared_frames::exact_indexed_header_at;
 use super::shared_frames::marked_record_reference;
 use crate::bytes::{f64s_at, finite_reals_at};
+use crate::design::decode::byte_fields::{bytes_at, zeros_at};
+use crate::design::decode::reference_runs::admit_reference_values;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::layout::joint_origin_legacy_class_337_266_frame as joint_origin_class_337_266;
 use crate::layout::work_axis_direct_carrier_class_297 as work_axis_297;
@@ -32,210 +34,184 @@ pub(super) struct ScopePlacementFrame {
     pub(super) reference: Option<(u32, u64)>,
 }
 
+/// The only work-plane placement among the frames of the scope's references.
 pub(super) fn exact_work_plane_frame(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Result<Option<ScopePlacementFrame>, cadmpeg_core::CodecError> {
-    (|| {
-        let mut candidate = None;
-        let reference_members = match super::parameter_scope::reference_members(
-            ctx,
-            scope.reference_members(),
-            "scan F3D work-plane reference members",
-        ) {
-            Ok(members) => members,
-            Err(error) => return Some(Err(error)),
-        };
-        for record_index in reference_members {
-            for (start, paired) in match records.frames(ctx, record_index) {
-                Ok(frames) => frames,
-                Err(error) => return Some(Err(error)),
-            } {
-                let frame_length = paired.checked_sub(start)?;
-                let (matrix_at, reference) = match frame_length {
-                    work_plane_legacy::LEN
-                        if bytes.get(start + 4..start + 7) == Some(b"400")
-                            && bytes.get(paired + 4..paired + 7) == Some(b"262")
-                            && bytes.get(start + 11..start + work_plane_legacy::MATRIX)
-                                == Some(&[0u8; work_plane_legacy::MATRIX - 11][..]) =>
-                    {
-                        (start + work_plane_legacy::MATRIX, None)
-                    }
-                    work_plane_class_290::LEN
-                        if bytes.get(start + 4..start + 7) == Some(b"290")
-                            && bytes.get(paired + 4..paired + 7) == Some(b"262")
-                            && bytes
-                                .get(start + 11..start + work_plane_class_290::PREFIX_MARKER)
-                                == Some(&[0u8; work_plane_class_290::PREFIX_MARKER - 11][..])
-                            && bytes.get(
-                                start + work_plane_class_290::PREFIX_MARKER
-                                    ..start + work_plane_class_290::MATRIX,
-                            ) == Some(&[1, 1, 0, 0][..]) =>
-                    {
-                        (start + work_plane_class_290::MATRIX, None)
-                    }
-                    work_plane_325::LEN
-                        if matches!(
-                            (
-                                bytes.get(start + 4..start + 7),
-                                bytes.get(paired + 4..paired + 7),
-                            ),
-                            (Some(b"320"), Some(b"258"))
-                                | (Some(b"380"), Some(b"262"))
-                                | (Some(b"308" | b"431"), Some(b"257"))
-                                | (Some(b"364"), Some(b"263"))
-                        ) && bytes.get(start + 11..start + work_plane_325::MATRIX)
-                            == Some(&[0u8; work_plane_325::MATRIX - 11][..]) =>
-                    {
-                        (start + work_plane_325::MATRIX, None)
-                    }
-                    work_plane_class_256::LEN
-                        if bytes.get(start + 4..start + 7) == Some(b"256")
-                            && bytes.get(paired + 4..paired + 7) == Some(b"262")
-                            && bytes.get(start + 11..start + work_plane_class_256::OPAQUE_U16)
-                                == Some(&[0u8; work_plane_class_256::OPAQUE_U16 - 11][..])
-                            && bytes.get(
-                                start + work_plane_class_256::ZERO_PAIR
-                                    ..start + work_plane_class_256::MATRIX,
-                            ) == Some(
-                                &[0u8; work_plane_class_256::MATRIX
-                                    - work_plane_class_256::ZERO_PAIR][..],
-                            ) =>
-                    {
-                        (start + work_plane_class_256::MATRIX, None)
-                    }
-                    work_plane_class_337_325::LEN
-                        if bytes.get(start + 4..start + 7) == Some(b"337")
-                            && bytes.get(paired + 4..paired + 7) == Some(b"266")
-                            && bytes
-                                .get(start + 11..start + work_plane_class_337_325::OPAQUE_U16)
-                                == Some(&[0u8; work_plane_class_337_325::OPAQUE_U16 - 11][..])
-                            && bytes.get(
-                                start + work_plane_class_337_325::ZERO_PAIR
-                                    ..start + work_plane_class_337_325::MATRIX,
-                            ) == Some(
-                                &[0u8; work_plane_class_337_325::MATRIX
-                                    - work_plane_class_337_325::ZERO_PAIR][..],
-                            ) =>
-                    {
-                        (start + work_plane_class_337_325::MATRIX, None)
-                    }
-                    work_plane_class_322_332::LEN
-                        if bytes.get(start + 4..start + 7) == Some(b"322")
-                            && bytes.get(paired + 4..paired + 7) == Some(b"261")
-                            && bytes.get(start + 11..start + work_plane_class_322_332::MATRIX)
-                                == Some(&[0u8; work_plane_class_322_332::MATRIX - 11][..]) =>
-                    {
-                        (start + work_plane_class_322_332::MATRIX, None)
-                    }
-                    321 if bytes.get(start + 11..start + 49) == Some(&[0u8; 38][..]) => {
-                        (start + 49, None)
-                    }
-                    work_plane_321_opaque::LEN
-                        if matches!(
-                            (
-                                bytes.get(start + 4..start + 7),
-                                bytes.get(paired + 4..paired + 7),
-                            ),
-                            (Some(b"341"), Some(b"261")) | (Some(b"346"), Some(b"262"))
-                        ) && bytes
-                            .get(start + 11..start + work_plane_321_opaque::OPAQUE_U16)
-                            == Some(&[0u8; work_plane_321_opaque::OPAQUE_U16 - 11][..])
-                            && bytes.get(
-                                start + work_plane_321_opaque::ZERO_PAIR
-                                    ..start + work_plane_321_opaque::MATRIX,
-                            ) == Some(
-                                &[0u8; work_plane_321_opaque::MATRIX
-                                    - work_plane_321_opaque::ZERO_PAIR][..],
-                            ) =>
-                    {
-                        (start + work_plane_321_opaque::MATRIX, None)
-                    }
-                    321 if bytes.get(start + 4..start + 7) == Some(b"364")
-                        && bytes.get(paired + 4..paired + 7) == Some(b"264")
-                        && bytes.get(start + 11..start + 46) == Some(&[0u8; 35][..])
-                        && bytes.get(start + 46..start + 49) == Some(&[1, 0, 0][..]) =>
-                    {
-                        (start + 49, None)
-                    }
-                    321 if bytes.get(start + 4..start + 7) == Some(b"364")
-                        && bytes.get(paired + 4..paired + 7) == Some(b"264")
-                        && bytes.get(start + 11..start + 45) == Some(&[0u8; 34][..])
-                        && bytes.get(start + 45..start + 49) == Some(&[0xcc, 0xcd, 0, 0][..]) =>
-                    {
-                        (start + 49, None)
-                    }
-                    326 if matches!(
-                        (
-                            bytes.get(start + 4..start + 7),
-                            bytes.get(paired + 4..paired + 7),
-                        ),
-                        (Some(b"279"), Some(b"266"))
-                            | (Some(b"409"), Some(b"258"))
-                            | (Some(b"450"), Some(b"259"))
-                    ) && bytes.get(start + 11..start + 50) == Some(&[0u8; 39][..]) =>
-                    {
-                        (start + 50, None)
-                    }
-                    work_plane_337::LEN
-                        if matches!(
-                            (
-                                bytes.get(start + 4..start + 7),
-                                bytes.get(paired + 4..paired + 7),
-                            ),
-                            (Some(b"350" | b"409"), Some(b"258"))
-                        ) && bytes.get(start + 11..start + work_plane_337::MATRIX)
-                            == Some(&[0u8; work_plane_337::MATRIX - 11][..]) =>
-                    {
-                        (start + work_plane_337::MATRIX, None)
-                    }
-                    352 | 363 | 374
-                        if bytes.get(start + 55) == Some(&1)
-                            && bytes.get(start + 56..start + 66) == Some(&[0u8; 10][..]) =>
-                    {
-                        (start + 66, None)
-                    }
-                    362 | 373
-                        if bytes.get(start + 55..start + 58) == Some(&[1, 0, 1][..])
-                            && bytes.get(start + 62..start + 76) == Some(&[0u8; 14][..]) =>
-                    {
-                        (
-                            start + 76,
-                            Some((
-                                View::u32_le_at(bytes, start + 58)?,
-                                u64_from_index(start + 58),
-                            )),
-                        )
-                    }
-                    _ => continue,
-                };
-                let values = f64s_at::<16>(bytes, matrix_at)?;
-                let mut transform = [[0.0; 4]; 4];
-                for (ordinal, value) in values.into_iter().enumerate() {
-                    transform[ordinal / 4][ordinal % 4] = value;
-                }
-                let Ok(transform) =
-                    crate::records::sketch_placement::SketchPlacementMatrix::try_from(transform)
-                else {
-                    continue;
-                };
-                if candidate
-                    .replace(ScopePlacementFrame {
-                        transform,
-                        transform_offset: u64_from_index(matrix_at),
-                        reference,
-                    })
-                    .is_some()
-                {
-                    return None;
-                }
+    let mut candidate = None;
+    for record_index in admit_reference_values(
+        ctx,
+        scope.reference_members(),
+        "scan F3D work-plane reference members",
+    )? {
+        for (start, paired) in records.frames(ctx, *record_index)? {
+            let Some(frame) = work_plane_frame_at(bytes, start, paired) else {
+                continue;
+            };
+            if candidate.replace(frame).is_some() {
+                return Ok(None);
             }
         }
-        candidate.map(Ok)
-    })()
-    .transpose()
+    }
+    Ok(candidate)
+}
+
+/// The work-plane placement of the frame from `start` to its paired header at
+/// `paired`. Every matrix lies inside its frame.
+fn work_plane_frame_at(bytes: &[u8], start: usize, paired: usize) -> Option<ScopePlacementFrame> {
+    let frame_length = paired.checked_sub(start)?;
+    let (matrix_at, reference) = match frame_length {
+        work_plane_legacy::LEN
+            if bytes.get(start + 4..start + 7) == Some(b"400")
+                && bytes.get(paired + 4..paired + 7) == Some(b"262")
+                && zeros_at::<{ work_plane_legacy::MATRIX - 11 }>(bytes, start + 11) =>
+        {
+            (start + work_plane_legacy::MATRIX, None)
+        }
+        work_plane_class_290::LEN
+            if bytes.get(start + 4..start + 7) == Some(b"290")
+                && bytes.get(paired + 4..paired + 7) == Some(b"262")
+                && zeros_at::<{ work_plane_class_290::PREFIX_MARKER - 11 }>(bytes, start + 11)
+                && bytes_at::<4>(bytes, start + work_plane_class_290::PREFIX_MARKER)
+                    == Some(&[1, 1, 0, 0]) =>
+        {
+            (start + work_plane_class_290::MATRIX, None)
+        }
+        work_plane_325::LEN
+            if matches!(
+                (
+                    bytes.get(start + 4..start + 7),
+                    bytes.get(paired + 4..paired + 7),
+                ),
+                (Some(b"320"), Some(b"258"))
+                    | (Some(b"380"), Some(b"262"))
+                    | (Some(b"308" | b"431"), Some(b"257"))
+                    | (Some(b"364"), Some(b"263"))
+            ) && zeros_at::<{ work_plane_325::MATRIX - 11 }>(bytes, start + 11) =>
+        {
+            (start + work_plane_325::MATRIX, None)
+        }
+        work_plane_class_256::LEN
+            if bytes.get(start + 4..start + 7) == Some(b"256")
+                && bytes.get(paired + 4..paired + 7) == Some(b"262")
+                && zeros_at::<{ work_plane_class_256::OPAQUE_U16 - 11 }>(bytes, start + 11)
+                && zeros_at::<{ work_plane_class_256::MATRIX - work_plane_class_256::ZERO_PAIR }>(
+                    bytes,
+                    start + work_plane_class_256::ZERO_PAIR,
+                ) =>
+        {
+            (start + work_plane_class_256::MATRIX, None)
+        }
+        work_plane_class_337_325::LEN
+            if bytes.get(start + 4..start + 7) == Some(b"337")
+                && bytes.get(paired + 4..paired + 7) == Some(b"266")
+                && zeros_at::<{ work_plane_class_337_325::OPAQUE_U16 - 11 }>(bytes, start + 11)
+                && zeros_at::<
+                    { work_plane_class_337_325::MATRIX - work_plane_class_337_325::ZERO_PAIR },
+                >(bytes, start + work_plane_class_337_325::ZERO_PAIR) =>
+        {
+            (start + work_plane_class_337_325::MATRIX, None)
+        }
+        work_plane_class_322_332::LEN
+            if bytes.get(start + 4..start + 7) == Some(b"322")
+                && bytes.get(paired + 4..paired + 7) == Some(b"261")
+                && zeros_at::<{ work_plane_class_322_332::MATRIX - 11 }>(bytes, start + 11) =>
+        {
+            (start + work_plane_class_322_332::MATRIX, None)
+        }
+        321 if zeros_at::<38>(bytes, start + 11) => (start + 49, None),
+        work_plane_321_opaque::LEN
+            if matches!(
+                (
+                    bytes.get(start + 4..start + 7),
+                    bytes.get(paired + 4..paired + 7),
+                ),
+                (Some(b"341"), Some(b"261")) | (Some(b"346"), Some(b"262"))
+            ) && zeros_at::<{ work_plane_321_opaque::OPAQUE_U16 - 11 }>(bytes, start + 11)
+                && zeros_at::<
+                    { work_plane_321_opaque::MATRIX - work_plane_321_opaque::ZERO_PAIR },
+                >(bytes, start + work_plane_321_opaque::ZERO_PAIR) =>
+        {
+            (start + work_plane_321_opaque::MATRIX, None)
+        }
+        321 if bytes.get(start + 4..start + 7) == Some(b"364")
+            && bytes.get(paired + 4..paired + 7) == Some(b"264")
+            && zeros_at::<35>(bytes, start + 11)
+            && bytes_at::<3>(bytes, start + 46) == Some(&[1, 0, 0]) =>
+        {
+            (start + 49, None)
+        }
+        321 if bytes.get(start + 4..start + 7) == Some(b"364")
+            && bytes.get(paired + 4..paired + 7) == Some(b"264")
+            && zeros_at::<34>(bytes, start + 11)
+            && bytes_at::<4>(bytes, start + 45) == Some(&[0xcc, 0xcd, 0, 0]) =>
+        {
+            (start + 49, None)
+        }
+        326 if matches!(
+            (
+                bytes.get(start + 4..start + 7),
+                bytes.get(paired + 4..paired + 7),
+            ),
+            (Some(b"279"), Some(b"266"))
+                | (Some(b"409"), Some(b"258"))
+                | (Some(b"450"), Some(b"259"))
+        ) && zeros_at::<39>(bytes, start + 11) =>
+        {
+            (start + 50, None)
+        }
+        work_plane_337::LEN
+            if matches!(
+                (
+                    bytes.get(start + 4..start + 7),
+                    bytes.get(paired + 4..paired + 7),
+                ),
+                (Some(b"350" | b"409"), Some(b"258"))
+            ) && zeros_at::<{ work_plane_337::MATRIX - 11 }>(bytes, start + 11) =>
+        {
+            (start + work_plane_337::MATRIX, None)
+        }
+        352 | 363 | 374
+            if bytes.get(start + 55) == Some(&1) && zeros_at::<10>(bytes, start + 56) =>
+        {
+            (start + 66, None)
+        }
+        362 | 373
+            if bytes_at::<3>(bytes, start + 55) == Some(&[1, 0, 1])
+                && zeros_at::<14>(bytes, start + 62) =>
+        {
+            (
+                start + 76,
+                Some((
+                    View::u32_le_at(bytes, start + 58)?,
+                    u64_from_index(start + 58),
+                )),
+            )
+        }
+        _ => return None,
+    };
+    let transform = placement_matrix_at(bytes, matrix_at)?;
+    Some(ScopePlacementFrame {
+        transform,
+        transform_offset: u64_from_index(matrix_at),
+        reference,
+    })
+}
+
+/// The finite placement matrix of sixteen little-endian scalars at `at`.
+fn placement_matrix_at(
+    bytes: &[u8],
+    at: usize,
+) -> Option<crate::records::sketch_placement::SketchPlacementMatrix> {
+    let values = f64s_at::<16>(bytes, at)?;
+    let mut transform = [[0.0; 4]; 4];
+    for (ordinal, value) in values.into_iter().enumerate() {
+        transform[ordinal / 4][ordinal % 4] = value;
+    }
+    crate::records::sketch_placement::SketchPlacementMatrix::try_from(transform).ok()
 }
 
 pub(super) fn exact_work_axis_construction(
@@ -243,7 +219,7 @@ pub(super) fn exact_work_axis_construction(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignWorkAxisConstruction> {
-    if scope.kind() != scope::DesignFeatureKind::WorkAxis {
+    if !matches!(scope.payload(), scope::DesignScopePayload::WorkAxis(_)) {
         return None;
     }
     exact_two_point_work_axis_construction(bytes, records, scope)
@@ -341,22 +317,22 @@ fn exact_direct_work_axis_construction(
         scope.frame_length(),
     ) {
         ("302", "262", 268) => (
-            "297",
-            "262",
+            b"297",
+            b"262",
             work_axis_297::LEN,
-            "306",
-            "262",
+            b"306",
+            b"262",
             work_axis_297::VALUE_COUNT,
             work_axis_297::AXIS_VALUES,
             work_axis_297::REFERENCE_COUNT,
             work_axis_297::REFERENCE_PREAMBLE,
         ),
         ("361", "258", 254) => (
-            "335",
-            "258",
+            b"335",
+            b"258",
             work_axis_335::LEN,
-            "349",
-            "258",
+            b"349",
+            b"258",
             work_axis_335::VALUE_COUNT,
             work_axis_335::AXIS_VALUES,
             work_axis_335::REFERENCE_COUNT,
@@ -420,122 +396,86 @@ fn exact_direct_work_axis_construction(
     })
 }
 
+/// The only joint-origin placement among the frames of the scope's references.
 pub(super) fn exact_joint_origin_frame(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Result<Option<ScopePlacementFrame>, cadmpeg_core::CodecError> {
-    (|| {
-        if scope.kind() != scope::DesignFeatureKind::JointOrigin
-            || matches!(scope.frame_length(), 300 | 322 | 344)
-        {
-            return None;
-        }
-        let mut candidate = None;
-        let reference_members = match super::parameter_scope::reference_members(
-            ctx,
-            scope.reference_members(),
-            "scan F3D joint-origin reference members",
-        ) {
-            Ok(members) => members,
-            Err(error) => return Some(Err(error)),
-        };
-        for record_index in reference_members {
-            for (start, paired) in match records.frames(ctx, record_index) {
-                Ok(frames) => frames,
-                Err(error) => return Some(Err(error)),
-            } {
-                if paired.checked_sub(start)? == joint_origin_class_337_266::LEN
-                    && bytes.get(start + 4..start + 7) == Some(b"337")
-                    && bytes.get(paired + 4..paired + 7) == Some(b"266")
-                    && bytes.get(start + 11..start + joint_origin_class_337_266::MATRIX_PREFIX)
-                        == Some(&[0; joint_origin_class_337_266::MATRIX_PREFIX - 11][..])
-                    && bytes.get(
-                        start + joint_origin_class_337_266::MATRIX_PREFIX
-                            ..start + joint_origin_class_337_266::MATRIX,
-                    ) == Some(&joint_origin_class_337_266::MATRIX_PREFIX_VALUE)
-                {
-                    let values = f64s_at::<16>(bytes, start + joint_origin_class_337_266::MATRIX)?;
-                    let mut transform = [[0.0; 4]; 4];
-                    for (ordinal, value) in values.into_iter().enumerate() {
-                        transform[ordinal / 4][ordinal % 4] = value;
-                    }
-                    if let Ok(transform) =
-                        crate::records::sketch_placement::SketchPlacementMatrix::try_from(transform)
-                    {
-                        if candidate
-                            .replace(ScopePlacementFrame {
-                                transform,
-                                transform_offset: u64_from_index(
-                                    start + joint_origin_class_337_266::MATRIX,
-                                ),
-                                reference: None,
-                            })
-                            .is_some()
-                        {
-                            return None;
-                        }
-                    }
-                    continue;
-                }
-                if paired.checked_sub(start)? == 385
-                    && bytes.get(start + 4..start + 7) == Some(b"364")
-                    && bytes.get(paired + 4..paired + 7) == Some(b"264")
-                    && bytes.get(start + 11..start + 45) == Some(&[0; 34])
-                    && bytes.get(start + 45..start + 49) == Some(&[1, 1, 0, 0])
-                {
-                    let values = f64s_at::<16>(bytes, start + 49)?;
-                    let mut transform = [[0.0; 4]; 4];
-                    for (ordinal, value) in values.into_iter().enumerate() {
-                        transform[ordinal / 4][ordinal % 4] = value;
-                    }
-                    if let Ok(transform) =
-                        crate::records::sketch_placement::SketchPlacementMatrix::try_from(transform)
-                    {
-                        if candidate
-                            .replace(ScopePlacementFrame {
-                                transform,
-                                transform_offset: u64_from_index(start + 49),
-                                reference: None,
-                            })
-                            .is_some()
-                        {
-                            return None;
-                        }
-                    }
-                    continue;
-                }
-                if !matches!(paired.checked_sub(start)?, 336 | 347)
-                    || bytes.get(start + 11..start + 45)? != [0; 34]
-                    || bytes.get(start + 50..start + 60)? != [0; 10]
-                {
-                    continue;
-                }
-                let reference = marked_record_reference(bytes, start + 45)?;
-                let values = f64s_at::<16>(bytes, start + 60)?;
-                let mut transform = [[0.0; 4]; 4];
-                for (ordinal, value) in values.into_iter().enumerate() {
-                    transform[ordinal / 4][ordinal % 4] = value;
-                }
-                let Ok(transform) =
-                    crate::records::sketch_placement::SketchPlacementMatrix::try_from(transform)
-                else {
-                    continue;
-                };
-                if candidate
-                    .replace(ScopePlacementFrame {
-                        transform,
-                        transform_offset: u64_from_index(start + 60),
-                        reference: Some((reference, u64_from_index(start + 46))),
-                    })
-                    .is_some()
-                {
-                    return None;
-                }
+    if !matches!(scope.payload(), scope::DesignScopePayload::JointOrigin(_))
+        || matches!(scope.frame_length(), 300 | 322 | 344)
+    {
+        return Ok(None);
+    }
+    let mut candidate = None;
+    for record_index in admit_reference_values(
+        ctx,
+        scope.reference_members(),
+        "scan F3D joint-origin reference members",
+    )? {
+        for (start, paired) in records.frames(ctx, *record_index)? {
+            let frame = match joint_origin_frame_at(bytes, start, paired) {
+                JointOriginFrame::Placement(frame) => frame,
+                JointOriginFrame::Other => continue,
+                JointOriginFrame::Malformed => return Ok(None),
+            };
+            if candidate.replace(frame).is_some() {
+                return Ok(None);
             }
         }
-        candidate.map(Ok)
-    })()
-    .transpose()
+    }
+    Ok(candidate)
+}
+
+enum JointOriginFrame {
+    Placement(ScopePlacementFrame),
+    /// The frame belongs to another record form.
+    Other,
+    /// The frame has the referenced-matrix form without its marked reference.
+    Malformed,
+}
+
+/// The joint-origin placement of the frame from `start` to its paired header
+/// at `paired`. Every matrix lies inside its frame.
+fn joint_origin_frame_at(bytes: &[u8], start: usize, paired: usize) -> JointOriginFrame {
+    let frame_length = paired - start;
+    let placement = |matrix_at: usize, reference: Option<(u32, u64)>| {
+        placement_matrix_at(bytes, matrix_at).map_or(JointOriginFrame::Other, |transform| {
+            JointOriginFrame::Placement(ScopePlacementFrame {
+                transform,
+                transform_offset: u64_from_index(matrix_at),
+                reference,
+            })
+        })
+    };
+    if frame_length == joint_origin_class_337_266::LEN
+        && bytes_at::<3>(bytes, start + 4) == Some(b"337")
+        && bytes_at::<3>(bytes, paired + 4) == Some(b"266")
+        && zeros_at::<{ joint_origin_class_337_266::MATRIX_PREFIX - 11 }>(bytes, start + 11)
+        && bytes_at::<
+            { joint_origin_class_337_266::MATRIX - joint_origin_class_337_266::MATRIX_PREFIX },
+        >(bytes, start + joint_origin_class_337_266::MATRIX_PREFIX)
+            == Some(&joint_origin_class_337_266::MATRIX_PREFIX_VALUE)
+    {
+        return placement(start + joint_origin_class_337_266::MATRIX, None);
+    }
+    if frame_length == 385
+        && bytes_at::<3>(bytes, start + 4) == Some(b"364")
+        && bytes_at::<3>(bytes, paired + 4) == Some(b"264")
+        && zeros_at::<34>(bytes, start + 11)
+        && bytes_at::<4>(bytes, start + 45) == Some(&[1, 1, 0, 0])
+    {
+        return placement(start + 49, None);
+    }
+    if !matches!(frame_length, 336 | 347)
+        || !zeros_at::<34>(bytes, start + 11)
+        || !zeros_at::<10>(bytes, start + 50)
+    {
+        return JointOriginFrame::Other;
+    }
+    let Some(reference) = marked_record_reference(bytes, start + 45) else {
+        return JointOriginFrame::Malformed;
+    };
+    placement(start + 60, Some((reference, u64_from_index(start + 46))))
 }

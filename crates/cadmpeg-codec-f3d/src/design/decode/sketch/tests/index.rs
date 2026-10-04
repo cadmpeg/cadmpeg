@@ -422,15 +422,19 @@ fn indexed_record_groups_preserve_work_refusal() {
 #[test]
 fn native_scope_encoder_preserves_each_iteration_work_refusal() {
     let name = "A:B";
-    for (operation, additional) in [
-        ("measure F3D native stream key", 3),
-        ("scan F3D native stream key characters", 3),
-        ("scan F3D native stream key escaped bytes", 1),
+    // Measuring reads three bytes; writing appends the scheme prefix, reads
+    // the name and writes `A`, then the three characters of the escape.
+    for (operation, skip, additional) in [
+        ("measure F3D native stream key", 0, 3),
+        ("write F3D native stream key", 0, 4),
+        ("write F3D native stream key", 1, 3),
+        ("write F3D native stream key", 2, 1),
+        ("write F3D native stream key", 3, 1),
     ] {
         let error = crate::test_support::resource_refusal_at(
             ResourceDimension::WorkUnits,
             operation,
-            0,
+            skip,
             |ctx| native_scope_scoped(ctx, name).map(|(_, text)| text),
         );
         assert!(matches!(error, CodecError::ResourceLimit(limit)

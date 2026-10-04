@@ -570,7 +570,7 @@ fn indexed_record_header_class_tag_copy_refuses_retained_bytes() {
 
     let header = [3, 0, 0, 0, b'2', b'5', b'7', 42, 0, 0, 0];
     let parsed = indexed_record_header_at(&header, 0).unwrap();
-    assert_eq!((parsed.class_tag, parsed.class_code), ("257", 257));
+    assert_eq!((parsed.class_tag, parsed.class_code), (b"257", 257));
     let refusal = crate::test_support::resource_refusal_at(
         ResourceDimension::RetainedBytes,
         "copy F3D indexed record class tag",

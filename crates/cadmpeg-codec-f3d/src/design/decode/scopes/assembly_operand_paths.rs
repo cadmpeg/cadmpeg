@@ -130,7 +130,7 @@ fn exact_assembly_operand_path_envelope(
         );
         let (locator_length, scope_backlink, wrapper_reference, constant_two, zero_tail) =
             if variable_reference {
-                if locator_class_tag != "390" {
+                if locator_class_tag != b"390" {
                     return None;
                 }
                 let padding = bytes.get(
@@ -254,7 +254,7 @@ fn exact_assembly_operand_path_envelope(
         } else {
             path_wrapper::LEN
         };
-        if variable_reference && wrapper_class_tag != "397"
+        if variable_reference && wrapper_class_tag != b"397"
             || bytes.get(
                 wrapper_at.checked_add(path_wrapper::ZERO_RUN_10)?
                     ..wrapper_at.checked_add(path_wrapper::CONSTANT_ONE_BYTE)?,

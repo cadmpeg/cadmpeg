@@ -36,7 +36,10 @@ fn exact_surface_trim_operation(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Result<Option<DesignSurfaceTrimOperation>, CodecError> {
-    if scope.kind() != crate::records::feature::scope::DesignFeatureKind::SurfaceTrim {
+    if !matches!(
+        scope.payload(),
+        crate::records::feature::scope::DesignScopePayload::SurfaceTrim
+    ) {
         return Ok(None);
     }
     let Some([_, _, _, &selection_record_index]) = scope.reference_members().values_array::<4>()
@@ -52,6 +55,9 @@ fn exact_surface_trim_operation(
         return Ok(None);
     };
     let Some(selection_byte_offset_u64) = u64::try_from(selection_byte_offset).ok() else {
+        return Ok(None);
+    };
+    let Ok(selection_class_tag) = std::str::from_utf8(selection_class_tag) else {
         return Ok(None);
     };
     let Some(selection) = parse_entity_selection_frame(
@@ -88,7 +94,7 @@ fn exact_surface_trim_operation(
     let Some(cell_table) = indexed_record_header_at(bytes, cell_table_byte_offset) else {
         return Ok(None);
     };
-    if !matches!(cell_table.class_tag, "287" | "325") {
+    if !matches!(cell_table.class_tag, b"287" | b"325") {
         return Ok(None);
     }
     let cell_table_record_index = cell_table.record_index;
@@ -166,11 +172,11 @@ fn exact_surface_trim_operation(
             cell_table_class_tag: cell_table
                 .retain_class_tag(ctx, "copy F3D surface-trim cell table class tag")?,
             cell_table_frame_length: u64_from_index(paired - cell_table_byte_offset),
-            cell_table_paired_class_tag: crate::design::decode::text::class_tag_from_view(
+            cell_table_paired_class_tag: crate::design::decode::text::retain_class_tag(
                 ctx,
                 cell_table_paired_class_tag,
-            )?
-            .ok_or_else(|| CodecError::malformed("F3D surface-trim paired class tag"))?,
+                "copy F3D surface-trim paired class tag",
+            )?,
             cell_table_paired_byte_offset: u64_from_index(paired),
             cell_count_offset: u64_from_index(prefix.cell_count_offset),
             cell_entries,
@@ -246,7 +252,10 @@ pub(crate) fn decode_surface_trim_operations(
     for scope in ctx
         .admit_iter(scopes, "scan F3D SurfaceTrim scopes")?
         .filter(|scope| {
-            scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfaceTrim
+            matches!(
+                scope.payload(),
+                crate::records::feature::scope::DesignScopePayload::SurfaceTrim
+            )
         })
     {
         let Some(stream) = native_stream(&scope.id) else {

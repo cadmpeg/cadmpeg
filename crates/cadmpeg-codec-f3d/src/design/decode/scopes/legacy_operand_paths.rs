@@ -339,32 +339,32 @@ fn exact_legacy_class_383_operand_path(
         };
         let placement_owners = [a, b, c, d];
         let (leading_at, leading_paired_at) =
-            require_record_frame!(leading_record_index, "387", class_383_leading::LEN);
+            require_record_frame!(leading_record_index, b"387", class_383_leading::LEN);
         let (leading_identity_at, _) = require_record_frame!(
             leading_identity_record_index,
-            "359",
+            b"359",
             class_383_identity::LEN
         );
         let (child_at, child_paired_at) =
-            require_record_frame!(child_record_index, "387", class_383_child::LEN);
+            require_record_frame!(child_record_index, b"387", class_383_child::LEN);
         let (child_identity_at, _) =
-            require_record_frame!(child_identity_record_index, "359", class_383_identity::LEN);
+            require_record_frame!(child_identity_record_index, b"359", class_383_identity::LEN);
         let (first_face_at, _) =
-            require_record_frame!(first_face_record_index, "394", class_383_face::LEN);
+            require_record_frame!(first_face_record_index, b"394", class_383_face::LEN);
         let (first_face_identity_at, _) = require_record_frame!(
             first_face_identity_record_index,
-            "359",
+            b"359",
             class_383_identity::LEN
         );
         let (second_face_at, _) =
-            require_record_frame!(second_face_record_index, "394", class_383_face::LEN);
+            require_record_frame!(second_face_record_index, b"394", class_383_face::LEN);
         let (second_face_identity_at, _) = require_record_frame!(
             second_face_identity_record_index,
-            "359",
+            b"359",
             class_383_identity::LEN
         );
         let (carrier_at, carrier_paired_at) =
-            require_record_frame!(carrier_record_index, "378", class_383_carrier::LEN);
+            require_record_frame!(carrier_record_index, b"378", class_383_carrier::LEN);
         let structural_checks = [
             leading_paired_at == leading_at.checked_add(class_383_leading::LEN)?,
             child_paired_at == child_at.checked_add(class_383_child::LEN)?,
@@ -548,7 +548,7 @@ fn exact_legacy_class_383_record_frame(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,
-    class_tag: &str,
+    class_tag: &[u8; 3],
     frame_length: usize,
 ) -> Result<Option<(usize, usize)>, CodecError> {
     let mut candidates = records
@@ -562,7 +562,7 @@ fn exact_legacy_class_383_record_frame(
                 return None;
             }
             let paired_class_tag = exact_indexed_header_at(bytes, paired_at, record_index)?;
-            (paired_class_tag == "258").then_some(Ok((start, paired_at)))
+            (paired_class_tag == b"258").then_some(Ok((start, paired_at)))
         });
     let candidate = match candidates.next() {
         Some(Ok(candidate)) => candidate,
@@ -742,7 +742,7 @@ fn exact_legacy_class_388_operand_path_envelope(
 ) -> Result<Option<DesignAssemblyOperandPath>, CodecError> {
     let parsed = (|| {
         let locator_class_tag = exact_indexed_header_at(bytes, locator_at, locator_record_index)?;
-        if locator_class_tag != "451" {
+        if locator_class_tag != b"451" {
             return None;
         }
         let actual_locator_end =
@@ -797,7 +797,7 @@ fn exact_legacy_class_388_operand_path_envelope(
                     return None;
                 }
                 match exact_indexed_header_at(bytes, wrapper_at, wrapper_record_index) {
-                    Some("369") => Some(Ok(wrapper_at)),
+                    Some(b"369") => Some(Ok(wrapper_at)),
                     Some(_) | None => None,
                 }
             });
@@ -862,7 +862,7 @@ fn exact_legacy_class_388_operand_path_envelope(
         for ordinal in 0..path_count {
             let path_record_index = locator_record_index.checked_add(ordinal)?.checked_add(1)?;
             let path_class_tag = exact_indexed_header_at(bytes, path_at, path_record_index)?;
-            if path_class_tag != "412" {
+            if path_class_tag != b"412" {
                 return None;
             }
             let path_end = match next_indexed_record_offset(ctx, bytes, path_at.checked_add(1)?) {
@@ -972,7 +972,7 @@ fn exact_legacy_class_412_path(
 ) -> Result<Option<LegacyClass412Path>, CodecError> {
     let parsed = (|| {
         let class_tag = exact_indexed_header_at(bytes, start, record_index)?;
-        if class_tag != "412"
+        if class_tag != b"412"
             || end != start.checked_add(class_412_path::LEN)?
             || bytes.get(start.checked_add(11)?..start.checked_add(class_412_path::PATH_MARKER)?)?
                 != [0; 10]

@@ -17,7 +17,7 @@ pub(in crate::design::decode) fn exact_indexed_header_at(
     bytes: &[u8],
     start: usize,
     record_index: u32,
-) -> Option<&str> {
+) -> Option<&[u8; 3]> {
     indexed_record_header_at(bytes, start)
         .filter(|header| header.record_index == record_index)
         .map(|header| header.class_tag)
